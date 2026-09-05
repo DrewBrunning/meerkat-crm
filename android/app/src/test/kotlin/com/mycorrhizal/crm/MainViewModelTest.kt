@@ -1,5 +1,7 @@
 package com.mycorrhizal.crm
 
+import com.mycorrhizal.crm.data.session.AppLockController
+import com.mycorrhizal.crm.data.session.AppLockState
 import com.mycorrhizal.crm.data.session.SessionManager
 import com.mycorrhizal.crm.domain.repository.SessionState
 import com.mycorrhizal.crm.testing.MainDispatcherRule
@@ -21,13 +23,18 @@ class MainViewModelTest {
     @get:Rule
     val mainDispatcherRule = MainDispatcherRule()
 
+    private fun appLockController(state: AppLockState = AppLockState.Resolving): AppLockController =
+        mockk<AppLockController> {
+            every { this@mockk.state } returns MutableStateFlow(state)
+        }
+
     @Test
     fun `logged-out session is the initial state`() = runTest(mainDispatcherRule.testDispatcher) {
         val sessionManager = mockk<SessionManager> {
             every { observeSession() } returns MutableStateFlow(SessionState())
         }
 
-        val vm = MainViewModel(sessionManager)
+        val vm = MainViewModel(sessionManager, appLockController())
         advanceUntilIdle()
 
         val state = vm.session.value
@@ -42,7 +49,7 @@ class MainViewModelTest {
             every { observeSession() } returns flow
         }
 
-        val vm = MainViewModel(sessionManager)
+        val vm = MainViewModel(sessionManager, appLockController())
         advanceUntilIdle()
 
         flow.value = SessionState(
@@ -61,5 +68,25 @@ class MainViewModelTest {
         assertEquals("alice", state.username)
         assertTrue(state.isAdmin)
         assertEquals("de", state.language)
+    }
+
+    // Issue #722: the app-lock gate state is surfaced for the root branch.
+    @Test
+    fun `the app-lock gate state is surfaced to the root`() = runTest(mainDispatcherRule.testDispatcher) {
+        val lock = MutableStateFlow(AppLockState.Resolving)
+        val sessionManager = mockk<SessionManager> {
+            every { observeSession() } returns MutableStateFlow(SessionState(isLoggedIn = true))
+        }
+        val controller = mockk<AppLockController> {
+            every { this@mockk.state } returns lock
+        }
+
+        val vm = MainViewModel(sessionManager, controller)
+        advanceUntilIdle()
+        assertEquals(AppLockState.Resolving, vm.appLockState.value)
+
+        lock.value = AppLockState.Locked
+        advanceUntilIdle()
+        assertEquals(AppLockState.Locked, vm.appLockState.value)
     }
 }

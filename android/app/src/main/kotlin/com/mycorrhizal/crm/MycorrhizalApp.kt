@@ -85,6 +85,8 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
+import com.mycorrhizal.crm.applock.AppLockScreen
+import com.mycorrhizal.crm.data.session.AppLockState
 import com.mycorrhizal.crm.feature.auth.LoginScreen
 import com.mycorrhizal.crm.feature.auth.RegisterScreen
 import com.mycorrhizal.crm.feature.auth.ForgotPasswordScreen
@@ -227,6 +229,11 @@ fun MycorrhizalApp(
     onOidcErrorShown: () -> Unit = {},
 ) {
     val session by mainViewModel.session.collectAsStateWithLifecycle()
+    // Issue #722: when a persisted session is resumed the authenticated tree
+    // may have to pass the local (biometric / device-PIN) check first. The
+    // app-lock state is collected here so the main tree is only composed once
+    // the gate has cleared (rootSurface never returns Main while Resolving).
+    val appLockState by mainViewModel.appLockState.collectAsStateWithLifecycle()
 
     // Issue #202: the status-bar style is owned here, above the isLoggedIn
     // branch, so the auth screens get it too. They have no green app bar — the
@@ -259,53 +266,81 @@ fun MycorrhizalApp(
             .isAppearanceLightStatusBars = if (onPrimaryBar) darkTheme else !darkTheme
     }
 
-    if (!session.isLoggedIn) {
-        // M26: the unauthenticated tree is a tiny router over the auth
-        // screens — login, register, forgot-password — since they are not
-        // part of the main NavHost. The system back button returns to the
-        // login screen from the register/forgot screens instead of exiting
-        // the app (review-pass fix).
-        var authScreen by rememberSaveable { mutableStateOf(AuthScreen.LOGIN) }
-        val context = LocalContext.current
-        val oidcErrorState by oidcError.collectAsStateWithLifecycle(initialValue = null)
-        BackHandler(enabled = authScreen != AuthScreen.LOGIN) {
-            authScreen = AuthScreen.LOGIN
+    // Issue #722: the root branches on where the user is in the session +
+    // local-auth flow. While the app-lock controller is still deciding
+    // (GateResolving) nothing is rendered — never a frame of the session's
+    // data in front of the gate it may be about to require.
+    when (rootSurface(session.isLoggedIn, appLockState)) {
+        RootSurface.Auth -> {
+            // M26: the unauthenticated tree is a tiny router over the auth
+            // screens — login, register, forgot-password — since they are not
+            // part of the main NavHost. The system back button returns to the
+            // login screen from the register/forgot screens instead of exiting
+            // the app (review-pass fix).
+            var authScreen by rememberSaveable { mutableStateOf(AuthScreen.LOGIN) }
+            val context = LocalContext.current
+            val oidcErrorState by oidcError.collectAsStateWithLifecycle(initialValue = null)
+            BackHandler(enabled = authScreen != AuthScreen.LOGIN) {
+                authScreen = AuthScreen.LOGIN
+            }
+            when (authScreen) {
+                AuthScreen.LOGIN -> LoginScreen(
+                    onLoggedIn = { /* session flow flips isLoggedIn, recomposition swaps the tree */ },
+                    onSignInWithSso = { serverUrl ->
+                        // M6 §4: `client=android` makes the backend redirect back to
+                        // the mycorrhizal://oidc/callback deep link (MainActivity)
+                        // instead of the web cookie path — without it this whole
+                        // native flow is unreachable (review-pass fix).
+                        val url = serverUrl.trim().trimEnd('/') + "/api/v1/auth/oidc/login?client=android"
+                        val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+                        runCatching { context.startActivity(intent) }
+                    },
+                    onRegisterClick = { authScreen = AuthScreen.REGISTER },
+                    onForgotPasswordClick = { authScreen = AuthScreen.FORGOT_PASSWORD },
+                    oidcError = oidcErrorState,
+                    onOidcErrorShown = onOidcErrorShown,
+                )
+                AuthScreen.REGISTER -> RegisterScreen(
+                    onRegistered = { /* auto-login flips isLoggedIn */ },
+                    onBack = { authScreen = AuthScreen.LOGIN },
+                )
+                AuthScreen.FORGOT_PASSWORD -> ForgotPasswordScreen(
+                    onBack = { authScreen = AuthScreen.LOGIN },
+                )
+            }
         }
-        when (authScreen) {
-            AuthScreen.LOGIN -> LoginScreen(
-                onLoggedIn = { /* session flow flips isLoggedIn, recomposition swaps the tree */ },
-                onSignInWithSso = { serverUrl ->
-                    // M6 §4: `client=android` makes the backend redirect back to
-                    // the mycorrhizal://oidc/callback deep link (MainActivity)
-                    // instead of the web cookie path — without it this whole
-                    // native flow is unreachable (review-pass fix).
-                    val url = serverUrl.trim().trimEnd('/') + "/api/v1/auth/oidc/login?client=android"
-                    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-                    runCatching { context.startActivity(intent) }
-                },
-                onRegisterClick = { authScreen = AuthScreen.REGISTER },
-                onForgotPasswordClick = { authScreen = AuthScreen.FORGOT_PASSWORD },
-                oidcError = oidcErrorState,
-                onOidcErrorShown = onOidcErrorShown,
-            )
-            AuthScreen.REGISTER -> RegisterScreen(
-                onRegistered = { /* auto-login flips isLoggedIn */ },
-                onBack = { authScreen = AuthScreen.LOGIN },
-            )
-            AuthScreen.FORGOT_PASSWORD -> ForgotPasswordScreen(
-                onBack = { authScreen = AuthScreen.LOGIN },
+        RootSurface.GateResolving -> {
+            // Authenticated but the app-lock controller has not yet decided
+            // whether the local check is due (its flows hydrate asynchronously
+            // at startup). Compose nothing for the few milliseconds this takes.
+        }
+        RootSurface.AppLock -> {
+            AppLockScreen()
+        }
+        RootSurface.Main -> {
+            MainScaffold(
+                darkTheme = darkTheme,
+                drawerState = drawerState,
+                serverUrl = session.serverUrl.orEmpty(),
+                deepLinks = deepLinks,
+                onDeepLinkHandled = onDeepLinkHandled,
             )
         }
-        return
     }
+}
 
-    MainScaffold(
-        darkTheme = darkTheme,
-        drawerState = drawerState,
-        serverUrl = session.serverUrl.orEmpty(),
-        deepLinks = deepLinks,
-        onDeepLinkHandled = onDeepLinkHandled,
-    )
+/**
+ * Issue #722: where the root should go for a (session, app-lock) pair. Pure so
+ * the security-critical "never render the main tree before the gate" rule is
+ * unit-tested without a composable host.
+ */
+internal enum class RootSurface { Auth, GateResolving, AppLock, Main }
+
+internal fun rootSurface(isLoggedIn: Boolean, appLockState: AppLockState): RootSurface = when {
+    !isLoggedIn -> RootSurface.Auth
+    appLockState == AppLockState.Resolving -> RootSurface.GateResolving
+    appLockState == AppLockState.Locked -> RootSurface.AppLock
+    else -> RootSurface.Main
 }
 
 /** The M26 unauthenticated-tree router destinations. */

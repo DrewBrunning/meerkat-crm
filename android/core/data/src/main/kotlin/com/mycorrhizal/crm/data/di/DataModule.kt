@@ -1,5 +1,6 @@
 package com.mycorrhizal.crm.data.di
 
+import com.mycorrhizal.crm.data.auth.AndroidLocalAuthCapabilities
 import com.mycorrhizal.crm.data.local.AppDatabase
 import com.mycorrhizal.crm.data.local.CachedActivityDao
 import com.mycorrhizal.crm.data.local.CachedCadencePolicyDao
@@ -55,6 +56,9 @@ import com.mycorrhizal.crm.data.repository.AppSettingsRepositoryImpl
 import com.mycorrhizal.crm.data.repository.UserManagementRepositoryImpl
 import com.mycorrhizal.crm.data.repository.WebhookRepositoryImpl
 import com.mycorrhizal.crm.data.repository.ApiTokenRepositoryImpl
+import com.mycorrhizal.crm.data.repository.LocalAuthSettingsRepositoryImpl
+import com.mycorrhizal.crm.data.session.AppLockController
+import com.mycorrhizal.crm.data.session.DefaultAppLockController
 import com.mycorrhizal.crm.data.session.DefaultSessionManager
 import com.mycorrhizal.crm.data.session.SessionDataCleaner
 import com.mycorrhizal.crm.data.session.SessionExpiryWiring
@@ -94,12 +98,17 @@ import com.mycorrhizal.crm.domain.repository.AppSettingsRepository
 import com.mycorrhizal.crm.domain.repository.WebhookRepository
 import com.mycorrhizal.crm.domain.repository.ApiTokenRepository
 import com.mycorrhizal.crm.domain.repository.UserManagementRepository
+import com.mycorrhizal.crm.domain.repository.LocalAuthCapabilities
+import com.mycorrhizal.crm.domain.repository.LocalAuthSettingsRepository
 import com.mycorrhizal.crm.network.ApiClient
 import com.mycorrhizal.crm.network.BaseUrlProvider
 import com.mycorrhizal.crm.network.NetworkFactory
 import com.mycorrhizal.crm.network.SessionExpiryNotifier
 import com.mycorrhizal.crm.network.TokenProvider
 import androidx.room.Room
+import androidx.lifecycle.DefaultLifecycleObserver
+import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.ProcessLifecycleOwner
 import com.squareup.moshi.Moshi
 import dagger.Binds
 import dagger.Module
@@ -271,6 +280,26 @@ object DataModule {
         scope.launch { manager.init() }
         return manager
     }
+
+    // Issue #722: the app-lock gate controller + its process-lifecycle wiring.
+    // ProcessLifecycleOwner (not the Activity's lifecycle) is the source of
+    // background/foreground events so launching one of the app's own
+    // activities (e.g. the uCrop crop screen) never counts as backgrounding.
+    @Provides
+    @Singleton
+    fun provideAppLockController(
+        localAuthSettings: LocalAuthSettingsRepository,
+        sessionManager: SessionManager,
+    ): DefaultAppLockController {
+        val controller = DefaultAppLockController(localAuthSettings, sessionManager)
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+        controller.start(scope)
+        ProcessLifecycleOwner.get().lifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) = controller.onAppForegrounded()
+            override fun onStop(owner: LifecycleOwner) = controller.onAppBackgrounded()
+        })
+        return controller
+    }
 }
 
 @Module
@@ -419,4 +448,18 @@ abstract class DataBindsModule {
     @Binds
     @Singleton
     abstract fun bindUserManagementRepository(impl: UserManagementRepositoryImpl): UserManagementRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindLocalAuthSettingsRepository(
+        impl: LocalAuthSettingsRepositoryImpl,
+    ): LocalAuthSettingsRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindLocalAuthCapabilities(impl: AndroidLocalAuthCapabilities): LocalAuthCapabilities
+
+    @Binds
+    @Singleton
+    abstract fun bindAppLockController(impl: DefaultAppLockController): AppLockController
 }

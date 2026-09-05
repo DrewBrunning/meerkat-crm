@@ -42,6 +42,12 @@ dependencies {
 
     implementation(libs.androidx.datastore.preferences)
     implementation(libs.androidx.security.crypto)
+    // Issue #722: the device-posture check (BiometricManager) behind the
+    // opt-in app-lock capability.
+    implementation(libs.androidx.biometric)
+    // Issue #722: ProcessLifecycleOwner drives the app-lock grace period from
+    // true process background/foreground transitions.
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.kotlinx.coroutines.android)
     implementation(libs.moshi)
     implementation(libs.moshi.kotlin)

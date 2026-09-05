@@ -419,6 +419,26 @@
     <string name="settings_password_change_button">Mettre à jour le mot de passe</string>
     <string name="settings_password_mismatch">Les nouveaux mots de passe ne correspondent pas.</string>
 
+    <!-- Réglages : verrouillage local de l'app (issue #722) -->
+    <string name="settings_local_auth">Verrouillage de l\'app</string>
+    <string name="settings_local_auth_enable">Exiger la biométrie ou le code PIN de l\'appareil pour ouvrir l\'application</string>
+    <string name="settings_local_auth_enable_hint">À l\'ouverture de l\'application, ou après un passage en arrière-plan, déverrouillez avec votre empreinte, visage ou code PIN avant que vos contacts ne soient affichés.</string>
+    <string name="settings_local_auth_delay">Verrouiller automatiquement après</string>
+    <string name="settings_local_auth_delay_immediately">Immédiatement</string>
+    <string name="settings_local_auth_delay_1m">1 minute</string>
+    <string name="settings_local_auth_delay_5m">5 minutes</string>
+    <string name="settings_local_auth_delay_15m">15 minutes</string>
+    <string name="settings_local_auth_delay_1h">1 heure</string>
+    <string name="settings_local_auth_unavailable">Indisponible — cet appareil n\'a ni empreinte, ni reconnaissance faciale, ni écran de verrouillage sécurisé.</string>
+
+    <!-- Écran de verrouillage de l'app (issue #722) -->
+    <string name="app_lock_heading">Vos données sont verrouillées</string>
+    <string name="app_lock_signed_in_as">Connecté en tant que %1$s</string>
+    <string name="app_lock_subtitle">Déverrouillez avec votre empreinte, visage ou code PIN pour continuer.</string>
+    <string name="app_lock_unlock">Déverrouiller</string>
+    <string name="app_lock_auth_failed">Impossible de déverrouiller. Veuillez réessayer.</string>
+    <string name="app_lock_unsupported">Le déverrouillage par empreinte, visage ou code PIN n\'est pas disponible sur cet appareil. Déconnectez-vous pour vous connecter avec votre mot de passe.</string>
+
     <!-- Settings: webhooks (M25) -->
     <string name="settings_webhooks_title">Webhooks</string>
     <string name="settings_webhooks_description">Recevez des notifications HTTP POST lorsque des événements se produisent dans votre CRM.</string>

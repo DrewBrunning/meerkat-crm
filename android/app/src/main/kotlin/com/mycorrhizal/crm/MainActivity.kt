@@ -6,13 +6,13 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.view.WindowManager
-import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.runtime.getValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import androidx.fragment.app.FragmentActivity
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
 import com.mycorrhizal.crm.data.repository.AppLocale
@@ -41,7 +41,11 @@ private fun androidx.compose.ui.graphics.Color.toArgbCompat(): Int =
     )
 
 @AndroidEntryPoint
-class MainActivity : ComponentActivity() {
+// Issue #722: FragmentActivity (still a ComponentActivity, so the Compose
+// setContent/edge-to-edge extensions are unchanged) is the host type
+// androidx.biometric's BiometricPrompt requires. No Fragment is ever added —
+// this is purely the prompt's host contract.
+class MainActivity : FragmentActivity() {
 
     @Inject
     lateinit var appSettings: AppSettingsRepository

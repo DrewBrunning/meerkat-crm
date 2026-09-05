@@ -419,6 +419,26 @@
     <string name="settings_password_change_button">Actualizar contraseña</string>
     <string name="settings_password_mismatch">Las nuevas contraseñas no coinciden.</string>
 
+    <!-- Settings: bloqueo local de la app (issue #722) -->
+    <string name="settings_local_auth">Bloqueo de la app</string>
+    <string name="settings_local_auth_enable">Exigir biometría o PIN del dispositivo para abrir la app</string>
+    <string name="settings_local_auth_enable_hint">Al abrir la app, o después de estar un rato en segundo plano, desbloquéala con tu huella, rostro o PIN del dispositivo antes de mostrar tus contactos.</string>
+    <string name="settings_local_auth_delay">Bloquear automáticamente después de</string>
+    <string name="settings_local_auth_delay_immediately">Inmediatamente</string>
+    <string name="settings_local_auth_delay_1m">1 minuto</string>
+    <string name="settings_local_auth_delay_5m">5 minutos</string>
+    <string name="settings_local_auth_delay_15m">15 minutos</string>
+    <string name="settings_local_auth_delay_1h">1 hora</string>
+    <string name="settings_local_auth_unavailable">No disponible: este dispositivo no tiene huella, desbloqueo facial ni pantalla de bloqueo segura.</string>
+
+    <!-- Pantalla de bloqueo de la app (issue #722) -->
+    <string name="app_lock_heading">Tus datos están bloqueados</string>
+    <string name="app_lock_signed_in_as">Sesión iniciada como %1$s</string>
+    <string name="app_lock_subtitle">Desbloquea con tu huella, rostro o PIN del dispositivo para continuar.</string>
+    <string name="app_lock_unlock">Desbloquear</string>
+    <string name="app_lock_auth_failed">No se pudo desbloquear. Inténtalo de nuevo.</string>
+    <string name="app_lock_unsupported">El desbloqueo con huella, rostro o PIN no está disponible en este dispositivo. Cierra la sesión para iniciarla con tu contraseña.</string>
+
     <!-- Settings: webhooks (M25) -->
     <string name="settings_webhooks_title">Webhooks</string>
     <string name="settings_webhooks_description">Recibe notificaciones HTTP POST cuando ocurren eventos en tu CRM.</string>

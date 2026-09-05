@@ -19,3 +19,4 @@ ticket backlog moved to GitHub Issues.
 | [0011](0011-scheduled-job-catchup.md) | Scheduled-job catch-up semantics — fire missed occurrences once, de-duplicated | accepted |
 | [0012](0012-canonical-database-invariants.md) | Canonical database invariants | accepted |
 | [0013](0013-outbound-retry-safety-and-terminal-failures.md) | Outbound retry safety and permanent-failure terminal state | accepted |
+| [0014](0014-local-app-lock-and-biometric-resume.md) | Local app lock and biometric resume (Android) | accepted |

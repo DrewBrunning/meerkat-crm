@@ -427,6 +427,26 @@
     <string name="settings_password_change_button">Update password</string>
     <string name="settings_password_mismatch">New passwords do not match.</string>
 
+    <!-- Settings: local app lock (issue #722) -->
+    <string name="settings_local_auth">App lock</string>
+    <string name="settings_local_auth_enable">Require biometric or device PIN to open the app</string>
+    <string name="settings_local_auth_enable_hint">When the app opens, or after it has been in the background for a while, unlock with your fingerprint, face or device PIN before your contacts are shown.</string>
+    <string name="settings_local_auth_delay">Lock automatically after</string>
+    <string name="settings_local_auth_delay_immediately">Immediately</string>
+    <string name="settings_local_auth_delay_1m">1 minute</string>
+    <string name="settings_local_auth_delay_5m">5 minutes</string>
+    <string name="settings_local_auth_delay_15m">15 minutes</string>
+    <string name="settings_local_auth_delay_1h">1 hour</string>
+    <string name="settings_local_auth_unavailable">Unavailable — this device has no fingerprint, face unlock or secure lock screen.</string>
+
+    <!-- App-lock gate (issue #722) -->
+    <string name="app_lock_heading">Your data is locked</string>
+    <string name="app_lock_signed_in_as">Signed in as %1$s</string>
+    <string name="app_lock_subtitle">Unlock with your fingerprint, face or device PIN to continue.</string>
+    <string name="app_lock_unlock">Unlock</string>
+    <string name="app_lock_auth_failed">Couldn\'t unlock. Please try again.</string>
+    <string name="app_lock_unsupported">Fingerprint, face or device PIN unlock is not available on this device. Log out to sign in with your password.</string>
+
     <!-- Settings: webhooks (M25) -->
     <string name="settings_webhooks_title">Webhooks</string>
     <string name="settings_webhooks_description">Receive HTTP POST notifications when events occur in your CRM.</string>

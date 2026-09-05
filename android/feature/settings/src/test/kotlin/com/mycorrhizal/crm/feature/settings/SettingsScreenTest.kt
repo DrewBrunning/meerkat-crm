@@ -12,7 +12,10 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
 import com.mycorrhizal.crm.domain.repository.AppSettingsRepository
+import com.mycorrhizal.crm.domain.repository.AutoLockDelay
 import com.mycorrhizal.crm.domain.repository.AuthRepository
+import com.mycorrhizal.crm.domain.repository.LocalAuthCapabilities
+import com.mycorrhizal.crm.domain.repository.LocalAuthSettingsRepository
 import com.mycorrhizal.crm.domain.repository.RelationshipEdgeRepository
 import com.mycorrhizal.crm.domain.repository.SessionState
 import com.mycorrhizal.crm.domain.repository.TrackingSettingsRepository
@@ -274,6 +277,8 @@ class SettingsScreenTest {
         val trackingSettings = mockk<TrackingSettingsRepository>()
         val appSettings = mockk<AppSettingsRepository>()
         val relationshipEdgeRepository = mockk<RelationshipEdgeRepository>()
+        val localAuthSettings = mockk<LocalAuthSettingsRepository>()
+        val localAuthCapabilities = mockk<LocalAuthCapabilities>()
         val appContext = mockk<Context>(relaxed = true)
         coEvery { trackingSettings.callTrackingEnabled() } returns false
         coEvery { trackingSettings.smsTrackingEnabled() } returns false
@@ -282,7 +287,18 @@ class SettingsScreenTest {
             SessionState(serverUrl = "https://crm.example.com", username = "alice", isAdmin = true, language = "en"),
         )
         coEvery { appSettings.themePreference() } returns flowOf(AppSettingsRepository.THEME_SYSTEM)
-        val viewModel = SettingsViewModel(authRepository, trackingSettings, appSettings, relationshipEdgeRepository, appContext)
+        every { localAuthSettings.requireLocalAuth() } returns MutableStateFlow(false)
+        every { localAuthSettings.autoLockDelay() } returns MutableStateFlow(AutoLockDelay.DEFAULT)
+        every { localAuthCapabilities.canEnableLocalAuth() } returns true
+        val viewModel = SettingsViewModel(
+            authRepository,
+            trackingSettings,
+            appSettings,
+            relationshipEdgeRepository,
+            localAuthSettings,
+            localAuthCapabilities,
+            appContext,
+        )
 
         composeTestRule.setContent {
             MycorrhizalTheme(darkTheme = darkTheme) {
@@ -354,5 +370,93 @@ class SettingsScreenTest {
         composeTestRule.onNodeWithText("Update password")
             .performScrollTo()
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Saving"))
+    }
+
+    // --- Issue #722: the opt-in local app lock ---
+
+    @Test
+    fun `app lock section shows the opt-in toggle`() {
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                SettingsContent(
+                    state = SettingsUiState(
+                        session = SessionState(),
+                        requireLocalAuth = false,
+                        autoLockDelay = AutoLockDelay.DEFAULT,
+                        localAuthSupported = true,
+                    ),
+                    onLogout = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("App lock").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Require biometric or device PIN to open the app")
+            .performScrollTo().assertIsDisplayed()
+        // The timeout dropdown only appears once the lock is on.
+        composeTestRule.onNodeWithText("Lock automatically after").assertDoesNotExist()
+    }
+
+    @Test
+    fun `enabling the app lock reveals the timeout dropdown`() {
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                SettingsContent(
+                    state = SettingsUiState(
+                        session = SessionState(),
+                        requireLocalAuth = true,
+                        autoLockDelay = AutoLockDelay.FIVE_MINUTES,
+                        localAuthSupported = true,
+                    ),
+                    onLogout = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Lock automatically after").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("5 minutes").performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `an unsupported device shows why the toggle is unavailable`() {
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                SettingsContent(
+                    state = SettingsUiState(
+                        session = SessionState(),
+                        requireLocalAuth = false,
+                        localAuthSupported = false,
+                    ),
+                    onLogout = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText(
+            "Unavailable — this device has no fingerprint, face unlock or secure lock screen.",
+        ).performScrollTo().assertIsDisplayed()
+    }
+
+    @Test
+    fun `selecting a lock delay invokes the delay change callback`() {
+        var changedTo: AutoLockDelay? = null
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                SettingsContent(
+                    state = SettingsUiState(
+                        session = SessionState(),
+                        requireLocalAuth = true,
+                        autoLockDelay = AutoLockDelay.FIVE_MINUTES,
+                        localAuthSupported = true,
+                    ),
+                    onAutoLockDelayChange = { changedTo = it },
+                    onLogout = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("5 minutes").performScrollTo().performClick()
+        composeTestRule.onNodeWithText("1 hour").performClick()
+        assertEquals(AutoLockDelay.ONE_HOUR, changedTo)
     }
 }

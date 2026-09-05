@@ -7,6 +7,9 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mycorrhizal.crm.domain.repository.AppSettingsRepository
 import com.mycorrhizal.crm.domain.repository.AuthRepository
+import com.mycorrhizal.crm.domain.repository.AutoLockDelay
+import com.mycorrhizal.crm.domain.repository.LocalAuthCapabilities
+import com.mycorrhizal.crm.domain.repository.LocalAuthSettingsRepository
 import com.mycorrhizal.crm.domain.repository.RelationshipEdgeRepository
 import com.mycorrhizal.crm.domain.repository.SessionState
 import com.mycorrhizal.crm.domain.repository.TrackingSettingsRepository
@@ -38,6 +41,11 @@ data class SettingsUiState(
     /** Number of relationship edges the last suggest run newly created (null = not yet run). */
     val suggestedRelationshipCount: Int? = null,
     @StringRes val relationshipSuggestErrorRes: Int? = null,
+    // Issue #722: the opt-in local app lock.
+    val requireLocalAuth: Boolean = false,
+    val autoLockDelay: AutoLockDelay = AutoLockDelay.DEFAULT,
+    /** Whether the device can currently satisfy the local gate (strong biometric or secure lock screen). */
+    val localAuthSupported: Boolean = true,
 )
 
 sealed interface SettingsEvent {
@@ -56,6 +64,8 @@ class SettingsViewModel @Inject constructor(
     private val trackingSettings: TrackingSettingsRepository,
     private val appSettings: AppSettingsRepository,
     private val relationshipEdgeRepository: RelationshipEdgeRepository,
+    private val localAuthSettings: LocalAuthSettingsRepository,
+    private val localAuthCapabilities: LocalAuthCapabilities,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
@@ -85,6 +95,20 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update { it.copy(themePreference = pref) }
             }
         }
+        // Issue #722: the app-lock opt-in + its timeout, collected so the
+        // toggle follows the persisted value live. The capability check is a
+        // one-shot read (device posture doesn't change mid-session).
+        viewModelScope.launch {
+            localAuthSettings.requireLocalAuth().collect { enabled ->
+                _uiState.update { it.copy(requireLocalAuth = enabled) }
+            }
+        }
+        viewModelScope.launch {
+            localAuthSettings.autoLockDelay().collect { delay ->
+                _uiState.update { it.copy(autoLockDelay = delay) }
+            }
+        }
+        _uiState.update { it.copy(localAuthSupported = localAuthCapabilities.canEnableLocalAuth()) }
     }
 
     fun setCallTrackingEnabled(enabled: Boolean) {
@@ -107,6 +131,28 @@ class SettingsViewModel @Inject constructor(
     fun setNotificationsEnabled(enabled: Boolean) {
         _uiState.update { it.copy(notificationsEnabled = enabled) }
         viewModelScope.launch { trackingSettings.setNotificationsEnabled(enabled) }
+    }
+
+    // --- Issue #722: the opt-in local app lock ---
+
+    /**
+     * Toggle the "require biometric / device PIN to open the app" preference.
+     * The toggle itself is disabled (never shown interactively) when the
+     * device cannot satisfy the gate, so the guard below is defensive only.
+     * Enabling never locks the current session — it applies to the next cold
+     * start or the next time the app is backgrounded past the grace period.
+     */
+    fun setRequireLocalAuth(enabled: Boolean) {
+        if (enabled && !_uiState.value.localAuthSupported) return
+        _uiState.update { it.copy(requireLocalAuth = enabled) }
+        viewModelScope.launch { localAuthSettings.setRequireLocalAuth(enabled) }
+    }
+
+    /** Change how long the app may sit in the background before re-locking. */
+    fun setAutoLockDelay(delay: AutoLockDelay) {
+        if (!_uiState.value.requireLocalAuth) return
+        _uiState.update { it.copy(autoLockDelay = delay) }
+        viewModelScope.launch { localAuthSettings.setAutoLockDelay(delay) }
     }
 
     // --- M25: profile & channels ---

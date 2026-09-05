@@ -53,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mycorrhizal.crm.domain.repository.AppSettingsRepository
+import com.mycorrhizal.crm.domain.repository.AutoLockDelay
 import com.mycorrhizal.crm.ui.R
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -146,6 +147,8 @@ fun SettingsScreen(
             onCallTrackingChange = viewModel::setCallTrackingEnabled,
             onSmsTrackingChange = viewModel::setSmsTrackingEnabled,
             onNotificationsChange = viewModel::setNotificationsEnabled,
+            onRequireLocalAuthChange = viewModel::setRequireLocalAuth,
+            onAutoLockDelayChange = viewModel::setAutoLockDelay,
             onLogout = viewModel::logout,
             modifier = Modifier.padding(padding),
         )
@@ -173,6 +176,9 @@ fun SettingsContent(
     onCallTrackingChange: (Boolean) -> Unit = {},
     onSmsTrackingChange: (Boolean) -> Unit = {},
     onNotificationsChange: (Boolean) -> Unit = {},
+    // Issue #722: the opt-in local app lock.
+    onRequireLocalAuthChange: (Boolean) -> Unit = {},
+    onAutoLockDelayChange: (AutoLockDelay) -> Unit = {},
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -320,6 +326,46 @@ fun SettingsContent(
 
         HorizontalDivider()
 
+        // Issue #722: the opt-in local app lock — a biometric / device-PIN
+        // check before a persisted session resumes. Default off: existing
+        // installs behave exactly as before until the user opts in. Devices
+        // without a Class 3 biometric or a secure lock screen get the disabled
+        // toggle plus the reason, never a toggle that cannot be satisfied.
+        Text(
+            stringResource(R.string.settings_local_auth),
+            style = MaterialTheme.typography.titleMedium,
+            modifier = Modifier.semantics { heading() },
+        )
+        if (!state.localAuthSupported) {
+            Text(
+                text = stringResource(R.string.settings_local_auth_unavailable),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        ToggleRow(
+            label = stringResource(R.string.settings_local_auth_enable),
+            checked = state.requireLocalAuth,
+            enabled = state.localAuthSupported,
+            onCheckedChange = onRequireLocalAuthChange,
+        )
+        if (state.requireLocalAuth) {
+            Text(
+                text = stringResource(R.string.settings_local_auth_enable_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            SettingDropdown(
+                label = stringResource(R.string.settings_local_auth_delay),
+                value = state.autoLockDelay.name,
+                options = AutoLockDelay.entries.map { it.name },
+                optionLabel = { lockDelayOptionLabel(it) },
+                onSelect = { name -> onAutoLockDelayChange(AutoLockDelay.valueOf(name)) },
+            )
+        }
+
+        HorizontalDivider()
+
         // T104: propose data from what the graph already implies — the trigger
         // for graph-inferred relationship suggestions plus the Data screen that
         // reviews them (and the address-suggestion scan).
@@ -461,6 +507,7 @@ private fun InfoRow(label: String, value: String) {
 private fun ToggleRow(
     label: String,
     checked: Boolean,
+    enabled: Boolean = true,
     onCheckedChange: (Boolean) -> Unit,
 ) {
     Row(
@@ -471,13 +518,13 @@ private fun ToggleRow(
         // Material3 labeled-switch pattern).
         modifier = Modifier
             .fillMaxWidth()
-            .toggleable(value = checked, onValueChange = onCheckedChange, role = Role.Switch)
+            .toggleable(value = checked, enabled = enabled, onValueChange = onCheckedChange, role = Role.Switch)
             .padding(vertical = 4.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-        Switch(checked = checked, onCheckedChange = null)
+        Switch(checked = checked, onCheckedChange = null, enabled = enabled)
     }
 }
 
@@ -564,6 +611,16 @@ private fun dateFormatName(format: String): String = when (format) {
     "eu-mmm" -> stringResource(R.string.settings_date_format_eu_mmm)
     "eu-mmmm" -> stringResource(R.string.settings_date_format_eu_mmmm)
     else -> stringResource(R.string.settings_date_format_eu)
+}
+
+/** Issue #722: display label for an [AutoLockDelay] name (never a key string leaks to the UI). */
+@Composable
+private fun lockDelayOptionLabel(delayName: String): String = when (AutoLockDelay.valueOf(delayName)) {
+    AutoLockDelay.IMMEDIATELY -> stringResource(R.string.settings_local_auth_delay_immediately)
+    AutoLockDelay.ONE_MINUTE -> stringResource(R.string.settings_local_auth_delay_1m)
+    AutoLockDelay.FIVE_MINUTES -> stringResource(R.string.settings_local_auth_delay_5m)
+    AutoLockDelay.FIFTEEN_MINUTES -> stringResource(R.string.settings_local_auth_delay_15m)
+    AutoLockDelay.ONE_HOUR -> stringResource(R.string.settings_local_auth_delay_1h)
 }
 
 private val DATE_FORMAT_OPTIONS = listOf(

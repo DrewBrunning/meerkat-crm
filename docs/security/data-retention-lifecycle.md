@@ -7,7 +7,7 @@ each asset, not how long it survives.
 
 | | |
 |---|---|
-| **Last updated** | 2026-08-31 (issues [#414](https://github.com/DrewBrunning/mycorrhizal-crm/issues/414), [#420](https://github.com/DrewBrunning/mycorrhizal-crm/issues/420), [#424](https://github.com/DrewBrunning/mycorrhizal-crm/issues/424), [#622](https://github.com/DrewBrunning/mycorrhizal-crm/issues/622), [#391](https://github.com/DrewBrunning/mycorrhizal-crm/issues/391), [#389](https://github.com/DrewBrunning/mycorrhizal-crm/issues/389), [#651](https://github.com/DrewBrunning/mycorrhizal-crm/issues/651), [#351](https://github.com/DrewBrunning/mycorrhizal-crm/issues/351), [#353](https://github.com/DrewBrunning/mycorrhizal-crm/issues/353), [#549](https://github.com/DrewBrunning/mycorrhizal-crm/issues/549), [#505](https://github.com/DrewBrunning/mycorrhizal-crm/issues/505)) |
+| **Last updated** | 2026-09-05 (issues [#414](https://github.com/DrewBrunning/mycorrhizal-crm/issues/414), [#420](https://github.com/DrewBrunning/mycorrhizal-crm/issues/420), [#424](https://github.com/DrewBrunning/mycorrhizal-crm/issues/424), [#622](https://github.com/DrewBrunning/mycorrhizal-crm/issues/622), [#391](https://github.com/DrewBrunning/mycorrhizal-crm/issues/391), [#389](https://github.com/DrewBrunning/mycorrhizal-crm/issues/389), [#651](https://github.com/DrewBrunning/mycorrhizal-crm/issues/651), [#351](https://github.com/DrewBrunning/mycorrhizal-crm/issues/351), [#353](https://github.com/DrewBrunning/mycorrhizal-crm/issues/353), [#549](https://github.com/DrewBrunning/mycorrhizal-crm/issues/549), [#505](https://github.com/DrewBrunning/mycorrhizal-crm/issues/505), [#722](https://github.com/DrewBrunning/mycorrhizal-crm/issues/722)) |
 | **Scope** | Backend (Go/Gin + SQLite), CardDAV/CalDAV (server role), Android client, browser/frontend, operator backups. |
 | **Companion docs** | `docs/security/pii-inventory.md` (the *minimization* lens — should each store exist, and is it more/kept-longer than needed), `docs/security/asvs-l2.md` V8 (Data Protection), `docs/deployment.md` (Backups section — the authoritative backup/restore runbook), `docs/security/masvs-l1.md` (Android storage controls). |
 
@@ -253,6 +253,15 @@ External DAV clients (phones, desktop DAV apps) sync against `backend/carddav`, 
   after logout" story leaves nothing recoverable outside the (encrypted) DB the OS itself controls.
 - **Backups**: none — this is a device-local cache with no server-visible backup; Android's own
   Auto Backup is out of scope for app-internal DB files of this kind and isn't configured for it.
+
+**Android app-lock preference (issue #722).** The opt-in "require biometric / device PIN to open the
+app" flag and its grace-timeout live in a small `local_auth_prefs` DataStore file
+(`android/core/data/src/main/kotlin/.../repository/LocalAuthSettingsRepositoryImpl.kt`). That file holds
+no contact data and no credential — the session JWT copy is unchanged (still `EncryptedTokenStorage`),
+and the app-lock is a gate in front of it, not a second copy of it. The OS biometric prompt stores
+nothing in the app (templates live in the device's own secure hardware); the last-background timestamp
+that drives the relock grace period is held in memory only and dies with the process. Clearing the
+app's data (or a logout, which wipes the Room mirror per §8) leaves nothing extra behind.
 
 ## 9. Browser-side storage (frontend SPA)
 

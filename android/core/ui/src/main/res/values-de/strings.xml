@@ -419,6 +419,26 @@
     <string name="settings_password_change_button">Passwort aktualisieren</string>
     <string name="settings_password_mismatch">Die neuen Passwörter stimmen nicht überein.</string>
 
+    <!-- Settings: lokale App-Sperre (issue #722) -->
+    <string name="settings_local_auth">App-Sperre</string>
+    <string name="settings_local_auth_enable">Biometrie oder Geräte-PIN zum Öffnen der App verlangen</string>
+    <string name="settings_local_auth_enable_hint">Beim Öffnen der App, oder nachdem sie eine Weile im Hintergrund war, mit Fingerabdruck, Gesicht oder Geräte-PIN entsperren, bevor deine Kontakte angezeigt werden.</string>
+    <string name="settings_local_auth_delay">Automatisch sperren nach</string>
+    <string name="settings_local_auth_delay_immediately">Sofort</string>
+    <string name="settings_local_auth_delay_1m">1 Minute</string>
+    <string name="settings_local_auth_delay_5m">5 Minuten</string>
+    <string name="settings_local_auth_delay_15m">15 Minuten</string>
+    <string name="settings_local_auth_delay_1h">1 Stunde</string>
+    <string name="settings_local_auth_unavailable">Nicht verfügbar — dieses Gerät hat keinen Fingerabdruck, keine Gesichtserkennung und keinen sicheren Sperrbildschirm.</string>
+
+    <!-- App-Sperr-Bildschirm (issue #722) -->
+    <string name="app_lock_heading">Deine Daten sind gesperrt</string>
+    <string name="app_lock_signed_in_as">Angemeldet als %1$s</string>
+    <string name="app_lock_subtitle">Entsperre mit Fingerabdruck, Gesicht oder Geräte-PIN, um fortzufahren.</string>
+    <string name="app_lock_unlock">Entsperren</string>
+    <string name="app_lock_auth_failed">Entsperren fehlgeschlagen. Bitte versuche es erneut.</string>
+    <string name="app_lock_unsupported">Fingerabdruck-, Gesichts- oder Geräte-PIN-Entsperrung ist auf diesem Gerät nicht verfügbar. Melde dich ab, um dich mit deinem Passwort anzumelden.</string>
+
     <!-- Settings: webhooks (M25) -->
     <string name="settings_webhooks_title">Webhooks</string>
     <string name="settings_webhooks_description">HTTP-POST-Benachrichtigungen empfangen, wenn Ereignisse in deinem CRM auftreten.</string>

@@ -419,6 +419,26 @@
     <string name="settings_password_change_button">Aggiorna password</string>
     <string name="settings_password_mismatch">Le nuove password non coincidono.</string>
 
+    <!-- Impostazioni: blocco locale dell'app (issue #722) -->
+    <string name="settings_local_auth">Blocco dell\'app</string>
+    <string name="settings_local_auth_enable">Richiedi impronta, volto o PIN del dispositivo per aprire l\'app</string>
+    <string name="settings_local_auth_enable_hint">All\'apertura dell\'app, o dopo un po\' in background, sblocca con impronta, volto o PIN del dispositivo prima di mostrare i tuoi contatti.</string>
+    <string name="settings_local_auth_delay">Blocca automaticamente dopo</string>
+    <string name="settings_local_auth_delay_immediately">Immediatamente</string>
+    <string name="settings_local_auth_delay_1m">1 minuto</string>
+    <string name="settings_local_auth_delay_5m">5 minuti</string>
+    <string name="settings_local_auth_delay_15m">15 minuti</string>
+    <string name="settings_local_auth_delay_1h">1 ora</string>
+    <string name="settings_local_auth_unavailable">Non disponibile: questo dispositivo non ha impronte, sblocco col volto o blocco schermo sicuro.</string>
+
+    <!-- Schermata di blocco dell'app (issue #722) -->
+    <string name="app_lock_heading">I tuoi dati sono bloccati</string>
+    <string name="app_lock_signed_in_as">Accesso come %1$s</string>
+    <string name="app_lock_subtitle">Sblocca con impronta, volto o PIN del dispositivo per continuare.</string>
+    <string name="app_lock_unlock">Sblocca</string>
+    <string name="app_lock_auth_failed">Impossibile sbloccare. Riprova.</string>
+    <string name="app_lock_unsupported">Lo sblocco con impronta, volto o PIN non è disponibile su questo dispositivo. Esci per accedere con la tua password.</string>
+
     <!-- Settings: webhooks (M25) -->
     <string name="settings_webhooks_title">Webhooks</string>
     <string name="settings_webhooks_description">Ricevi notifiche HTTP POST quando si verificano eventi nel tuo CRM.</string>

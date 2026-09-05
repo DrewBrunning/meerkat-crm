@@ -147,6 +147,44 @@ and several other L2 rows — STORAGE-10/11/13/14/15, the entire V8 Resiliency c
 out of scope) — the client's claimed target is still MASVS-L1, now with two L2 controls satisfied
 as a documented bonus rather than a level claim.
 
+### P7 — Opt-in local app lock: biometric / device-credential gate before a resumed session (issue #722)
+
+MASVS-L1 has no direct control for an *application-level* unlock (biometrics/PIN before the app shows
+data) — the relevant behavior is split between MSTG-STORAGE-1/9 (data at rest is encrypted, and views
+are blanked when backgrounded) and the platform's own device-lock, which this project deliberately
+does not duplicate with a stored PIN. The Android testing pass that asked "how does Android login work
+offline?" exposed the actual gap: a persisted session was resumed into the authenticated tree with no
+local check at all, so anyone holding an unlocked device got the whole contact database. This position
+records the decision that closes it. Full design + trade-offs: `docs/adrs/0014-local-app-lock-and-biometric-resume.md`.
+
+**What shipped.** An opt-in, **default-off** "require biometric or device PIN to open the app" setting
+(`feature/settings/.../SettingsScreen.kt:331-365`, persisted in
+`core/data/.../LocalAuthSettingsRepositoryImpl.kt`). When on, a resumed session must pass the device's
+own gate: on **cold start** with a persisted JWT, and again after the app has been backgrounded longer
+than a configurable grace period (immediately / 1 / 5 / 15 / 60 minutes) — never on a quick app-switch
+within the grace period (`core/data/.../DefaultAppLockController.kt:97-164`). The gate lives in the app
+root's branch decision, so the authenticated tree is never composed before it clears
+(`MycorrhizalApp.kt:333-344`; pinned by `RootSurfaceTest`). Cancelling the OS prompt leaves the app
+locked; the only ways off are authenticating or "Log out" (which ends the session normally and keeps
+the opt-in — an explicit logout does **not** clear the preference). A fresh interactive login (password
+/ API token / 2FA / OIDC) is never gated — the user just authenticated. Session expiry (401 →
+`clearSession`) unlocks the gate so the next login lands on the main tree, not a stale lock.
+
+**Authentication surface.** The prompt accepts a Class 3 (`BIOMETRIC_STRONG`) biometric **or** the
+device credential (PIN/pattern/password) as the fallback — never a weak (Class 2) biometric, and no
+in-app PIN is stored (`app/.../applock/AppUnlockPrompter.kt:87-97`; capability gate in
+`core/data/.../AndroidLocalAuthCapabilities.kt:28-35`). On a device with neither a strong biometric nor
+a secure lock screen the toggle is disabled with the reason, so the gate can never be enabled without a
+way to open it. The biometric comparison happens in the OS (Keystore-authenticated); the app stores no
+biometric material and no PIN hash.
+
+**No backend change.** The stored JWT is a stateless bearer credential valid until its ~96 h `exp` or a
+server-side `token_version` bump; biometrics gate access to *resuming it*, which needs no server
+machinery. There is deliberately no long-lived "remember this device" credential that would let a
+biometric unlock mint a fresh token past `exp` — that would require server-side device grants/refresh
+tokens (out of scope; see the ADR). An expired token therefore lands the user on the login screen after
+unlock via the existing 401 → `clearSession` path, never a dead end.
+
 ---
 
 ## V2 — Data Storage and Privacy (MSTG-STORAGE)
@@ -158,7 +196,7 @@ L2 but satisfied — see the row below and P6.)
 
 | ID | Requirement (abbrev.) | Status | Evidence |
 |---|---|---|---|
-| STORAGE-1 | Sensitive data in system credential storage | satisfied | The JWT is stored in `EncryptedSharedPreferences` with a Keystore `MasterKey` (AES256_GCM) — `core/data/.../EncryptedTokenStorage.kt:14-25`, DI binding `SessionStorageModule.kt:20-21`. The Room mirror is SQLCipher whole-DB encrypted — random 32-byte passphrase in `EncryptedSharedPreferences` + Keystore `MasterKey` (`RoomPassphraseStore.kt`), `SupportOpenHelperFactory` wired in `DataModule.kt:163`, plaintext→encrypted transition at `RoomCacheEncryption.kt` (P4). |
+| STORAGE-1 | Sensitive data in system credential storage | satisfied | The JWT is stored in `EncryptedSharedPreferences` with a Keystore `MasterKey` (AES256_GCM) — `core/data/.../EncryptedTokenStorage.kt:14-25`, DI binding `SessionStorageModule.kt:20-21`. The Room mirror is SQLCipher whole-DB encrypted — random 32-byte passphrase in `EncryptedSharedPreferences` + Keystore `MasterKey` (`RoomPassphraseStore.kt`), `SupportOpenHelperFactory` wired in `DataModule.kt:172`, plaintext→encrypted transition at `RoomCacheEncryption.kt` (P4). |
 | STORAGE-2 | No sensitive data outside app container / credential storage | satisfied | All persistence is inside the sandbox (EncryptedSharedPreferences, DataStore, SQLCipher-encrypted Room). No external/shared storage for app data; the only `content://` surface is the FileProvider cache for user-initiated vCard sharing (`app/src/main/AndroidManifest.xml:78-86`). Offline PII is purged on logout/account-removal: the Room tables are cleared and the photo/attachment cache directory deleted (`LocalDataCleaner.kt`, invoked from `DefaultSessionManager.clearSession()`). |
 | STORAGE-3 | No sensitive data written to logs | satisfied | The JWT is never logged (`EncryptedTokenStorage.kt:10` comment); OkHttp debug logging is `Level.BASIC` (request line only, no headers/body) and debug-only (`core/network/.../NetworkFactory.kt:43-49`). |
 | STORAGE-4 | No sharing with third parties unless necessary | satisfied | No telemetry/analytics/third-party SDKs; Firebase is applied only when a real `google-services.json` exists and is otherwise inert (`app/build.gradle.kts:13-15`, `AndroidManifest.xml:98-105`). vCard export is a user-initiated system share sheet (`AndroidManifest.xml:76-86`). |
