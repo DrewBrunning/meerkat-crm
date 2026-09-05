@@ -157,7 +157,10 @@ var requestBodyBindings = map[string]requestBodyBinding{
 	"PUT /reminders/{id}":           bindingFor(models.Reminder{}),
 
 	// --- API tokens / webhooks / notifications / calendars / subscriptions ---
-	"POST /api-tokens":                       bindingFor(models.ApiTokenInput{}),
+	"POST /api-tokens": bindingFor(models.ApiTokenInput{}),
+	// Issue #722: the device-grant surface.
+	"POST /auth/device/grants":               bindingFor(models.DeviceGrantInput{}),
+	"POST /auth/device/session":              bindingFor(models.DeviceGrantSessionInput{}),
 	"POST /webhooks":                         bindingFor(models.WebhookInput{}),
 	"PUT /webhooks/{id}":                     bindingFor(models.WebhookInput{}),
 	"PUT /notifications/config":              bindingFor(models.NotificationConfigInput{}),
@@ -269,6 +272,7 @@ var noBodyMutatingRoutes = map[string]bool{
 	"POST /admin/contacts/rebuild-derived":        true,
 	"POST /reach-out-suggestions/{id}/dismiss":    true,
 	"POST /api-tokens/revoke-all":                 true,
+	"POST /auth/device/grants/revoke-all":         true,
 	"POST /api-tokens/{id}/rotate":                true,
 	"POST /contact-sync-conflicts/{id}/restore":   true,
 	"POST /contact-sync-conflicts/{id}/dismiss":   true,

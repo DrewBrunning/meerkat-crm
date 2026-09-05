@@ -92,7 +92,7 @@ func TestFreshDatabaseIsNotSubFloor(t *testing.T) {
 	version, _, ok, err := MigrationVersion(dbPath)
 	require.NoError(t, err)
 	require.True(t, ok)
-	assert.EqualValues(t, 50, version, "a fresh database must migrate to the latest version")
+	assert.EqualValues(t, 51, version, "a fresh database must migrate to the latest version")
 }
 
 // TestDirtySubFloorDatabaseRefusesToMigrate pins the MIG-04 (issue #439 /
@@ -147,7 +147,7 @@ func TestBridgeOverrideMigratesSubFloor(t *testing.T) {
 	version, dirty, ok, err := MigrationVersion(dbPath)
 	require.NoError(t, err)
 	require.True(t, ok)
-	assert.EqualValues(t, 50, version, "the bridge override must migrate to the latest version")
+	assert.EqualValues(t, 51, version, "the bridge override must migrate to the latest version")
 	assert.False(t, dirty)
 }
 

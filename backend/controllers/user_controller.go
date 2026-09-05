@@ -491,6 +491,12 @@ func ConfirmPasswordReset(context *gin.Context, cfg *config.Config) {
 		// misleading to report as a reset failure. Logged so it isn't silent.
 		log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke API tokens after password reset")
 	}
+	// Issue #722: the same compromise logic applies to device grants — a
+	// "forgot my password" reset must not leave a remembered device able to
+	// mint fresh sessions.
+	if _, err := services.RevokeAllDeviceGrants(db, user.ID); err != nil {
+		log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after password reset")
+	}
 
 	// Issue #411 / ASVS 2.2.3: let the account owner know a reset happened,
 	// so they notice if it wasn't them. Best-effort -- the password is
@@ -783,6 +789,16 @@ func ChangePassword(context *gin.Context, cfg *config.Config) {
 
 	// T18 audit: self-service password change (issue #381).
 	models.RecordAuditEvent(models.AuditEntityUser, fmt.Sprintf("%d", user.ID), models.AuditOpPasswordChange, user.ID)
+
+	// Issue #722: a self-service password change also revokes every device
+	// grant. Unlike API tokens (deliberately left standing here — see the
+	// comment in ConfirmPasswordReset), a device grant is the thing that lets
+	// *biometric* unlock mint a fresh session without any password, so one
+	// that outlives a password change would let anyone who learned the old
+	// password keep an unlocked door. The caller re-enrolls on next login.
+	if _, err := services.RevokeAllDeviceGrants(db, user.ID); err != nil {
+		log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after password change")
+	}
 
 	// The bump above also invalidated the caller's own token. Re-issue it so
 	// changing your password signs out your *other* sessions rather than

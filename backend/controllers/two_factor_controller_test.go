@@ -169,12 +169,22 @@ func TestTwoFactor_EnrollmentFlow(t *testing.T) {
 	token, err := services.GenerateToken(user, &config.Config{JWTSecretKey: testJWTSecret, JWTExpiryHours: 24})
 	require.NoError(t, err)
 
+	// Issue #722: a remembered device enrolled under the pre-2FA posture must
+	// be revoked the moment 2FA is enabled.
+	grant, _, err := services.CreateDeviceGrant(db, user.ID, "test-phone")
+	require.NoError(t, err)
+
 	// status: disabled before anything
 	w, _ := doRequest(router, sessionRequest("GET", "/users/2fa/status", nil, token))
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.Equal(t, `{"enabled":false}`, w.Body.String())
 
 	secret, _, sessionToken := enableTwoFactor(t, db, router, &config.Config{JWTSecretKey: testJWTSecret, JWTExpiryHours: 24}, user)
+
+	// The enrollment bump revoked every standing device grant.
+	var reloaded models.DeviceGrant
+	require.NoError(t, db.First(&reloaded, grant.ID).Error)
+	require.NotNil(t, reloaded.RevokedAt, "enabling 2FA must revoke device grants")
 
 	// status: enabled now (post-enrollment token, since TokenVersion bumped)
 	w, _ = doRequest(router, sessionRequest("GET", "/users/2fa/status", nil, sessionToken))
@@ -307,6 +317,11 @@ func TestTwoFactor_DisableFlow(t *testing.T) {
 	secret, recoveryCodes, sessionToken := enableTwoFactor(t, db, router, cfg, user)
 	require.NotEmpty(t, recoveryCodes)
 
+	// Issue #722: a device grant minted while 2FA was on must be revoked when
+	// 2FA is switched off (the TOTP that backed a stolen grant is now gone).
+	grant, _, err := services.CreateDeviceGrant(db, user.ID, "test-phone")
+	require.NoError(t, err)
+
 	// Wrong code can't disable.
 	w, _ := doRequest(router, sessionRequest("POST", "/users/2fa/disable", map[string]string{"code": "000000"}, sessionToken))
 	assert.Equal(t, http.StatusBadRequest, w.Code)
@@ -315,6 +330,10 @@ func TestTwoFactor_DisableFlow(t *testing.T) {
 	w, cookies := doRequest(router, sessionRequest("POST", "/users/2fa/disable", map[string]string{"code": totpCode(t, secret)}, sessionToken))
 	require.Equal(t, http.StatusOK, w.Code)
 	assert.NotNil(t, cookies["auth_token"])
+
+	var reloaded models.DeviceGrant
+	require.NoError(t, db.First(&reloaded, grant.ID).Error)
+	require.NotNil(t, reloaded.RevokedAt, "disabling 2FA must revoke device grants")
 
 	var stored models.User
 	require.NoError(t, db.First(&stored, user.ID).Error)

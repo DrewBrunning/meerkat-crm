@@ -52,6 +52,14 @@ func RegisterRoutes(router *gin.Engine, cfg *config.Config, db *gorm.DB, oidcPro
 		v1.POST("/login/2fa", middleware.AuthRateLimitMiddleware(), func(c *gin.Context) {
 			controllers.Complete2FALogin(c, cfg)
 		})
+		// Issue #722: fully biometric login — a device that holds an
+		// unrevoked device grant (and whose owner just passed the local
+		// biometric gate) exchanges it for a fresh session JWT. Rate-limited
+		// exactly like /login: possession of a grant is as powerful as a
+		// password and must be defended the same way.
+		v1.POST("/auth/device/session", middleware.AuthRateLimitMiddleware(), middleware.ValidateJSONMiddleware(&models.DeviceGrantSessionInput{}), func(c *gin.Context) {
+			controllers.ExchangeDeviceGrant(c, cfg)
+		})
 		v1.POST("/logout", func(c *gin.Context) {
 			controllers.LogoutUser(c, cfg, oidcProvider)
 		})
@@ -429,6 +437,15 @@ func RegisterRoutes(router *gin.Engine, cfg *config.Config, db *gorm.DB, oidcPro
 			protected.POST("/api-tokens/revoke-all", controllers.RevokeAllApiTokens)
 			protected.DELETE("/api-tokens/:id", controllers.RevokeApiToken)
 			protected.POST("/api-tokens/:id/rotate", controllers.RotateApiToken)
+
+			// Issue #722: device grants (the server half of fully biometric
+			// login) — enrolled by the authenticated caller, listed so a user
+			// can see what's signed in, and revoked individually or all at
+			// once (the lost-phone path).
+			protected.GET("/auth/device/grants", controllers.ListDeviceGrants)
+			protected.POST("/auth/device/grants", middleware.ValidateJSONMiddleware(&models.DeviceGrantInput{}), controllers.CreateDeviceGrant)
+			protected.POST("/auth/device/grants/revoke-all", controllers.RevokeAllDeviceGrants)
+			protected.DELETE("/auth/device/grants/:id", controllers.RevokeDeviceGrant)
 
 			// Webhook routes
 			protected.GET("/webhooks", controllers.ListWebhooks)

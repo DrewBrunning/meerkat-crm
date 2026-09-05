@@ -106,6 +106,7 @@ func buildIdemTable() map[string]idemRow {
 		"POST /api/v1/contact-subscriptions",
 		"POST /api/v1/contact-shares",
 		"POST /api/v1/api-tokens",
+		"POST /api/v1/auth/device/grants",
 		"POST /api/v1/notifications/devices",
 		"POST /api/v1/notifications/push-subscriptions",
 	} {
@@ -159,6 +160,7 @@ func buildIdemTable() map[string]idemRow {
 		"POST /api/v1/immich/sync",
 		"POST /api/v1/api-tokens/:id/rotate",
 		"POST /api/v1/api-tokens/revoke-all",
+		"POST /api/v1/auth/device/grants/revoke-all",
 		"POST /api/v1/notifications/config/test",
 		"POST /api/v1/audit/:id/undo",
 		"POST /api/v1/immich/test-connection",
@@ -201,6 +203,7 @@ func buildIdemTable() map[string]idemRow {
 		"POST /api/v1/register",
 		"POST /api/v1/login",
 		"POST /api/v1/login/2fa",
+		"POST /api/v1/auth/device/session",
 		"POST /api/v1/logout",
 		"POST /api/v1/check-password-strength",
 		"POST /api/v1/password-reset/request",

@@ -476,6 +476,11 @@ func UpdateUser(c *gin.Context) {
 			// misleading to report as an update failure. Logged so it isn't silent.
 			log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke API tokens after admin password reset")
 		}
+		// Issue #722: an admin password reset must not leave remembered
+		// devices able to mint fresh sessions via biometric unlock either.
+		if _, err := services.RevokeAllDeviceGrants(db, user.ID); err != nil {
+			log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after admin password reset")
+		}
 	}
 
 	// T18 audit: admin user edit, with the security-relevant deltas spelled
@@ -568,6 +573,13 @@ func ResetUserTwoFactor(c *gin.Context) {
 		log.Error().Err(err).Uint64("user_id", id).Msg("Failed to reload user after 2FA reset")
 		apperrors.AbortWithError(c, apperrors.ErrDatabase("get user").WithError(err))
 		return
+	}
+
+	// Issue #722: an admin 2FA reset ends every device grant too — the 2FA
+	// that previously stood between a stolen grant and a full account is now
+	// gone, so remembered devices must re-enroll under the new posture.
+	if _, err := services.RevokeAllDeviceGrants(db, user.ID); err != nil {
+		log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after 2FA reset")
 	}
 
 	// Issue #592 audit: admin-initiated 2FA reset, attributed to the acting
@@ -749,6 +761,12 @@ func DeleteUser(c *gin.Context) {
 
 		// Delete API tokens
 		if err := tx.Where("user_id = ?", userID).Delete(&models.ApiToken{}).Error; err != nil {
+			return err
+		}
+
+		// Delete device grants (issue #722) — the biometric-login credentials
+		// die with the account, exactly like API tokens.
+		if err := tx.Where("user_id = ?", userID).Delete(&models.DeviceGrant{}).Error; err != nil {
 			return err
 		}
 
