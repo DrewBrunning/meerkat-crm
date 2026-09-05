@@ -13,6 +13,9 @@ dependencies {
     implementation(project(":core:domain"))
     implementation(project(":core:ui"))
     implementation(project(":feature:tracking"))
+    // Issue #814 Phase 2: encode the TOTP enrollment otpauth:// URI as a QR
+    // bitmap (pure-Java, no scanning/camera).
+    implementation(libs.zxing.core)
 
     implementation(platform(libs.androidx.compose.bom))
     implementation(libs.androidx.compose.ui)

@@ -47,6 +47,13 @@
     <string name="login_error_password_required">Password is required</string>
     <string name="login_error_token_required">API token is required</string>
     <string name="login_error_token_prefix">API tokens start with \'mycorrhizal_\'</string>
+    <!-- N8: two-factor auth (issue #158 / #814) -->
+    <string name="login_two_factor_title">Two-factor authentication</string>
+    <string name="login_two_factor_description">Enter the 6-digit code from your authenticator app, or one of your recovery codes.</string>
+    <string name="login_two_factor_code_label">Verification code</string>
+    <string name="login_two_factor_back">Back to sign in</string>
+    <string name="login_error_two_factor_invalid">Invalid code. Please try again.</string>
+    <string name="login_error_two_factor_expired">Your sign-in session expired. Please sign in again.</string>
 
     <!-- M26: registration + forgot password -->
     <string name="login_no_account">No account? Create one</string>
@@ -320,6 +327,41 @@
     <string name="settings_data">Data</string>
     <string name="settings_data_review">Data suggestions</string>
     <string name="settings_suggest_relationships">Suggest relationships</string>
+    <!-- N8: two-factor auth (issue #158 / #814) -->
+    <string name="settings_two_factor_title">Two-factor authentication</string>
+    <string name="settings_two_factor_description">Add a second step to sign-in with your password: a 6-digit code from an authenticator app. This protects your data even if your password is stolen.</string>
+    <string name="settings_two_factor_enable_button">Enable two-factor authentication</string>
+    <string name="settings_two_factor_setting_up">Setting up...</string>
+    <string name="settings_two_factor_enable_success">Two-factor authentication enabled.</string>
+    <string name="settings_two_factor_disable_success">Two-factor authentication disabled.</string>
+    <string name="settings_two_factor_regenerate_success">Recovery codes regenerated.</string>
+    <string name="settings_two_factor_setup_error">We couldn\'t start setup. Please try again.</string>
+    <string name="settings_two_factor_invalid_code">Invalid code. Please try again.</string>
+    <string name="settings_two_factor_enabled_badge">Two-factor authentication is enabled</string>
+    <string name="settings_two_factor_enabled_description">Sign-in now requires a code from your authenticator app in addition to your password. CardDAV sync and API tokens are not affected.</string>
+    <string name="settings_two_factor_regenerate_button">Regenerate recovery codes</string>
+    <string name="settings_two_factor_disable_button">Disable</string>
+    <string name="settings_two_factor_setup_title">Enable two-factor authentication</string>
+    <string name="settings_two_factor_setup_description">Scan this QR code with your authenticator app (or enter the key manually), then enter the 6-digit code it shows to confirm.</string>
+    <string name="settings_two_factor_setup_manual_key">Manual setup key</string>
+    <string name="settings_two_factor_setup_code_label">Verification code</string>
+    <string name="settings_two_factor_setup_code_help">6-digit code from your authenticator app.</string>
+    <string name="settings_two_factor_setup_confirm_button">Enable and continue</string>
+    <string name="settings_two_factor_setup_enabling">Enabling...</string>
+    <string name="settings_two_factor_disable_title">Disable two-factor authentication</string>
+    <string name="settings_two_factor_disable_description">Enter a current code from your authenticator app to confirm. All other sessions will be signed out.</string>
+    <string name="settings_two_factor_regenerate_title">Regenerate recovery codes</string>
+    <string name="settings_two_factor_regenerate_description">Enter a current code from your authenticator app. The old recovery codes will stop working immediately.</string>
+    <string name="settings_two_factor_code_prompt_label">Verification code</string>
+    <string name="settings_two_factor_confirm">Confirm</string>
+    <string name="settings_two_factor_submitting">Please wait...</string>
+    <string name="settings_two_factor_recovery_title">Recovery codes</string>
+    <string name="settings_two_factor_recovery_warning">Store these somewhere safe. Each code works only once, and they will not be shown again.</string>
+    <string name="settings_two_factor_recovery_description">Use a recovery code to sign in if you lose your authenticator app.</string>
+    <string name="settings_two_factor_recovery_copy">Copy all codes</string>
+    <string name="settings_two_factor_recovery_copied">Copied!</string>
+    <string name="settings_two_factor_recovery_done">Done</string>
+    <string name="settings_two_factor_qr_content_description">QR code for your authenticator app. Scan it, or enter the manual setup key below.</string>
     <string name="settings_relationships_suggested">%1$d new relationship suggestions generated — review them on a contact\'s Relationships screen.</string>
     <string name="settings_relationships_none">No new relationship suggestions.</string>
     <string name="settings_suggest_relationships_error">Could not generate relationship suggestions.</string>

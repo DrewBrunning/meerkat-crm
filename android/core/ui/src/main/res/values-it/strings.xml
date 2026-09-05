@@ -47,6 +47,13 @@
     <string name="login_error_password_required">La password è obbligatoria</string>
     <string name="login_error_token_required">Il token API è obbligatorio</string>
     <string name="login_error_token_prefix">I token API iniziano con \'mycorrhizal_\'</string>
+    <!-- N8: two-factor auth (issue #158 / #814) -->
+    <string name="login_two_factor_title">Autenticazione a due fattori</string>
+    <string name="login_two_factor_description">Inserisci il codice a 6 cifre della tua app di autenticazione oppure uno dei tuoi codici di recupero.</string>
+    <string name="login_two_factor_code_label">Codice di verifica</string>
+    <string name="login_two_factor_back">Torna all\'accesso</string>
+    <string name="login_error_two_factor_invalid">Codice non valido. Riprova.</string>
+    <string name="login_error_two_factor_expired">La sessione di accesso è scaduta. Accedi di nuovo.</string>
 
     <!-- M26: registration + forgot password -->
     <string name="login_no_account">Non hai un account? Creane uno</string>
@@ -315,6 +322,41 @@
     <string name="settings_data">Dati</string>
     <string name="settings_data_review">Suggerimenti sui dati</string>
     <string name="settings_suggest_relationships">Suggerisci relazioni</string>
+    <!-- N8: two-factor auth (issue #158 / #814) -->
+    <string name="settings_two_factor_title">Autenticazione a due fattori</string>
+    <string name="settings_two_factor_description">Aggiungi un secondo passaggio all\'accesso con la tua password: un codice a 6 cifre da un\'app di autenticazione. Questo protegge i tuoi dati anche se la password viene rubata.</string>
+    <string name="settings_two_factor_enable_button">Attiva l\'autenticazione a due fattori</string>
+    <string name="settings_two_factor_setting_up">Configurazione in corso...</string>
+    <string name="settings_two_factor_enable_success">Autenticazione a due fattori attivata.</string>
+    <string name="settings_two_factor_disable_success">Autenticazione a due fattori disattivata.</string>
+    <string name="settings_two_factor_regenerate_success">Codici di recupero rigenerati.</string>
+    <string name="settings_two_factor_setup_error">Impossibile avviare la configurazione. Riprova.</string>
+    <string name="settings_two_factor_invalid_code">Codice non valido. Riprova.</string>
+    <string name="settings_two_factor_enabled_badge">L\'autenticazione a due fattori è attiva</string>
+    <string name="settings_two_factor_enabled_description">L\'accesso ora richiede un codice dalla tua app di autenticazione oltre alla password. La sincronizzazione CardDAV e i token API non sono interessati.</string>
+    <string name="settings_two_factor_regenerate_button">Rigenera i codici di recupero</string>
+    <string name="settings_two_factor_disable_button">Disattiva</string>
+    <string name="settings_two_factor_setup_title">Attiva l\'autenticazione a due fattori</string>
+    <string name="settings_two_factor_setup_description">Scansiona questo codice QR con la tua app di autenticazione (oppure inserisci la chiave manualmente), poi inserisci il codice a 6 cifre che mostra per confermare.</string>
+    <string name="settings_two_factor_setup_manual_key">Chiave di configurazione manuale</string>
+    <string name="settings_two_factor_setup_code_label">Codice di verifica</string>
+    <string name="settings_two_factor_setup_code_help">Codice a 6 cifre dalla tua app di autenticazione.</string>
+    <string name="settings_two_factor_setup_confirm_button">Attiva e continua</string>
+    <string name="settings_two_factor_setup_enabling">Attivazione in corso...</string>
+    <string name="settings_two_factor_disable_title">Disattiva l\'autenticazione a due fattori</string>
+    <string name="settings_two_factor_disable_description">Inserisci un codice attuale dalla tua app di autenticazione per confermare. Tutte le altre sessioni verranno chiuse.</string>
+    <string name="settings_two_factor_regenerate_title">Rigenera i codici di recupero</string>
+    <string name="settings_two_factor_regenerate_description">Inserisci un codice attuale dalla tua app di autenticazione. I vecchi codici di recupero smetteranno immediatamente di funzionare.</string>
+    <string name="settings_two_factor_code_prompt_label">Codice di verifica</string>
+    <string name="settings_two_factor_confirm">Conferma</string>
+    <string name="settings_two_factor_submitting">Attendere prego...</string>
+    <string name="settings_two_factor_recovery_title">Codici di recupero</string>
+    <string name="settings_two_factor_recovery_warning">Conserva questi codici in un luogo sicuro. Ogni codice funziona una sola volta e non verrà più mostrato.</string>
+    <string name="settings_two_factor_recovery_description">Usa un codice di recupero per accedere se perdi la tua app di autenticazione.</string>
+    <string name="settings_two_factor_recovery_copy">Copia tutti i codici</string>
+    <string name="settings_two_factor_recovery_copied">Copiato!</string>
+    <string name="settings_two_factor_recovery_done">Fatto</string>
+    <string name="settings_two_factor_qr_content_description">Codice QR per la tua app di autenticazione. Scansionalo oppure inserisci la chiave di configurazione manuale qui sotto.</string>
     <string name="settings_relationships_suggested">Generati %1$d nuovi suggerimenti di relazioni: rivedili nella schermata Relazioni di un contatto.</string>
     <string name="settings_relationships_none">Nessun nuovo suggerimento di relazioni.</string>
     <string name="settings_suggest_relationships_error">Impossibile generare i suggerimenti di relazioni.</string>

@@ -47,6 +47,13 @@
     <string name="login_error_password_required">Le mot de passe est requis</string>
     <string name="login_error_token_required">Le jeton API est requis</string>
     <string name="login_error_token_prefix">Les jetons API commencent par \'mycorrhizal_\'</string>
+    <!-- N8: two-factor auth (issue #158 / #814) -->
+    <string name="login_two_factor_title">Authentification à deux facteurs</string>
+    <string name="login_two_factor_description">Saisissez le code à 6 chiffres de votre application d\'authentification, ou l\'un de vos codes de récupération.</string>
+    <string name="login_two_factor_code_label">Code de vérification</string>
+    <string name="login_two_factor_back">Retour à la connexion</string>
+    <string name="login_error_two_factor_invalid">Code invalide. Veuillez réessayer.</string>
+    <string name="login_error_two_factor_expired">Votre session de connexion a expiré. Veuillez vous reconnecter.</string>
 
     <!-- M26: registration + forgot password -->
     <string name="login_no_account">Pas de compte ? Créez-en un</string>
@@ -315,6 +322,41 @@
     <string name="settings_data">Données</string>
     <string name="settings_data_review">Suggestions de données</string>
     <string name="settings_suggest_relationships">Suggérer des relations</string>
+    <!-- N8: two-factor auth (issue #158 / #814) -->
+    <string name="settings_two_factor_title">Authentification à deux facteurs</string>
+    <string name="settings_two_factor_description">Ajoutez une deuxième étape à la connexion avec votre mot de passe : un code à 6 chiffres provenant d\'une application d\'authentification. Cela protège vos données même si votre mot de passe est volé.</string>
+    <string name="settings_two_factor_enable_button">Activer l\'authentification à deux facteurs</string>
+    <string name="settings_two_factor_setting_up">Configuration en cours...</string>
+    <string name="settings_two_factor_enable_success">Authentification à deux facteurs activée.</string>
+    <string name="settings_two_factor_disable_success">Authentification à deux facteurs désactivée.</string>
+    <string name="settings_two_factor_regenerate_success">Codes de récupération régénérés.</string>
+    <string name="settings_two_factor_setup_error">Nous n\'avons pas pu démarrer la configuration. Veuillez réessayer.</string>
+    <string name="settings_two_factor_invalid_code">Code invalide. Veuillez réessayer.</string>
+    <string name="settings_two_factor_enabled_badge">L\'authentification à deux facteurs est activée</string>
+    <string name="settings_two_factor_enabled_description">La connexion exige désormais un code de votre application d\'authentification en plus de votre mot de passe. La synchronisation CardDAV et les jetons d\'API ne sont pas concernés.</string>
+    <string name="settings_two_factor_regenerate_button">Régénérer les codes de récupération</string>
+    <string name="settings_two_factor_disable_button">Désactiver</string>
+    <string name="settings_two_factor_setup_title">Activer l\'authentification à deux facteurs</string>
+    <string name="settings_two_factor_setup_description">Scannez ce code QR avec votre application d\'authentification (ou saisissez la clé manuellement), puis entrez le code à 6 chiffres qu\'elle affiche pour confirmer.</string>
+    <string name="settings_two_factor_setup_manual_key">Clé de configuration manuelle</string>
+    <string name="settings_two_factor_setup_code_label">Code de vérification</string>
+    <string name="settings_two_factor_setup_code_help">Code à 6 chiffres de votre application d\'authentification.</string>
+    <string name="settings_two_factor_setup_confirm_button">Activer et continuer</string>
+    <string name="settings_two_factor_setup_enabling">Activation en cours...</string>
+    <string name="settings_two_factor_disable_title">Désactiver l\'authentification à deux facteurs</string>
+    <string name="settings_two_factor_disable_description">Saisissez un code actuel de votre application d\'authentification pour confirmer. Toutes les autres sessions seront déconnectées.</string>
+    <string name="settings_two_factor_regenerate_title">Régénérer les codes de récupération</string>
+    <string name="settings_two_factor_regenerate_description">Saisissez un code actuel de votre application d\'authentification. Les anciens codes de récupération cesseront immédiatement de fonctionner.</string>
+    <string name="settings_two_factor_code_prompt_label">Code de vérification</string>
+    <string name="settings_two_factor_confirm">Confirmer</string>
+    <string name="settings_two_factor_submitting">Veuillez patienter...</string>
+    <string name="settings_two_factor_recovery_title">Codes de récupération</string>
+    <string name="settings_two_factor_recovery_warning">Conservez ces codes dans un endroit sûr. Chaque code ne fonctionne qu\'une seule fois et ne sera plus affiché.</string>
+    <string name="settings_two_factor_recovery_description">Utilisez un code de récupération pour vous connecter si vous perdez votre application d\'authentification.</string>
+    <string name="settings_two_factor_recovery_copy">Copier tous les codes</string>
+    <string name="settings_two_factor_recovery_copied">Copié !</string>
+    <string name="settings_two_factor_recovery_done">Terminé</string>
+    <string name="settings_two_factor_qr_content_description">Code QR pour votre application d\'authentification. Scannez-le ou saisissez la clé de configuration manuelle ci-dessous.</string>
     <string name="settings_relationships_suggested">%1$d nouvelles suggestions de relations générées — examinez-les dans l\'écran Relations d\'un contact.</string>
     <string name="settings_relationships_none">Aucune nouvelle suggestion de relation.</string>
     <string name="settings_suggest_relationships_error">Impossible de générer les suggestions de relations.</string>

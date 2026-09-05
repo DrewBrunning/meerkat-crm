@@ -69,6 +69,15 @@ interface SessionManager : TokenProvider, BaseUrlProvider {
     /** Merge profile details (userId, admin, language, …) into the session. */
     suspend fun setProfile(profile: SessionState)
 
+    /**
+     * Replace the stored bearer token in place, keeping the rest of the
+     * session (server URL + profile) untouched. Used when the server re-issues
+     * the session token after a token_version bump (2FA confirm/disable) so
+     * the current session survives the mutation instead of 401ing on the next
+     * request.
+     */
+    suspend fun setToken(token: String)
+
     /** Drop the session entirely (token + prefs). */
     suspend fun clearSession()
 }

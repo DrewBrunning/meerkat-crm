@@ -35,6 +35,7 @@ import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.platform.LocalAutofillManager
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.input.KeyboardType
@@ -75,6 +76,11 @@ fun LoginScreen(
                     // the just-submitted Username/Password fields were used
                     // successfully, which is what triggers the "save to
                     // password manager" prompt for a first-time login.
+                    //
+                    // N8 (#814): LoggedIn is only emitted once the WHOLE flow
+                    // succeeds — for a 2FA account that is after the code step,
+                    // never after the password step alone (the server would
+                    // have rejected a stale save anyway).
                     autofillManager?.commit()
                     onLoggedIn()
                 }
@@ -88,6 +94,8 @@ fun LoginScreen(
         onServerUrlChange = viewModel::onServerUrlChange,
         onModeChange = viewModel::onModeChange,
         onSubmit = viewModel::onSubmit,
+        onTwoFactorSubmit = viewModel::onSubmitTwoFactorCode,
+        onBackToCredentials = viewModel::onBackToCredentials,
         onSignInWithSso = onSignInWithSso,
         onRegisterClick = onRegisterClick,
         onForgotPasswordClick = onForgotPasswordClick,
@@ -100,7 +108,9 @@ fun LoginScreen(
 /**
  * Stateless login form — the screen's canonical states are testable directly
  * (ticket §10.4). Field text lives in local `remember` state; credentials
- * (password/API token) are never saveable and are passed up on submit.
+ * (password/API token/2FA code) are never saveable and are passed up on submit.
+ * When [LoginUiState.twoFactorStep] is set the credentials form is replaced by
+ * the two-factor code step (mirrors web LoginPage.tsx's step machine).
  */
 @Composable
 fun LoginScreenContent(
@@ -108,6 +118,8 @@ fun LoginScreenContent(
     onServerUrlChange: (String) -> Unit,
     onModeChange: (LoginMode) -> Unit,
     onSubmit: (serverUrl: String, identifier: String, password: String, apiToken: String) -> Unit,
+    onTwoFactorSubmit: (String) -> Unit = {},
+    onBackToCredentials: () -> Unit = {},
     onSignInWithSso: (String) -> Unit = {},
     onRegisterClick: () -> Unit = {},
     onForgotPasswordClick: () -> Unit = {},
@@ -121,6 +133,12 @@ fun LoginScreenContent(
     var identifier by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var apiToken by remember { mutableStateOf("") }
+    var twoFactorCode by remember { mutableStateOf("") }
+    // N8 (#814): a stale code must not survive leaving the step (a consumed
+    // challenge is single-use, and the code is transient by design).
+    LaunchedEffect(uiState.twoFactorStep) {
+        if (!uiState.twoFactorStep) twoFactorCode = ""
+    }
 
     Scaffold(
         // #203: Toast is announced inconsistently by TalkBack and can't be
@@ -152,103 +170,114 @@ fun LoginScreenContent(
                 text = stringResource(R.string.app_name),
                 style = MaterialTheme.typography.titleLarge,
             )
-            Text(
-                text = stringResource(R.string.login_connect_to_server),
-                style = MaterialTheme.typography.bodyLarge,
-            )
 
-            OutlinedTextField(
-                value = serverUrl,
-                onValueChange = { serverUrl = it; onServerUrlChange(it) },
-                label = { Text(stringResource(R.string.login_server_url)) },
-                placeholder = { Text(stringResource(R.string.login_server_url_hint)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
-                modifier = Modifier.fillMaxWidth(),
-            )
-
-            SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                SegmentedButton(
-                    selected = uiState.mode == LoginMode.PASSWORD,
-                    onClick = { onModeChange(LoginMode.PASSWORD) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                ) { Text(stringResource(R.string.login_mode_password)) }
-                SegmentedButton(
-                    selected = uiState.mode == LoginMode.API_TOKEN,
-                    onClick = { onModeChange(LoginMode.API_TOKEN) },
-                    shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                ) { Text(stringResource(R.string.login_api_token)) }
-            }
-
-            if (uiState.mode == LoginMode.PASSWORD) {
-                // The field accepts either a username or an email, so offer
-                // both content types — a password manager matches whichever
-                // it has saved for this site.
-                AutofillOutlinedTextField(
-                    value = identifier,
-                    onValueChange = { identifier = it },
-                    label = stringResource(R.string.login_username_or_email),
-                    contentType = ContentType.Username + ContentType.EmailAddress,
-                )
-                AutofillOutlinedTextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    label = stringResource(R.string.login_mode_password),
-                    contentType = ContentType.Password,
-                    visualTransformation = PasswordVisualTransformation(),
+            if (uiState.twoFactorStep) {
+                TwoFactorLoginStep(
+                    code = twoFactorCode,
+                    onCodeChange = { twoFactorCode = it },
+                    onTwoFactorSubmit = { onTwoFactorSubmit(twoFactorCode) },
+                    onBackToCredentials = onBackToCredentials,
+                    isLoading = uiState.isLoading,
                 )
             } else {
+                Text(
+                    text = stringResource(R.string.login_connect_to_server),
+                    style = MaterialTheme.typography.bodyLarge,
+                )
+
                 OutlinedTextField(
-                    value = apiToken,
-                    onValueChange = { apiToken = it },
-                    label = { Text(stringResource(R.string.login_api_token)) },
-                    placeholder = { Text(stringResource(R.string.login_api_token_hint)) },
+                    value = serverUrl,
+                    onValueChange = { serverUrl = it; onServerUrlChange(it) },
+                    label = { Text(stringResource(R.string.login_server_url)) },
+                    placeholder = { Text(stringResource(R.string.login_server_url_hint)) },
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
                     modifier = Modifier.fillMaxWidth(),
                 )
-            }
 
-            if (uiState.isLoading) {
-                // #203: no Button is present in this branch, so the
-                // stateDescription-on-a-Button pattern used elsewhere doesn't
-                // apply here — the spinner itself needs the name.
-                val savingLabel = stringResource(R.string.a11y_state_saving)
-                CircularProgressIndicator(
-                    modifier = Modifier.semantics { contentDescription = savingLabel },
-                )
-            } else {
-                Button(
-                    onClick = {
-                        onSubmit(serverUrl, identifier, password, apiToken)
-                    },
+                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+                    SegmentedButton(
+                        selected = uiState.mode == LoginMode.PASSWORD,
+                        onClick = { onModeChange(LoginMode.PASSWORD) },
+                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+                    ) { Text(stringResource(R.string.login_mode_password)) }
+                    SegmentedButton(
+                        selected = uiState.mode == LoginMode.API_TOKEN,
+                        onClick = { onModeChange(LoginMode.API_TOKEN) },
+                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+                    ) { Text(stringResource(R.string.login_api_token)) }
+                }
+
+                if (uiState.mode == LoginMode.PASSWORD) {
+                    // The field accepts either a username or an email, so offer
+                    // both content types — a password manager matches whichever
+                    // it has saved for this site.
+                    AutofillOutlinedTextField(
+                        value = identifier,
+                        onValueChange = { identifier = it },
+                        label = stringResource(R.string.login_username_or_email),
+                        contentType = ContentType.Username + ContentType.EmailAddress,
+                    )
+                    AutofillOutlinedTextField(
+                        value = password,
+                        onValueChange = { password = it },
+                        label = stringResource(R.string.login_mode_password),
+                        contentType = ContentType.Password,
+                        visualTransformation = PasswordVisualTransformation(),
+                    )
+                } else {
+                    OutlinedTextField(
+                        value = apiToken,
+                        onValueChange = { apiToken = it },
+                        label = { Text(stringResource(R.string.login_api_token)) },
+                        placeholder = { Text(stringResource(R.string.login_api_token_hint)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+
+                if (uiState.isLoading) {
+                    // #203: no Button is present in this branch, so the
+                    // stateDescription-on-a-Button pattern used elsewhere doesn't
+                    // apply here — the spinner itself needs the name.
+                    val savingLabel = stringResource(R.string.a11y_state_saving)
+                    CircularProgressIndicator(
+                        modifier = Modifier.semantics { contentDescription = savingLabel },
+                    )
+                } else {
+                    Button(
+                        onClick = {
+                            onSubmit(serverUrl, identifier, password, apiToken)
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Text(stringResource(R.string.login_sign_in))
+                    }
+                }
+
+                TextButton(
+                    onClick = { onSignInWithSso(serverUrl) },
+                    enabled = serverUrl.isNotBlank(),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(stringResource(R.string.login_sign_in))
+                    Text(stringResource(R.string.login_sso))
                 }
-            }
 
-            TextButton(
-                onClick = { onSignInWithSso(serverUrl) },
-                enabled = serverUrl.isNotBlank(),
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.login_sso))
-            }
-
-            // M26: account creation + password reset live on the same screen
-            // as sign-in on web (LoginPage.tsx links both), so Android keeps
-            // them together here too.
-            TextButton(
-                onClick = onRegisterClick,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.login_no_account))
-            }
-            TextButton(
-                onClick = onForgotPasswordClick,
-                modifier = Modifier.fillMaxWidth(),
-            ) {
-                Text(stringResource(R.string.login_forgot_password))
+                // M26: account creation + password reset live on the same screen
+                // as sign-in on web (LoginPage.tsx links both), so Android keeps
+                // them together here too.
+                TextButton(
+                    onClick = onRegisterClick,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.login_no_account))
+                }
+                TextButton(
+                    onClick = onForgotPasswordClick,
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Text(stringResource(R.string.login_forgot_password))
+                }
             }
 
             val errorMessage = uiState.errorRes?.let { stringResource(it) } ?: uiState.error
@@ -267,6 +296,60 @@ fun LoginScreenContent(
                     onOidcErrorShown()
                 }
             }
+        }
+    }
+}
+
+/**
+ * N8 (#814): step 2 of a two-factor login — a single code field (6-digit TOTP
+ * or a XXXXX-XXXXX-XXXXX recovery code). Deliberately NOT a numeric-only
+ * keyboard: recovery codes are alphanumeric and must be typeable, not just
+ * pastable (the field stays paste-friendly for TOTP entry).
+ */
+@Composable
+private fun TwoFactorLoginStep(
+    code: String,
+    onCodeChange: (String) -> Unit,
+    onTwoFactorSubmit: () -> Unit,
+    onBackToCredentials: () -> Unit,
+    isLoading: Boolean,
+) {
+    Text(
+        text = stringResource(R.string.login_two_factor_title),
+        style = MaterialTheme.typography.titleMedium,
+        modifier = Modifier.semantics { heading() },
+    )
+    Text(
+        text = stringResource(R.string.login_two_factor_description),
+        style = MaterialTheme.typography.bodyLarge,
+    )
+    OutlinedTextField(
+        value = code,
+        onValueChange = onCodeChange,
+        label = { Text(stringResource(R.string.login_two_factor_code_label)) },
+        singleLine = true,
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Ascii),
+        modifier = Modifier.fillMaxWidth(),
+    )
+    if (isLoading) {
+        val savingLabel = stringResource(R.string.a11y_state_saving)
+        CircularProgressIndicator(
+            modifier = Modifier.semantics { contentDescription = savingLabel },
+        )
+    } else {
+        Button(
+            onClick = onTwoFactorSubmit,
+            enabled = code.isNotBlank(),
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.login_sign_in))
+        }
+        TextButton(
+            onClick = onBackToCredentials,
+            enabled = !isLoading,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Text(stringResource(R.string.login_two_factor_back))
         }
     }
 }

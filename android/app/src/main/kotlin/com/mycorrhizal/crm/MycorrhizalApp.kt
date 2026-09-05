@@ -111,6 +111,7 @@ import com.mycorrhizal.crm.feature.settings.DataScreen
 import com.mycorrhizal.crm.feature.settings.ImmichSettingsScreen
 import com.mycorrhizal.crm.feature.settings.NotificationChannelsScreen
 import com.mycorrhizal.crm.feature.settings.SettingsScreen
+import com.mycorrhizal.crm.feature.settings.TwoFactorScreen
 import com.mycorrhizal.crm.feature.settings.ApiTokensScreen
 import com.mycorrhizal.crm.feature.settings.WebhooksScreen
 import com.mycorrhizal.crm.feature.shares.ContactSharesScreen
@@ -1003,6 +1004,8 @@ private fun AppNavGraph(
                 onWebhooks = { navController.navigate("webhooks") },
                 // Issue #413's Android follow-up (#573): API token management.
                 onApiTokens = { navController.navigate("api-tokens") },
+                // Issue #814 Phase 2: TOTP two-factor enrollment/management.
+                onTwoFactor = { navController.navigate("two-factor") },
                 onNotificationChannels = { navController.navigate("notification-channels") },
                 onImmichSettings = { navController.navigate("immich-settings") },
                 // M26: the one-time legacy circle/tag cleanup tool.
@@ -1059,6 +1062,12 @@ private fun AppNavGraph(
         // Issue #413's Android follow-up (#573): API token management.
         composable("api-tokens") {
             ApiTokensScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
+        // Issue #814 Phase 2: TOTP two-factor enrollment/management.
+        composable("two-factor") {
+            TwoFactorScreen(
                 onBack = { navController.popBackStack() },
             )
         }

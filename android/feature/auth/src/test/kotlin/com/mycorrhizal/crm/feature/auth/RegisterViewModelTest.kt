@@ -88,7 +88,8 @@ class RegisterViewModelTest {
         runTest(mainDispatcherRule.testDispatcher) {
             coEvery { authRepository.checkPasswordStrength("hunter2hunter2") } returns Result.success(strongStrength())
             coEvery { authRepository.register("alice", "alice@example.com", "hunter2hunter2") } returns Result.success(Unit)
-            coEvery { authRepository.login("alice@example.com", "hunter2hunter2") } returns Result.success(Unit)
+            coEvery { authRepository.login("alice@example.com", "hunter2hunter2") } returns
+                Result.success(com.mycorrhizal.crm.domain.repository.LoginOutcome.SessionEstablished)
             val vm = viewModel()
             advanceUntilIdle()
 

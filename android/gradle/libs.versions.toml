@@ -48,6 +48,10 @@ gradleTestRetry = "1.6.5"
 # (mycorrhizal-cache.db). Ships x86_64 + arm64-v8a .so ABIs so Robolectric
 # (JVM) unit tests exercise the same native path as devices.
 sqlcipher = "4.18.0"
+# Issue #814 Phase 2: render the 2FA enrollment QR code. com.google.zxing:core
+# is a pure-Java encoder (QRCodeWriter) — no camera/MLKit/barcode scanning is
+# involved, only rendering the otpauth:// URI as a bitmap for the scanner app.
+zxing = "3.5.3"
 # Issue #358: detekt is the Kotlin smell/correctness analyzer complementing
 # CodeQL (taint) + mobsfscan (manifest/intent/secret rules) for the Android
 # app. Applied to every module via the build-logic convention plugins.
@@ -105,6 +109,9 @@ room-testing = { group = "androidx.room", name = "room-testing", version.ref = "
 
 # Issue #385: SQLCipher for Android (Room integration via SupportOpenHelperFactory).
 sqlcipher-android = { group = "net.zetetic", name = "sqlcipher-android", version.ref = "sqlcipher" }
+
+# Issue #814 Phase 2: pure-Java QR encoder for the TOTP enrollment URI.
+zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
 
 okhttp = { group = "com.squareup.okhttp3", name = "okhttp", version.ref = "okhttp" }
 okhttp-logging = { group = "com.squareup.okhttp3", name = "logging-interceptor", version.ref = "okhttp" }

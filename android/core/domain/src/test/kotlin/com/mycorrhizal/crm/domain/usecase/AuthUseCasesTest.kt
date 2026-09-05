@@ -1,6 +1,7 @@
 package com.mycorrhizal.crm.domain.usecase
 
 import com.mycorrhizal.crm.domain.repository.AuthRepository
+import com.mycorrhizal.crm.domain.repository.LoginOutcome
 import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.mockk
@@ -16,12 +17,23 @@ class LoginUseCaseTest {
 
     @Test
     fun `trims the identifier and password before delegating`() = runTest {
-        coEvery { authRepository.login("alice", "secret") } returns Result.success(Unit)
+        coEvery { authRepository.login("alice", "secret") } returns
+            Result.success(LoginOutcome.SessionEstablished)
 
         val result = useCase(" alice ", "secret")
 
         assertTrue(result is LoginUseCase.Result.Success)
         coVerify { authRepository.login("alice", "secret") }
+    }
+
+    @Test
+    fun `a 2fa account surfaces TwoFactorRequired instead of a session`() = runTest {
+        coEvery { authRepository.login("alice", "secret") } returns
+            Result.success(LoginOutcome.TwoFactorRequired)
+
+        val result = useCase("alice", "secret")
+
+        assertTrue(result is LoginUseCase.Result.TwoFactorRequired)
     }
 
     @Test

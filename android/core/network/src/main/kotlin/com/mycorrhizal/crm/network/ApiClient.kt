@@ -156,6 +156,10 @@ import com.mycorrhizal.crm.model.network.Tag
 import com.mycorrhizal.crm.model.network.TagDetailResponse
 import com.mycorrhizal.crm.model.network.TagInput
 import com.mycorrhizal.crm.model.network.TagsPage
+import com.mycorrhizal.crm.model.network.TwoFactorCodeInput
+import com.mycorrhizal.crm.model.network.TwoFactorConfirmResponse
+import com.mycorrhizal.crm.model.network.TwoFactorSetupResponse
+import com.mycorrhizal.crm.model.network.TwoFactorStatusResponse
 import com.mycorrhizal.crm.model.network.UserProfile
 import com.mycorrhizal.crm.model.network.ContactShare
 import com.mycorrhizal.crm.model.network.ContactShareInput
@@ -204,9 +208,47 @@ class ApiClient(
 ) {
     private val jsonMediaType = "application/json".toMediaType()
 
-    /** POST /api/v1/login — captures the auth_token JWT from the Set-Cookie header. */
+    /**
+     * POST /api/v1/login. For a 2FA account the response carries
+     * `two_factor_required: true` and sets a short-lived `2fa_pending` cookie
+     * but NO session — [LoginResult.twoFactorRequired] is set and
+     * [LoginResult.pending2faCookie] holds the captured challenge value so a
+     * later [complete2faLogin] can exchange it. For a non-2FA account the
+     * `auth_token` JWT is captured from the Set-Cookie header as before.
+     */
     suspend fun login(identifier: String, password: String): Result<LoginResult> =
         executePost(LOGIN_PATH, LoginRequest(identifier = identifier, password = password)) { response, body ->
+            val loginResponse = moshi.adapter(LoginResponse::class.java).fromJson(body)
+            val twoFactorRequired = loginResponse?.twoFactorRequired == true
+            val setCookies = response.headers("Set-Cookie")
+            LoginResult(
+                token = if (twoFactorRequired) null else extractCookie(setCookies, AUTH_COOKIE),
+                language = loginResponse?.language,
+                dateFormat = loginResponse?.dateFormat,
+                twoFactorRequired = twoFactorRequired,
+                pending2faCookie = if (twoFactorRequired) extractCookie(setCookies, TWO_FACTOR_COOKIE) else null,
+            )
+        }
+
+    /**
+     * POST /api/v1/login/2fa — step 2 of interactive login for a 2FA account.
+     * The server requires the short-lived `2fa_pending` challenge cookie from
+     * the preceding [login]; the OkHttp stack has no cookie jar, so the value
+     * captured by [login] is forwarded as a Cookie header. On success the real
+     * `auth_token` cookie is captured exactly like [login].
+     *
+     * Errors stay distinguishable by status: 400 invalid code, 401 missing/
+     * expired/consumed challenge, 429 account lockout — each surfaces as
+     * [ApiError.Client] with that code (a 429 body's flat `message` is parsed
+     * so it can be shown verbatim, mirroring the web's 429 branch).
+     */
+    suspend fun complete2faLogin(code: String, pending2faCookie: String): Result<LoginResult> {
+        val request = Request.Builder()
+            .url("$PLACEHOLDER_ORIGIN$LOGIN_2FA_PATH".toHttpUrl())
+            .addHeader("Cookie", "$TWO_FACTOR_COOKIE=$pending2faCookie")
+            .post(TwoFactorCodeInput(code).toJsonBody())
+            .build()
+        return execute(request) { response, body ->
             val loginResponse = moshi.adapter(LoginResponse::class.java).fromJson(body)
             val token = extractCookie(response.headers("Set-Cookie"), AUTH_COOKIE)
             LoginResult(
@@ -214,6 +256,59 @@ class ApiClient(
                 language = loginResponse?.language,
                 dateFormat = loginResponse?.dateFormat,
             )
+        }
+    }
+
+    // --- N8 2FA management (issue #158, web parity #814). Authenticated —
+    // the bearer session rides the Authorization header like every other
+    // `/users/*` call. confirm/disable bump token_version server-side, which
+    // re-issues the session as a fresh `auth_token` cookie: [ReissuedTokenResult]
+    // carries that cookie so the data layer can refresh the stored JWT and the
+    // current session survives the mutation.
+
+    /** GET /api/v1/users/2fa/status — `{ enabled }`. */
+    suspend fun getTwoFactorStatus(): Result<TwoFactorStatusResponse> =
+        executeGet("$PLACEHOLDER_ORIGIN$TWO_FACTOR_PATH/status") { _, body ->
+            moshi.adapter(TwoFactorStatusResponse::class.java).fromJson(body)
+        }
+
+    /** POST /api/v1/users/2fa/setup — mints a pending TOTP secret. 409 if already enabled; 403 for OIDC accounts. */
+    suspend fun setupTwoFactor(): Result<TwoFactorSetupResponse> =
+        executePostEmpty("$TWO_FACTOR_PATH/setup") { _, body ->
+            moshi.adapter(TwoFactorSetupResponse::class.java).fromJson(body)
+        }
+
+    /** POST /api/v1/users/2fa/confirm — enables 2FA and mints the one-time recovery codes; re-issues the session cookie. */
+    suspend fun confirmTwoFactor(code: String): Result<ReissuedTokenResult<TwoFactorConfirmResponse>> =
+        executePost("$TWO_FACTOR_PATH/confirm", TwoFactorCodeInput(code)) { response, body ->
+            val parsed = moshi.adapter(TwoFactorConfirmResponse::class.java).fromJson(body)
+            if (parsed == null) {
+                null
+            } else {
+                ReissuedTokenResult(parsed, extractCookie(response.headers("Set-Cookie"), AUTH_COOKIE))
+            }
+        }
+
+    /** POST /api/v1/users/2fa/disable — disables 2FA with a live code; re-issues the session cookie. */
+    suspend fun disableTwoFactor(code: String): Result<ReissuedTokenResult<MessageResponse>> =
+        executePost("$TWO_FACTOR_PATH/disable", TwoFactorCodeInput(code)) { response, body ->
+            val parsed = moshi.adapter(MessageResponse::class.java).fromJson(body)
+            if (parsed == null) {
+                null
+            } else {
+                ReissuedTokenResult(parsed, extractCookie(response.headers("Set-Cookie"), AUTH_COOKIE))
+            }
+        }
+
+    /** POST /api/v1/users/2fa/recovery-codes/regenerate — new codes shown plaintext exactly once. */
+    suspend fun regenerateRecoveryCodes(code: String): Result<ReissuedTokenResult<TwoFactorConfirmResponse>> =
+        executePost("$TWO_FACTOR_PATH/recovery-codes/regenerate", TwoFactorCodeInput(code)) { response, body ->
+            val parsed = moshi.adapter(TwoFactorConfirmResponse::class.java).fromJson(body)
+            if (parsed == null) {
+                null
+            } else {
+                ReissuedTokenResult(parsed, extractCookie(response.headers("Set-Cookie"), AUTH_COOKIE))
+            }
         }
 
     /** GET /api/v1/users/me. */
@@ -1912,13 +2007,29 @@ class ApiClient(
     }
 
     private fun parseError(code: Int, body: String): ApiError {
-        val parsed = try {
-            moshi.adapter(BackendError::class.java).fromJson(body)?.error?.displayMessage
-        } catch (_: Exception) {
-            null
-        }
+        val parsed = parseErrorDisplayMessage(body)
         val message = parsed?.takeIf { it.isNotBlank() } ?: body.ifBlank { "HTTP $code" }
         return if (code in 400..499) ApiError.Client(code, message) else ApiError.Server(code, message)
+    }
+
+    /**
+     * Best-effort human-readable message from an error body. Prefers the
+     * standard `{ error: { code, message, ... } }` envelope, then falls back to
+     * the flat `{ message }` shape the account-lockout responses use
+     * (`{ error, message, retry_after, retry_after_at }` — no envelope), so a
+     * 429's lockout text is shown verbatim instead of the raw JSON (the web's
+     * auth.ts 429 branch does the same). Each parse is independent — a flat
+     * body's `error` is a String, which the envelope model can't decode, and
+     * that must not mask the `message` fallback.
+     */
+    private fun parseErrorDisplayMessage(body: String): String? {
+        val envelopeMessage = runCatching {
+            moshi.adapter(BackendError::class.java).fromJson(body)?.error?.displayMessage
+        }.getOrNull()
+        envelopeMessage?.takeIf { it.isNotBlank() }?.let { return it }
+        return runCatching {
+            moshi.adapter(MessageResponse::class.java).fromJson(body)?.message
+        }.getOrNull()?.takeIf { it.isNotBlank() }
     }
 
     private fun extractCookie(setCookieHeaders: List<String>, name: String): String? {
@@ -1950,6 +2061,8 @@ class ApiClient(
         const val PLACEHOLDER_ORIGIN = "http://mycorrhizal.invalid"
         private const val API_V1 = "/api/v1"
         private const val LOGIN_PATH = "$API_V1/login"
+        private const val LOGIN_2FA_PATH = "$API_V1/login/2fa"
+        private const val TWO_FACTOR_PATH = "$API_V1/users/2fa"
         private const val AUTH_CONFIG_PATH = "$API_V1/auth/oidc/config"
         private const val ME_PATH = "$API_V1/users/me"
         private const val REGISTER_PATH = "$API_V1/register"
@@ -1994,12 +2107,35 @@ class ApiClient(
         private const val PAPERLESS_PATH = "$API_V1/paperless"
         private const val SEAFILE_PATH = "$API_V1/seafile"
         private const val NEXTCLOUD_PATH = "$API_V1/nextcloud"
-        private const val AUTH_COOKIE = "auth_token"    }
+        private const val AUTH_COOKIE = "auth_token"
+        /** The short-lived 2FA login challenge cookie (600s, httpOnly) — captured, never stored. */
+        private const val TWO_FACTOR_COOKIE = "2fa_pending"
+    }
 }
 
-/** Successful login: the bearer JWT (captured from the httpOnly cookie) plus profile prefs. */
+/**
+ * Successful login: the bearer JWT (captured from the httpOnly cookie) plus
+ * profile prefs. For a 2FA account there is NO token yet:
+ * [twoFactorRequired] is true and [pending2faCookie] holds the transient
+ * `2fa_pending` challenge value that [ApiClient.complete2faLogin] must send
+ * back. [pending2faCookie] must never be persisted.
+ */
 data class LoginResult(
     val token: String?,
     val language: String?,
     val dateFormat: String?,
+    val twoFactorRequired: Boolean = false,
+    val pending2faCookie: String? = null,
+)
+
+/**
+ * A 2FA-management mutation whose success re-issued the caller's session
+ * cookie: confirm/disable bump token_version server-side, which invalidates
+ * the old JWT and mints a fresh `auth_token`. [value] is the parsed body and
+ * [reissuedToken] the new bearer token (null when the server did not re-issue
+ * one) — the data layer refreshes the stored token so the session survives.
+ */
+data class ReissuedTokenResult<T>(
+    val value: T,
+    val reissuedToken: String?,
 )

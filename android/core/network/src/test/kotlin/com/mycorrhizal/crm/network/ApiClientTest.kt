@@ -102,6 +102,189 @@ class ApiClientTest {
         assertEquals(401, (error as ApiError.Client).code)
     }
 
+    // --- N8 two-factor login (issue #814) ---
+
+    @Test
+    fun `login on a 2fa account reports the challenge and captures the pending cookie`() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Set-Cookie", "2fa_pending=challenge-jwt.abc; Path=/; Max-Age=600; HttpOnly; SameSite=Strict")
+                .setBody("""{"two_factor_required":true}"""),
+        )
+
+        val result = client.login("alice", "secret")
+
+        assertTrue(result.isSuccess)
+        val login = result.getOrThrow()
+        assertTrue(login.twoFactorRequired)
+        assertEquals("challenge-jwt.abc", login.pending2faCookie)
+        assertEquals(null, login.token)
+    }
+
+    @Test
+    fun `login on a 2fa account without a pending cookie reports it as null`() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""{"two_factor_required":true}"""),
+        )
+
+        val result = client.login("alice", "secret")
+
+        assertTrue(result.isSuccess)
+        val login = result.getOrThrow()
+        assertTrue(login.twoFactorRequired)
+        assertEquals(null, login.pending2faCookie)
+    }
+
+    @Test
+    fun `complete2faLogin forwards the pending cookie and captures the auth token`() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Set-Cookie", "auth_token=twofa-session-jwt; Path=/; HttpOnly")
+                .setBody("""{"language":"de","date_format":"eu"}"""),
+        )
+
+        val result = client.complete2faLogin("123456", "challenge-jwt.abc")
+
+        assertTrue(result.isSuccess)
+        val login = result.getOrThrow()
+        assertEquals("twofa-session-jwt", login.token)
+        assertEquals("de", login.language)
+        assertEquals("eu", login.dateFormat)
+
+        val request = server.takeRequest()
+        assertEquals("/api/v1/login/2fa", request.path)
+        assertEquals("2fa_pending=challenge-jwt.abc", request.getHeader("Cookie"))
+    }
+
+    @Test
+    fun `complete2faLogin maps a wrong code to Client 400`() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(400)
+                .setBody("""{"error":{"code":"invalid_code","message":"Invalid value for field 'code'"}}"""),
+        )
+
+        val result = client.complete2faLogin("000000", "challenge-jwt.abc")
+
+        assertTrue(result.isFailure)
+        val error = result.exceptionOrNull() as ApiError
+        assertTrue(error is ApiError.Client)
+        assertEquals(400, (error as ApiError.Client).code)
+    }
+
+    @Test
+    fun `complete2faLogin maps an expired challenge to Client 401`() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(401)
+                .setBody("""{"error":{"code":"unauthorized","message":"Invalid or expired two-factor session. Please sign in again."}}"""),
+        )
+
+        val result = client.complete2faLogin("123456", "stale-challenge")
+
+        assertTrue(result.isFailure)
+        val error = result.exceptionOrNull() as ApiError
+        assertTrue(error is ApiError.Client)
+        assertEquals(401, (error as ApiError.Client).code)
+    }
+
+    // The lockout body is FLAT (`{error, message, retry_after, ...}`) with no
+    // apperrors envelope — the message must be parsed and surfaced verbatim
+    // (mirror the web's auth.ts 429 branch), not dumped as raw JSON.
+    @Test
+    fun `complete2faLogin surfaces the lockout message from a flat 429 body`() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(429)
+                .setBody(
+                    """{"error":"Account temporarily locked","message":"Too many failed login attempts. Please try again later.","retry_after":300,"retry_after_at":"2026-09-05T12:00:00Z"}""",
+                ),
+        )
+
+        val result = client.complete2faLogin("000000", "challenge-jwt.abc")
+
+        assertTrue(result.isFailure)
+        val error = result.exceptionOrNull() as ApiError
+        assertTrue(error is ApiError.Client)
+        assertEquals(429, (error as ApiError.Client).code)
+        assertEquals("Too many failed login attempts. Please try again later.", error.message)
+    }
+
+    // --- N8 two-factor management (issue #814) ---
+
+    @Test
+    fun `two factor status parses enabled`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"enabled":true}"""))
+
+        val result = client.getTwoFactorStatus()
+
+        assertTrue(result.isSuccess)
+        assertTrue(result.getOrThrow().enabled)
+    }
+
+    @Test
+    fun `two factor setup returns the pending secret and otpauth url`() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setBody("""{"secret":"JBSWY3DPEHPK3PXP","otpauth_url":"otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP&issuer=Example"}"""),
+        )
+
+        val result = client.setupTwoFactor()
+
+        assertTrue(result.isSuccess)
+        val setup = result.getOrThrow()
+        assertEquals("JBSWY3DPEHPK3PXP", setup.secret)
+        assertEquals("otpauth://totp/Example:alice?secret=JBSWY3DPEHPK3PXP&issuer=Example", setup.otpauthUrl)
+
+        val request = server.takeRequest()
+        assertEquals("/api/v1/users/2fa/setup", request.path)
+    }
+
+    @Test
+    fun `two factor confirm returns recovery codes and captures the reissued session token`() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Set-Cookie", "auth_token=reissued-jwt; Path=/; HttpOnly")
+                .setBody(
+                    """{"message":"Two-factor authentication enabled","recovery_codes":["ABCDE-FGHIJ-KLMNO","PQRST-UVWXY-ZABCD"]}""",
+                ),
+        )
+
+        val result = client.confirmTwoFactor("123456")
+
+        assertTrue(result.isSuccess)
+        val body = result.getOrThrow()
+        assertEquals(2, body.value.recoveryCodes.size)
+        assertEquals("ABCDE-FGHIJ-KLMNO", body.value.recoveryCodes[0])
+        assertEquals("reissued-jwt", body.reissuedToken)
+
+        val request = server.takeRequest()
+        assertEquals("/api/v1/users/2fa/confirm", request.path)
+    }
+
+    @Test
+    fun `two factor disable returns the message and the reissued session token`() = runBlocking {
+        server.enqueue(
+            MockResponse()
+                .setResponseCode(200)
+                .setHeader("Set-Cookie", "auth_token=reissued-jwt-2; Path=/; HttpOnly")
+                .setBody("""{"message":"Two-factor authentication disabled"}"""),
+        )
+
+        val result = client.disableTwoFactor("654321")
+
+        assertTrue(result.isSuccess)
+        val body = result.getOrThrow()
+        assertEquals("Two-factor authentication disabled", body.value.message)
+        assertEquals("reissued-jwt-2", body.reissuedToken)
+    }
+
     @Test
     fun `list contacts parses the cursor page`() = runBlocking {
         server.enqueue(

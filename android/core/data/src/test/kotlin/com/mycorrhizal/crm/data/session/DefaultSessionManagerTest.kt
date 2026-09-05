@@ -120,6 +120,29 @@ class DefaultSessionManagerTest {
         assertEquals("alice", state.username)
     }
 
+    // Issue #814: a token_version bump (2FA confirm/disable) re-issues the
+    // session as a fresh bearer token. setToken swaps it in place — the
+    // session stays logged in and the server URL/profile are untouched.
+    @Test
+    fun `setToken replaces the token in place without disturbing the session`() = runTest {
+        val (manager, tokenStorage) = manager()
+        manager.setSession(
+            serverUrl = "https://crm.example.com",
+            token = "old-jwt",
+            state = SessionState(userId = 7, username = "alice"),
+        )
+
+        manager.setToken("reissued-jwt")
+
+        assertEquals("reissued-jwt", manager.bearerToken())
+        assertEquals("reissued-jwt", tokenStorage.stored)
+        assertEquals("https://crm.example.com", manager.baseUrl())
+        val state = manager.observeSession().first()
+        assertTrue(state.isLoggedIn)
+        assertEquals(7, state.userId)
+        assertEquals("alice", state.username)
+    }
+
     // M5 §5: a cold-start OIDC deep link must await hydration before reading
     // the server URL / writing the session — otherwise it races the async
     // startup init() (review-pass fix).

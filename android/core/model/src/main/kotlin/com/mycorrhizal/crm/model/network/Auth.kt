@@ -11,11 +11,54 @@ data class LoginRequest(
     val password: String? = null,
 )
 
-/** POST /api/v1/login success body (the auth_token JWT arrives as an httpOnly cookie). */
+/**
+ * POST /api/v1/login success body (the auth_token JWT arrives as an httpOnly
+ * cookie). Mirrors the OpenAPI `LoginResponse` + web `auth.ts`.
+ */
 @JsonClass(generateAdapter = true)
 data class LoginResponse(
     val language: String? = null,
     @Json(name = "date_format") val dateFormat: String? = null,
+    // N8 (#158/#179, Android #814): present and true when the account has 2FA
+    // enabled. In that case NO session exists yet — the server set a short-lived
+    // 2fa_pending cookie instead, and POST /login/2fa with a TOTP/recovery code
+    // must complete the login.
+    @Json(name = "two_factor_required") val twoFactorRequired: Boolean? = null,
+)
+
+// --- N8 two-factor auth (issue #158, web parity #814) ---
+
+/** POST /api/v1/login/2fa request body — a 6-digit TOTP or XXXXX-XXXXX-XXXXX recovery code. */
+@JsonClass(generateAdapter = true)
+data class TwoFactorCodeInput(
+    val code: String,
+)
+
+/** GET /api/v1/users/2fa/status — `{ enabled }`. */
+@JsonClass(generateAdapter = true)
+data class TwoFactorStatusResponse(
+    val enabled: Boolean = false,
+)
+
+/**
+ * POST /api/v1/users/2fa/setup — the pending TOTP secret and its otpauth://
+ * URI (for the QR code). Plaintext, shown exactly once; 2FA is only enforced
+ * once POST /users/2fa/confirm succeeds.
+ */
+@JsonClass(generateAdapter = true)
+data class TwoFactorSetupResponse(
+    val secret: String = "",
+    @Json(name = "otpauth_url") val otpauthUrl: String = "",
+)
+
+/**
+ * POST /api/v1/users/2fa/confirm and /recovery-codes/regenerate — the new
+ * single-use recovery codes, returned plaintext exactly once.
+ */
+@JsonClass(generateAdapter = true)
+data class TwoFactorConfirmResponse(
+    val message: String? = null,
+    @Json(name = "recovery_codes") val recoveryCodes: List<String> = emptyList(),
 )
 
 /**

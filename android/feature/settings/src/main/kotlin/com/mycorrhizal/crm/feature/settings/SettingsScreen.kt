@@ -65,6 +65,8 @@ fun SettingsScreen(
     onWebhooks: () -> Unit = {},
     // Issue #413's Android follow-up (#573): API token management.
     onApiTokens: () -> Unit = {},
+    // Issue #814 Phase 2: TOTP two-factor enrollment/management.
+    onTwoFactor: () -> Unit = {},
     onNotificationChannels: () -> Unit = {},
     // Issue #236: the Immich connection-config settings screen.
     onImmichSettings: () -> Unit = {},
@@ -129,6 +131,7 @@ fun SettingsScreen(
             onCustomLinks = onCustomLinks,
             onWebhooks = onWebhooks,
             onApiTokens = onApiTokens,
+            onTwoFactor = onTwoFactor,
             onNotificationChannels = onNotificationChannels,
             onImmichSettings = onImmichSettings,
             onCircleTagTriage = onCircleTagTriage,
@@ -155,6 +158,7 @@ fun SettingsContent(
     onCustomLinks: () -> Unit = {},
     onWebhooks: () -> Unit = {},
     onApiTokens: () -> Unit = {},
+    onTwoFactor: () -> Unit = {},
     onNotificationChannels: () -> Unit = {},
     onImmichSettings: () -> Unit = {},
     onCircleTagTriage: () -> Unit = {},
@@ -308,6 +312,11 @@ fun SettingsContent(
             }
             Text(stringResource(R.string.settings_password_change_button))
         }
+
+        HorizontalDivider()
+
+        // N8 (issue #814): TOTP two-factor enrollment/management (web parity).
+        NavigationRow(stringResource(R.string.settings_two_factor_title), onClick = onTwoFactor)
 
         HorizontalDivider()
 

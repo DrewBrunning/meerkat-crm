@@ -73,6 +73,11 @@ class DefaultSessionManager(
         )
     }
 
+    override suspend fun setToken(token: String) {
+        cachedToken = token
+        tokenStorage.save(token)
+    }
+
     override suspend fun clearSession() {
         cachedToken = null
         cachedServerUrl = null

@@ -35,6 +35,8 @@ class LoginScreenTest {
         onServerUrlChange: (String) -> Unit = {},
         onModeChange: (LoginMode) -> Unit = {},
         onSubmit: (String, String, String, String) -> Unit = { _, _, _, _ -> },
+        onTwoFactorSubmit: (String) -> Unit = {},
+        onBackToCredentials: () -> Unit = {},
     ) {
         composeTestRule.setContent {
             MycorrhizalTheme {
@@ -43,6 +45,8 @@ class LoginScreenTest {
                     onServerUrlChange = onServerUrlChange,
                     onModeChange = onModeChange,
                     onSubmit = onSubmit,
+                    onTwoFactorSubmit = onTwoFactorSubmit,
+                    onBackToCredentials = onBackToCredentials,
                 )
             }
         }
@@ -183,5 +187,49 @@ class LoginScreenTest {
 
         composeTestRule.onNode(SemanticsMatcher.expectValue(SemanticsProperties.ContentDescription, listOf("Saving")))
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.ContentDescription, listOf("Saving")))
+    }
+
+    // N8 (#814): a 2FA account moves the login form to the code-entry step.
+    @Test
+    fun `two-factor step shows the code prompt instead of the credentials form`() {
+        setContent(uiState = LoginUiState(twoFactorStep = true, mode = LoginMode.PASSWORD))
+
+        composeTestRule.onNodeWithText("Two-factor authentication").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText(
+            "Enter the 6-digit code from your authenticator app, or one of your recovery codes.",
+        ).performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Verification code").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Back to sign in").performScrollTo().assertIsDisplayed()
+
+        // The credentials form is hidden while the code step is up.
+        composeTestRule.onNodeWithText("Server URL").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Username or email").assertDoesNotExist()
+        // No SSO/register links on the second step (web parity).
+        composeTestRule.onNodeWithText("No account? Create one").assertDoesNotExist()
+    }
+
+    @Test
+    fun `submitting a code on the two-factor step forwards the code`() {
+        var submitted: String? = null
+        setContent(
+            uiState = LoginUiState(twoFactorStep = true, mode = LoginMode.PASSWORD),
+            onTwoFactorSubmit = { submitted = it },
+        )
+        composeTestRule.onNodeWithText("Verification code").performScrollTo().performTextInput("123456")
+        composeTestRule.onNodeWithText("Sign in").performScrollTo().performClick()
+
+        assertEquals("123456", submitted)
+    }
+
+    @Test
+    fun `the back link leaves the code step`() {
+        var backed = false
+        setContent(
+            uiState = LoginUiState(twoFactorStep = true, mode = LoginMode.PASSWORD),
+            onBackToCredentials = { backed = true },
+        )
+        composeTestRule.onNodeWithText("Back to sign in").performScrollTo().performClick()
+
+        assertEquals(true, backed)
     }
 }
