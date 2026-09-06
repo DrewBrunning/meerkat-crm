@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -113,16 +114,53 @@ func probePageCorruptsGracefully(t *testing.T, path string, target int64) bool {
 	original := readOriginal()
 	writePage(bytes.Repeat([]byte{0xFF}, pageSize))
 
-	raw := openRaw(t, path)
-	_, _, err := checkDBIntegrity(raw)
-	if sqlDB, cerr := raw.DB(); cerr == nil {
-		sqlDB.Close()
+	// A page whose zeroing breaks even *opening* the file (SQLite reads a
+	// handful of structural pages at first connect, not just sqlite_master)
+	// is a fatal candidate just like one that fails integrity_check — restore
+	// it and let the caller try the next page. openRaw's require would abort
+	// the whole test on this path, which is wrong: which page sits at a given
+	// offset is pure schema layout, and a later migration shifting the
+	// mid-file target must not make the test fail before it ever searches.
+	raw, openerr := gorm.Open(sqlite.Open(path), &gorm.Config{})
+	if openerr != nil {
+		writePage(original)
+		return false
 	}
+	_, _, err := checkDBIntegrity(raw)
 	if err != nil {
 		// Fatal corruption (SQLITE_CORRUPT from integrity_check itself):
 		// restore the page and let the caller try the next candidate.
+		if sqlDB, cerr := raw.DB(); cerr == nil {
+			sqlDB.Close()
+		}
 		writePage(original)
 		return false
+	}
+
+	// The scheduled job runs the application-invariant and FTS-consistency
+	// passes after the storage pragmas, so a candidate is only usable when it
+	// corrupts *storage* without breaking the other passes — a zeroed page
+	// inside a table those passes read would fire a second webhook. Skip such
+	// candidates so the test keeps exercising exactly the corruption it
+	// intends (bulk notes data; see corruptDataPage's doc comment). The
+	// storage checks already ran against `raw`, so reuse that handle.
+	ctx := context.Background()
+	if report, derr := RunDataIntegrityChecks(ctx, raw, config.Config{}); derr != nil || !report.OK {
+		if sqlDB, cerr := raw.DB(); cerr == nil {
+			sqlDB.Close()
+		}
+		writePage(original)
+		return false
+	}
+	if fts, ferr := CheckSearchIndexConsistency(raw); ferr != nil || !fts.Clean() {
+		if sqlDB, cerr := raw.DB(); cerr == nil {
+			sqlDB.Close()
+		}
+		writePage(original)
+		return false
+	}
+	if sqlDB, cerr := raw.DB(); cerr == nil {
+		sqlDB.Close()
 	}
 	return true
 }

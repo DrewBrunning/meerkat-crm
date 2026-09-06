@@ -129,6 +129,11 @@ dependencies {
     implementation(libs.androidx.navigation.compose)
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.core.splashscreen)
+    // Issue #722: the app-lock gate shows a BiometricPrompt, which needs a
+    // FragmentActivity host (MainActivity) — fragment-ktx is the only fragment
+    // use in this single-Activity Compose app.
+    implementation(libs.androidx.biometric)
+    implementation(libs.androidx.fragment.ktx)
     implementation(libs.hilt.android)
     ksp(libs.hilt.android.compiler)
     implementation(libs.hilt.navigation.compose)

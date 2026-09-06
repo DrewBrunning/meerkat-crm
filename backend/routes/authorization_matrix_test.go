@@ -234,6 +234,10 @@ func buildTable(s seeded) map[string]authzRow {
 		"POST /api/v1/check-password-strength": {class: classPublic},
 		"POST /api/v1/password-reset/request":  {class: classPublic},
 		"POST /api/v1/password-reset/confirm":  {class: classPublic},
+		// Issue #722: possession of an unrevoked device grant exchanges for a
+		// session without a password — public (rate-limited like /login), never
+		// a passwordless back door for a stale API session.
+		"POST /api/v1/auth/device/session": {class: classPublic},
 
 		// --- admin routes --------------------------------------------------
 		"GET /api/v1/admin/users":                     {class: classAdmin},
@@ -488,6 +492,12 @@ func buildTable(s seeded) map[string]authzRow {
 		"POST /api/v1/api-tokens/revoke-all": {class: classProtected},
 		"DELETE /api/v1/api-tokens/:id":      {class: classItem, probe: "/api/v1/api-tokens/" + fabricatedNum},
 		"POST /api/v1/api-tokens/:id/rotate": {class: classItem, probe: "/api/v1/api-tokens/" + fabricatedNum + "/rotate"},
+
+		// --- device grants (issue #722, the server half of biometric login) --
+		"GET /api/v1/auth/device/grants":             {class: classProtected},
+		"POST /api/v1/auth/device/grants":            {class: classProtected},
+		"POST /api/v1/auth/device/grants/revoke-all": {class: classProtected},
+		"DELETE /api/v1/auth/device/grants/:id":      {class: classItem, probe: "/api/v1/auth/device/grants/" + fabricatedNum},
 
 		// --- webhooks -------------------------------------------------------
 		"GET /api/v1/webhooks":                {class: classProtected},

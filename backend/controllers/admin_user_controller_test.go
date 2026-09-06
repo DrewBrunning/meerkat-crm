@@ -761,6 +761,9 @@ func TestResetUserTwoFactor_Success(t *testing.T) {
 	require.NoError(t, db.Create(&target).Error)
 	require.NoError(t, db.Create(&models.RecoveryCode{UserID: target.ID, CodeHash: "hash-one"}).Error)
 	require.NoError(t, db.Create(&models.RecoveryCode{UserID: target.ID, CodeHash: "hash-two"}).Error)
+	// Issue #722: an admin 2FA reset must revoke every device grant too.
+	grant, _, err := services.CreateDeviceGrant(db, target.ID, "test-phone")
+	require.NoError(t, err)
 
 	router.POST("/users/:id/reset-2fa", ResetUserTwoFactor)
 
@@ -769,6 +772,10 @@ func TestResetUserTwoFactor_Success(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var reloadedGrant models.DeviceGrant
+	require.NoError(t, db.First(&reloadedGrant, grant.ID).Error)
+	require.NotNil(t, reloadedGrant.RevokedAt, "an admin 2FA reset must revoke device grants")
 
 	var resp models.AdminUserResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))

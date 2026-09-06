@@ -7,7 +7,7 @@ each asset, not how long it survives.
 
 | | |
 |---|---|
-| **Last updated** | 2026-09-06 (issues [#414](https://github.com/DrewBrunning/mycorrhizal-crm/issues/414), [#420](https://github.com/DrewBrunning/mycorrhizal-crm/issues/420), [#424](https://github.com/DrewBrunning/mycorrhizal-crm/issues/424), [#622](https://github.com/DrewBrunning/mycorrhizal-crm/issues/622), [#391](https://github.com/DrewBrunning/mycorrhizal-crm/issues/391), [#389](https://github.com/DrewBrunning/mycorrhizal-crm/issues/389), [#651](https://github.com/DrewBrunning/mycorrhizal-crm/issues/651), [#351](https://github.com/DrewBrunning/mycorrhizal-crm/issues/351), [#353](https://github.com/DrewBrunning/mycorrhizal-crm/issues/353), [#549](https://github.com/DrewBrunning/mycorrhizal-crm/issues/549), [#505](https://github.com/DrewBrunning/mycorrhizal-crm/issues/505), [#721](https://github.com/DrewBrunning/mycorrhizal-crm/issues/721), [#723](https://github.com/DrewBrunning/mycorrhizal-crm/issues/723)) |
+| **Last updated** | 2026-09-06 (issues [#414](https://github.com/DrewBrunning/mycorrhizal-crm/issues/414), [#420](https://github.com/DrewBrunning/mycorrhizal-crm/issues/420), [#424](https://github.com/DrewBrunning/mycorrhizal-crm/issues/424), [#622](https://github.com/DrewBrunning/mycorrhizal-crm/issues/622), [#391](https://github.com/DrewBrunning/mycorrhizal-crm/issues/391), [#389](https://github.com/DrewBrunning/mycorrhizal-crm/issues/389), [#651](https://github.com/DrewBrunning/mycorrhizal-crm/issues/651), [#351](https://github.com/DrewBrunning/mycorrhizal-crm/issues/351), [#353](https://github.com/DrewBrunning/mycorrhizal-crm/issues/353), [#549](https://github.com/DrewBrunning/mycorrhizal-crm/issues/549), [#505](https://github.com/DrewBrunning/mycorrhizal-crm/issues/505), [#721](https://github.com/DrewBrunning/mycorrhizal-crm/issues/721), [#722](https://github.com/DrewBrunning/mycorrhizal-crm/issues/722), [#723](https://github.com/DrewBrunning/mycorrhizal-crm/issues/723)) |
 | **Scope** | Backend (Go/Gin + SQLite), CardDAV/CalDAV (server role), Android client, browser/frontend, operator backups. |
 | **Companion docs** | `docs/security/pii-inventory.md` (the *minimization* lens — should each store exist, and is it more/kept-longer than needed), `docs/security/asvs-l2.md` V8 (Data Protection), `docs/deployment.md` (Backups section — the authoritative backup/restore runbook), `docs/security/masvs-l1.md` (Android storage controls). |
 
@@ -254,6 +254,26 @@ External DAV clients (phones, desktop DAV apps) sync against `backend/carddav`, 
 - **Backups**: none — this is a device-local cache with no server-visible backup; Android's own
   Auto Backup is out of scope for app-internal DB files of this kind and isn't configured for it.
 
+**Android app-lock preference (issue #722).** The opt-in "require biometric / device PIN to open the
+app" flag and its grace-timeout live in a small `local_auth_prefs` DataStore file
+(`android/core/data/src/main/kotlin/.../repository/LocalAuthSettingsRepositoryImpl.kt`). That file holds
+no contact data and no credential — the session JWT copy is unchanged (still `EncryptedTokenStorage`),
+and the app-lock is a gate in front of it, not a second copy of it. The OS biometric prompt stores
+nothing in the app (templates live in the device's own secure hardware); the last-background timestamp
+that drives the relock grace period is held in memory only and dies with the process. Clearing the
+app's data (or a logout, which wipes the Room mirror per §8) leaves nothing extra behind.
+
+**Device grant for fully biometric login (issue #722).** An enrolled install also holds a plaintext
+**device grant** on-device (EncryptedSharedPreferences `secure_device_grant`, Keystore master key —
+same envelope as the session JWT) and the matching hashed row server-side in `device_grants`
+(SHA-256 only; migration 000051). The grant's only job is to exchange for a fresh session JWT when
+the stored one expires (`POST /auth/device/session`). On-device: removed by "Turn off biometric
+sign-in" in Settings; survives logout by design (the user signed this device in). Server-side: revoked
+individually (`DELETE /auth/device/grants/:id`) or all at once (`/auth/device/grants/revoke-all`), by
+password change/reset and 2FA
+enable/disable/reset, and swept by account deletion (`DeleteUser`) — a soft-deleted grant row is
+revoked, not reused. Backups: the DB snapshot carries only the hash; the plaintext exists solely in
+the device's encrypted store and is not part of any server backup.
 ### Android session store (bearer token + server URL) (issues #385, #723)
 
 The device-side auth material and the non-credential server config that outlives it. Distinct from the
@@ -306,7 +326,6 @@ design is ADR-0010 / CON-04, issue #479).
   ADR-0009 (its stale link is dropped on the next sync).
 - **Backups**: none — device-local, deleted with the DB; nothing here is in any server backup (§10).
   The *synced* counterpart (the server Activity) follows §1's lifecycle once created.
-
 ## 9. Browser-side storage (frontend SPA)
 
 - **`localStorage`**: holds only `user_info` (id/username/admin flag/self-contact UID) and UI

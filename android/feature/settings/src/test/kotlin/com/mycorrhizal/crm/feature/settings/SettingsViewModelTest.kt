@@ -1,8 +1,13 @@
 package com.mycorrhizal.crm.feature.settings
 
 import android.content.Context
+import com.mycorrhizal.crm.data.auth.DeviceGrantManager
 import com.mycorrhizal.crm.domain.repository.AppSettingsRepository
 import com.mycorrhizal.crm.domain.repository.AuthRepository
+import com.mycorrhizal.crm.domain.repository.AutoLockDelay
+import com.mycorrhizal.crm.domain.repository.BiometricEnrollmentStatus
+import com.mycorrhizal.crm.domain.repository.LocalAuthCapabilities
+import com.mycorrhizal.crm.domain.repository.LocalAuthSettingsRepository
 import com.mycorrhizal.crm.domain.repository.RelationshipEdgeRepository
 import com.mycorrhizal.crm.domain.repository.SessionState
 import com.mycorrhizal.crm.domain.repository.TrackingSettingsRepository
@@ -40,6 +45,9 @@ class SettingsViewModelTest {
     private val relationshipEdgeRepository = mockk<RelationshipEdgeRepository>()
     private val permissionChecker = mockk<PermissionChecker>()
     private val catchUpScheduler = mockk<TrackingCatchUpScheduler>(relaxed = true)
+    private val localAuthSettings = mockk<LocalAuthSettingsRepository>()
+    private val localAuthCapabilities = mockk<LocalAuthCapabilities>()
+    private val deviceGrantManager = mockk<DeviceGrantManager>()
     private val appContext = mockk<Context>(relaxed = true)
 
     /** A factory defaulting to "no tracking permissions granted, nothing stored". */
@@ -58,6 +66,10 @@ class SettingsViewModelTest {
         coEvery { trackingSettings.setSmsTrackingEnabled(any()) } returns Unit
         every { authRepository.observeSession() } returns MutableStateFlow(session)
         coEvery { appSettings.themePreference() } returns flowOf(themePreference)
+        every { localAuthSettings.requireLocalAuth() } returns MutableStateFlow(false)
+        every { localAuthSettings.autoLockDelay() } returns MutableStateFlow(AutoLockDelay.DEFAULT)
+        every { localAuthSettings.biometricEnrollmentStatus() } returns MutableStateFlow(BiometricEnrollmentStatus.UNASKED)
+        every { localAuthCapabilities.canEnableLocalAuth() } returns true
         every { permissionChecker.isGranted(any()) } returns false
         every {
             permissionChecker.isGranted(TrackingPermissions.READ_CALL_LOG)
@@ -76,6 +88,9 @@ class SettingsViewModelTest {
             trackingSettings,
             appSettings,
             relationshipEdgeRepository,
+            localAuthSettings,
+            localAuthCapabilities,
+            deviceGrantManager,
             permissionChecker,
             catchUpScheduler,
             appContext,
@@ -564,4 +579,44 @@ class SettingsViewModelTest {
         vm.onRelationshipSuggestBannerShown()
         assertNull(vm.uiState.value.suggestedRelationshipCount)
     }
+
+    // --- Issue #722: fully biometric login ---
+
+    @Test
+    fun `enrolling biometric sign-in calls the device grant manager`() = runTest(mainDispatcherRule.testDispatcher) {
+        coEvery { deviceGrantManager.enroll(any()) } returns Result.success(Unit)
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.performBiometricEnroll()
+
+        coVerify { deviceGrantManager.enroll(any()) }
+        assertFalse(vm.uiState.value.isBiometricBusy)
+        assertEquals(null, vm.uiState.value.biometricErrorRes)
+    }
+
+    @Test
+    fun `a failed enrollment surfaces an error`() = runTest(mainDispatcherRule.testDispatcher) {
+        coEvery { deviceGrantManager.enroll(any()) } returns Result.failure(Exception("network"))
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.performBiometricEnroll()
+
+        assertEquals(R.string.biometric_enroll_error, vm.uiState.value.biometricErrorRes)
+        assertFalse(vm.uiState.value.isBiometricBusy)
+    }
+
+    @Test
+    fun `removing biometric sign-in calls the device grant manager`() = runTest(mainDispatcherRule.testDispatcher) {
+        coEvery { deviceGrantManager.removeEnrollment() } returns Result.success(Unit)
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.performBiometricRemove()
+
+        coVerify { deviceGrantManager.removeEnrollment() }
+        assertFalse(vm.uiState.value.isBiometricBusy)
+    }
+
 }
