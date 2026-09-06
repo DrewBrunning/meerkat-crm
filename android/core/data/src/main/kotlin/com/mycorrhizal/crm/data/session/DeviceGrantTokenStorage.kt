@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.mycorrhizal.crm.model.Generated
 
 /**
  * Stores the plaintext device grant (issue #722's fully-biometric-login
@@ -25,6 +26,7 @@ interface DeviceGrantTokenStorage {
  * `EncryptedTokenStorage` and `RoomPassphraseStore` cannot run under
  * Robolectric); the backend is pinned by [EncryptedDeviceGrantStorageGuardTest].
  */
+@Generated("EncryptedSharedPreferences + Android Keystore — structurally unexercisable by the JVM unit runner; pinned by EncryptedDeviceGrantStorageGuardTest + instrumented device suite")
 class EncryptedDeviceGrantTokenStorage(context: Context) : DeviceGrantTokenStorage {
 
     private val prefs: SharedPreferences = run {

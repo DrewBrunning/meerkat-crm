@@ -123,4 +123,31 @@ class BiometricEnrollmentViewModelTest {
         assertFalse(h.viewModel.uiState.value.visible)
         coVerify(exactly = 0) { h.settings.setBiometricEnrollmentStatus(any()) }
     }
+
+    @Test
+    fun `enroll mints a grant and dismisses`() = runTest(mainDispatcherRule.testDispatcher) {
+        val h = harness()
+        advanceUntilIdle()
+
+        h.viewModel.performEnroll("Pixel")
+
+        coVerify { h.manager.enroll("Pixel") }
+        assertFalse(h.viewModel.uiState.value.visible)
+        assertFalse(h.viewModel.uiState.value.error)
+        assertFalse(h.viewModel.uiState.value.isBusy)
+    }
+
+    @Test
+    fun `a failed enrollment surfaces an error and stays visible`() = runTest(mainDispatcherRule.testDispatcher) {
+        val h = harness()
+        coEvery { h.manager.enroll(any()) } returns Result.failure(Exception("network"))
+        advanceUntilIdle()
+
+        h.viewModel.performEnroll("Pixel")
+
+        assertTrue(h.viewModel.uiState.value.error)
+        assertTrue("an enrollment failure must not silently dismiss", h.viewModel.uiState.value.visible)
+        assertFalse(h.viewModel.uiState.value.isBusy)
+    }
+
 }

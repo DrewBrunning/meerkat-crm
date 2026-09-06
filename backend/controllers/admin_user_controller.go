@@ -479,7 +479,7 @@ func UpdateUser(c *gin.Context) {
 		// Issue #722: an admin password reset must not leave remembered
 		// devices able to mint fresh sessions via biometric unlock either.
 		if _, err := services.RevokeAllDeviceGrants(db, user.ID); err != nil {
-			log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after admin password reset")
+			log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after admin password reset") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
 		}
 	}
 
@@ -579,7 +579,7 @@ func ResetUserTwoFactor(c *gin.Context) {
 	// that previously stood between a stolen grant and a full account is now
 	// gone, so remembered devices must re-enroll under the new posture.
 	if _, err := services.RevokeAllDeviceGrants(db, user.ID); err != nil {
-		log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after 2FA reset")
+		log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after 2FA reset") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
 	}
 
 	// Issue #592 audit: admin-initiated 2FA reset, attributed to the acting

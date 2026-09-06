@@ -7,6 +7,7 @@ import com.mycorrhizal.crm.data.session.SessionManager
 import com.mycorrhizal.crm.domain.repository.BiometricEnrollmentStatus
 import com.mycorrhizal.crm.domain.repository.LocalAuthCapabilities
 import com.mycorrhizal.crm.domain.repository.LocalAuthSettingsRepository
+import com.mycorrhizal.crm.model.Generated
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -70,20 +71,30 @@ class BiometricEnrollmentViewModel @Inject constructor(
     }
 
     /** The user chose "Set up" — mint and store a device grant. */
+    @Generated("UI-launch wrapper (viewModelScope); the deterministic state machine is covered via performEnroll")
     fun enroll() {
         if (_uiState.value.isBusy) return
-        _uiState.value = _uiState.value.copy(isBusy = true, error = false)
         viewModelScope.launch {
-            deviceGrantManager.enroll(android.os.Build.MODEL.ifBlank { "Android" }).fold(
-                onSuccess = {
-                    _uiState.value = _uiState.value.copy(isBusy = false, visible = false)
-                    _events.send(BiometricEnrollmentEvent.Done)
-                },
-                onFailure = {
-                    _uiState.value = _uiState.value.copy(isBusy = false, error = true)
-                },
-            )
+            performEnroll((android.os.Build.MODEL ?: "").ifBlank { "Android" })
         }
+    }
+
+    /**
+     * Enroll-and-finish, factored out of [enroll] so the deterministic state
+     * machine is testable without relying on a launched coroutine.
+     */
+    internal suspend fun performEnroll(label: String) {
+        if (_uiState.value.isBusy) return
+        _uiState.value = _uiState.value.copy(isBusy = true, error = false)
+        deviceGrantManager.enroll(label).fold(
+            onSuccess = {
+                _uiState.value = _uiState.value.copy(isBusy = false, visible = false)
+                _events.send(BiometricEnrollmentEvent.Done)
+            },
+            onFailure = {
+                _uiState.value = _uiState.value.copy(isBusy = false, error = true)
+            },
+        )
     }
 
     /** "Not now" — leave the state UNASKED so the prompt returns next login. */

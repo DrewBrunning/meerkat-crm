@@ -381,4 +381,56 @@ class SettingsViewModelTest {
     }
 
 
+
+    // --- Issue #722: fully biometric login ---
+
+    @Test
+    fun `enrolling biometric sign-in calls the device grant manager`() = runTest(mainDispatcherRule.testDispatcher) {
+        coEvery { deviceGrantManager.enroll(any()) } returns Result.success(Unit)
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.performBiometricEnroll()
+
+        coVerify { deviceGrantManager.enroll(any()) }
+        assertFalse(vm.uiState.value.isBiometricBusy)
+        assertEquals(null, vm.uiState.value.biometricErrorRes)
+    }
+
+    @Test
+    fun `a failed enrollment surfaces an error`() = runTest(mainDispatcherRule.testDispatcher) {
+        coEvery { deviceGrantManager.enroll(any()) } returns Result.failure(Exception("network"))
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.performBiometricEnroll()
+
+        assertEquals(R.string.biometric_enroll_error, vm.uiState.value.biometricErrorRes)
+        assertFalse(vm.uiState.value.isBiometricBusy)
+    }
+
+    @Test
+    fun `removing biometric sign-in calls the device grant manager`() = runTest(mainDispatcherRule.testDispatcher) {
+        coEvery { deviceGrantManager.removeEnrollment() } returns Result.success(Unit)
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.performBiometricRemove()
+
+        coVerify { deviceGrantManager.removeEnrollment() }
+        assertFalse(vm.uiState.value.isBiometricBusy)
+    }
+
+    @Test
+    fun `a failed removal surfaces an error`() = runTest(mainDispatcherRule.testDispatcher) {
+        coEvery { deviceGrantManager.removeEnrollment() } returns Result.failure(Exception("network"))
+        val vm = viewModel()
+        advanceUntilIdle()
+
+        vm.performBiometricRemove()
+
+        assertEquals(R.string.biometric_enroll_error, vm.uiState.value.biometricErrorRes)
+        assertFalse(vm.uiState.value.isBiometricBusy)
+    }
+
 }

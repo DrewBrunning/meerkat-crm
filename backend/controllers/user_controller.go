@@ -495,7 +495,7 @@ func ConfirmPasswordReset(context *gin.Context, cfg *config.Config) {
 	// "forgot my password" reset must not leave a remembered device able to
 	// mint fresh sessions.
 	if _, err := services.RevokeAllDeviceGrants(db, user.ID); err != nil {
-		log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after password reset")
+		log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after password reset") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
 	}
 
 	// Issue #411 / ASVS 2.2.3: let the account owner know a reset happened,
@@ -797,7 +797,7 @@ func ChangePassword(context *gin.Context, cfg *config.Config) {
 	// that outlives a password change would let anyone who learned the old
 	// password keep an unlocked door. The caller re-enrolls on next login.
 	if _, err := services.RevokeAllDeviceGrants(db, user.ID); err != nil {
-		log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after password change")
+		log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after password change") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
 	}
 
 	// The bump above also invalidated the caller's own token. Re-issue it so

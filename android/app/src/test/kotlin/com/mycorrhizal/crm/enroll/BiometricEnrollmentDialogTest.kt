@@ -67,4 +67,14 @@ class BiometricEnrollmentDialogTest {
         composeTestRule.onNodeWithText("Never ask again").performClick()
         assertTrue(never)
     }
+
+    @Test
+    fun `an error state is announced and the actions stay available`() {
+        setDialog(error = true)
+
+        composeTestRule.onNodeWithText("Couldn't set up biometric sign-in. Please try again.").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Set up").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Not now").assertIsDisplayed()
+    }
+
 }

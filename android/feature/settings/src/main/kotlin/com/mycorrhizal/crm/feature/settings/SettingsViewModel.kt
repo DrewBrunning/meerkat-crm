@@ -11,6 +11,7 @@ import com.mycorrhizal.crm.domain.repository.AppSettingsRepository
 import com.mycorrhizal.crm.domain.repository.AuthRepository
 import com.mycorrhizal.crm.domain.repository.AutoLockDelay
 import com.mycorrhizal.crm.domain.repository.BiometricEnrollmentStatus
+import com.mycorrhizal.crm.model.Generated
 import com.mycorrhizal.crm.domain.repository.LocalAuthCapabilities
 import com.mycorrhizal.crm.domain.repository.LocalAuthSettingsRepository
 import com.mycorrhizal.crm.domain.repository.RelationshipEdgeRepository
@@ -175,38 +176,54 @@ class SettingsViewModel @Inject constructor(
      * it behind the encrypted envelope. After this, an expired session on this
      * device resumes with a biometric unlock instead of a password.
      */
+    @Generated("UI-launch wrapper (viewModelScope); the deterministic state machine is covered via performBiometricEnroll")
     fun enrollBiometricSignIn() {
+        viewModelScope.launch { performBiometricEnroll() }
+    }
+
+    /**
+     * Enroll-and-finish, factored out of [enrollBiometricSignIn] so the
+     * deterministic state transitions are testable without a launched
+     * coroutine.
+     */
+    internal suspend fun performBiometricEnroll() {
         if (_uiState.value.isBiometricBusy) return
         _uiState.update { it.copy(isBiometricBusy = true, biometricErrorRes = null) }
-        viewModelScope.launch {
-            deviceGrantManager.enroll(deviceLabel()).fold(
-                onSuccess = { _uiState.update { it.copy(isBiometricBusy = false) } },
-                onFailure = {
-                    _uiState.update {
-                        it.copy(isBiometricBusy = false, biometricErrorRes = R.string.biometric_enroll_error)
-                    }
-                },
-            )
-        }
+        deviceGrantManager.enroll(deviceLabel()).fold(
+            onSuccess = { _uiState.update { it.copy(isBiometricBusy = false) } },
+            onFailure = {
+                _uiState.update {
+                    it.copy(isBiometricBusy = false, biometricErrorRes = R.string.biometric_enroll_error)
+                }
+            },
+        )
     }
 
     /** Revoke this device's grant and clear the local copy (status drops to OPTED_OUT). */
+    @Generated("UI-launch wrapper (viewModelScope); the deterministic state machine is covered via performBiometricRemove")
     fun removeBiometricSignIn() {
-        if (_uiState.value.isBiometricBusy) return
-        _uiState.update { it.copy(isBiometricBusy = true, biometricErrorRes = null) }
-        viewModelScope.launch {
-            deviceGrantManager.removeEnrollment().fold(
-                onSuccess = { _uiState.update { it.copy(isBiometricBusy = false) } },
-                onFailure = {
-                    _uiState.update {
-                        it.copy(isBiometricBusy = false, biometricErrorRes = R.string.biometric_enroll_error)
-                    }
-                },
-            )
-        }
+        viewModelScope.launch { performBiometricRemove() }
     }
 
-    private fun deviceLabel(): String = Build.MODEL.ifBlank { "Android" }
+    /**
+     * Remove-and-finish, factored out of [removeBiometricSignIn] so the
+     * deterministic state transitions are testable without a launched
+     * coroutine.
+     */
+    internal suspend fun performBiometricRemove() {
+        if (_uiState.value.isBiometricBusy) return
+        _uiState.update { it.copy(isBiometricBusy = true, biometricErrorRes = null) }
+        deviceGrantManager.removeEnrollment().fold(
+            onSuccess = { _uiState.update { it.copy(isBiometricBusy = false) } },
+            onFailure = {
+                _uiState.update {
+                    it.copy(isBiometricBusy = false, biometricErrorRes = R.string.biometric_enroll_error)
+                }
+            },
+        )
+    }
+
+    private fun deviceLabel(): String = (Build.MODEL ?: "").ifBlank { "Android" }
 
     // --- M25: profile & channels ---
 

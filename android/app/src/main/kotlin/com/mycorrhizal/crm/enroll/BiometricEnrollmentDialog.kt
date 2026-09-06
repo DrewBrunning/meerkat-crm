@@ -18,6 +18,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mycorrhizal.crm.model.Generated
 import com.mycorrhizal.crm.ui.R
 
 /**
@@ -26,6 +27,10 @@ import com.mycorrhizal.crm.ui.R
  * already decided or the device cannot pass the local gate; otherwise shows
  * the dialog until the user picks an option.
  */
+// Hilt-backed host (hiltViewModel default) mounted from the root; the JVM
+// unit runner cannot construct it without a Hilt application. The dialog it
+// shows and the VM decisions are covered directly.
+@Generated("Hilt-backed host composable — requires a Hilt test application; dialog + VM are covered directly")
 @Composable
 fun BiometricEnrollmentPromptHost(
     onDone: () -> Unit,

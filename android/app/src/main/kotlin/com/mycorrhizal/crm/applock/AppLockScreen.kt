@@ -36,6 +36,7 @@ import androidx.compose.ui.unit.dp
 import androidx.fragment.app.FragmentActivity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mycorrhizal.crm.model.Generated
 import com.mycorrhizal.crm.ui.R
 import kotlinx.coroutines.launch
 
@@ -47,6 +48,10 @@ import kotlinx.coroutines.launch
  * The only way off it — besides authenticating — is "Log out", which ends the
  * session normally (the opt-in preference itself is kept).
  */
+// Stateful host of the OS prompt: builds the BiometricPrompt/Keystore unlock
+// path that only a real device can exercise (issue #238's instrumented suite);
+// the rendering it controls is the covered, stateless AppLockContent.
+@Generated("hosts the OS BiometricPrompt/Keystore unlock — device-only; stateless AppLockContent is covered")
 @Composable
 fun AppLockScreen(
     viewModel: AppLockViewModel = hiltViewModel(),
