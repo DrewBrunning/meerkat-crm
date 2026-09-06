@@ -209,4 +209,63 @@ class PendingInteractionRepositoryImplTest {
             assertEquals(key, cursor.getString(cursor.getColumnIndexOrThrow("idempotencyKey")))
         }
     }
+
+    // --- Issue #721: recordIfNew exact-match dedupe --------------------------
+
+    @Test
+    fun `recordIfNew stages a brand-new interaction and returns true`() = runBlocking {
+        val inserted = repository.recordIfNew(interaction(1000L))
+
+        assertTrue(inserted)
+        assertEquals(1, repository.unsynced().size)
+    }
+
+    @Test
+    fun `recordIfNew skips an identical already-staged interaction and returns false`() = runBlocking {
+        repository.record(interaction(1000L))
+
+        // Same kind / phone / timestamp as the existing row — the signature an
+        // overlapping reader run yields for the same underlying message/call.
+        val inserted = repository.recordIfNew(interaction(1000L))
+
+        assertEquals(false, inserted)
+        assertEquals(1, repository.unsynced().size)
+    }
+
+    @Test
+    fun `recordIfNew dedupe is exact - a different timestamp stages a new row`() = runBlocking {
+        repository.record(interaction(1000L))
+
+        val inserted = repository.recordIfNew(interaction(2000L))
+
+        assertTrue(inserted)
+        assertEquals(listOf(1000L, 2000L), repository.unsynced().map { it.timestampMillis })
+    }
+
+    @Test
+    fun `recordIfNew dedupe distinguishes by phone number and kind`() = runBlocking {
+        repository.record(interaction(1000L))
+
+        val differentPhone = repository.recordIfNew(
+            interaction(1000L).copy(phoneNumber = "+15559999999"),
+        )
+        val differentKind = repository.recordIfNew(
+            interaction(1000L).copy(kind = "message"),
+        )
+
+        assertTrue(differentPhone)
+        assertTrue(differentKind)
+        assertEquals(3, repository.unsynced().size)
+    }
+
+    @Test
+    fun `recordIfNew still applies the bounded-queue cap`() = runBlocking {
+        for (i in 0 until OUTBOX_UNSYNCED_CAP) {
+            repository.record(interaction(1000L + i))
+        }
+        // One over the cap through the dedupe path.
+        repository.recordIfNew(interaction(1000L + OUTBOX_UNSYNCED_CAP))
+
+        assertEquals(OUTBOX_UNSYNCED_CAP, db.pendingInteractionDao().countUnsynced())
+    }
 }

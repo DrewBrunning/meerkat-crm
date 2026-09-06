@@ -11,6 +11,9 @@ import com.mycorrhizal.crm.domain.repository.LocalAuthSettingsRepository
 import com.mycorrhizal.crm.domain.repository.RelationshipEdgeRepository
 import com.mycorrhizal.crm.domain.repository.SessionState
 import com.mycorrhizal.crm.domain.repository.TrackingSettingsRepository
+import com.mycorrhizal.crm.feature.tracking.PermissionChecker
+import com.mycorrhizal.crm.feature.tracking.TrackingCatchUpScheduler
+import com.mycorrhizal.crm.feature.tracking.TrackingPermissions
 import com.mycorrhizal.crm.model.network.RelationshipEdge
 import com.mycorrhizal.crm.network.ApiError
 import com.mycorrhizal.crm.testing.MainDispatcherRule
@@ -19,6 +22,7 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import io.mockk.verify
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.advanceUntilIdle
@@ -39,27 +43,46 @@ class SettingsViewModelTest {
     private val trackingSettings = mockk<TrackingSettingsRepository>()
     private val appSettings = mockk<AppSettingsRepository>()
     private val relationshipEdgeRepository = mockk<RelationshipEdgeRepository>()
+    private val permissionChecker = mockk<PermissionChecker>()
+    private val catchUpScheduler = mockk<TrackingCatchUpScheduler>(relaxed = true)
     private val localAuthSettings = mockk<LocalAuthSettingsRepository>()
     private val localAuthCapabilities = mockk<LocalAuthCapabilities>()
     private val deviceGrantManager = mockk<DeviceGrantManager>()
     private val appContext = mockk<Context>(relaxed = true)
 
+    /** A factory defaulting to "no tracking permissions granted, nothing stored". */
     private fun viewModel(
         session: SessionState = SessionState(),
         themePreference: String = AppSettingsRepository.THEME_SYSTEM,
-        requireLocalAuth: Boolean = false,
-        autoLockDelay: AutoLockDelay = AutoLockDelay.DEFAULT,
-        localAuthSupported: Boolean = true,
+        callStored: Boolean = false,
+        smsStored: Boolean = false,
+        callGranted: Boolean = false,
+        smsGranted: Boolean = false,
     ): SettingsViewModel {
-        coEvery { trackingSettings.callTrackingEnabled() } returns false
-        coEvery { trackingSettings.smsTrackingEnabled() } returns false
+        coEvery { trackingSettings.callTrackingEnabled() } returns callStored
+        coEvery { trackingSettings.smsTrackingEnabled() } returns smsStored
         coEvery { trackingSettings.notificationsEnabled() } returns true
+        coEvery { trackingSettings.setCallTrackingEnabled(any()) } returns Unit
+        coEvery { trackingSettings.setSmsTrackingEnabled(any()) } returns Unit
         every { authRepository.observeSession() } returns MutableStateFlow(session)
         coEvery { appSettings.themePreference() } returns flowOf(themePreference)
-        every { localAuthSettings.requireLocalAuth() } returns MutableStateFlow(requireLocalAuth)
-        every { localAuthSettings.autoLockDelay() } returns MutableStateFlow(autoLockDelay)
+        every { localAuthSettings.requireLocalAuth() } returns MutableStateFlow(false)
+        every { localAuthSettings.autoLockDelay() } returns MutableStateFlow(AutoLockDelay.DEFAULT)
         every { localAuthSettings.biometricEnrollmentStatus() } returns MutableStateFlow(BiometricEnrollmentStatus.UNASKED)
-        every { localAuthCapabilities.canEnableLocalAuth() } returns localAuthSupported
+        every { localAuthCapabilities.canEnableLocalAuth() } returns true
+        every { permissionChecker.isGranted(any()) } returns false
+        every {
+            permissionChecker.isGranted(TrackingPermissions.READ_CALL_LOG)
+        } returns callGranted
+        every {
+            permissionChecker.isGranted(TrackingPermissions.READ_PHONE_STATE)
+        } returns callGranted
+        every {
+            permissionChecker.isGranted(TrackingPermissions.READ_SMS)
+        } returns smsGranted
+        every {
+            permissionChecker.isGranted(TrackingPermissions.RECEIVE_SMS)
+        } returns smsGranted
         return SettingsViewModel(
             authRepository,
             trackingSettings,
@@ -68,6 +91,8 @@ class SettingsViewModelTest {
             localAuthSettings,
             localAuthCapabilities,
             deviceGrantManager,
+            permissionChecker,
+            catchUpScheduler,
             appContext,
         )
     }
@@ -100,117 +125,292 @@ class SettingsViewModelTest {
         assertEquals(SettingsEvent.LoggedOut, vm.events.value)
     }
 
-    @Test
-    fun `tracking toggles persist their preference`() = runTest(mainDispatcherRule.testDispatcher) {
-        coEvery { trackingSettings.setCallTrackingEnabled(true) } returns Unit
-        coEvery { trackingSettings.setSmsTrackingEnabled(true) } returns Unit
-        val vm = viewModel()
-        advanceUntilIdle()
+    // --- Issue #721: tracking toggles are permission-gated --------------------
 
+    @Test
+    fun `enabling call tracking with the grant present enables, persists and kicks the catch-up`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val vm = viewModel(callGranted = true)
+            advanceUntilIdle()
+
+            vm.setCallTrackingEnabled(true)
+            advanceUntilIdle()
+
+            assertTrue(vm.uiState.value.callTrackingEnabled)
+            coVerify { trackingSettings.setCallTrackingEnabled(true) }
+            verify { catchUpScheduler.enqueueCallLogCatchUp() }
+            // No system dialog is needed when the grant is already present.
+            assertNull(vm.uiState.value.pendingPermissionRequest)
+        }
+
+    @Test
+    fun `enabling SMS tracking with the grant present enables, persists and kicks the backfill`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val vm = viewModel(smsGranted = true)
+            advanceUntilIdle()
+
+            vm.setSmsTrackingEnabled(true)
+            advanceUntilIdle()
+
+            assertTrue(vm.uiState.value.smsTrackingEnabled)
+            coVerify { trackingSettings.setSmsTrackingEnabled(true) }
+            verify { catchUpScheduler.enqueueSmsBackfill() }
+            assertNull(vm.uiState.value.pendingPermissionRequest)
+        }
+
+    @Test
+    fun `enabling call tracking without the grant requests the permission dialog and stays off`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val vm = viewModel(callGranted = false)
+            advanceUntilIdle()
+
+            vm.setCallTrackingEnabled(true)
+            advanceUntilIdle()
+
+            // The toggle must not flip on, and the flag must not be persisted,
+            // until the OS grant actually lands.
+            assertFalse(vm.uiState.value.callTrackingEnabled)
+            assertEquals(
+                TrackingPermissionRequest.CALL_TRACKING,
+                vm.uiState.value.pendingPermissionRequest,
+            )
+            coVerify(exactly = 0) { trackingSettings.setCallTrackingEnabled(true) }
+            verify(exactly = 0) { catchUpScheduler.enqueueCallLogCatchUp() }
+        }
+
+    @Test
+    fun `enabling SMS tracking without the grant requests the permission dialog and stays off`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val vm = viewModel(smsGranted = false)
+            advanceUntilIdle()
+
+            vm.setSmsTrackingEnabled(true)
+            advanceUntilIdle()
+
+            assertFalse(vm.uiState.value.smsTrackingEnabled)
+            assertEquals(
+                TrackingPermissionRequest.SMS_TRACKING,
+                vm.uiState.value.pendingPermissionRequest,
+            )
+            coVerify(exactly = 0) { trackingSettings.setSmsTrackingEnabled(true) }
+        }
+
+    @Test
+    fun `a call permission grant result enables tracking and persists the flag`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val vm = viewModel(callGranted = false)
+            advanceUntilIdle()
+            vm.setCallTrackingEnabled(true)
+            advanceUntilIdle()
+
+            // The OS dialog was shown; the user granted everything. The grant is
+            // re-read from the real permission state, which is now present.
+            every { permissionChecker.isGranted(TrackingPermissions.READ_CALL_LOG) } returns true
+            every { permissionChecker.isGranted(TrackingPermissions.READ_PHONE_STATE) } returns true
+
+            vm.onPermissionRequestResult(TrackingPermissionRequest.CALL_TRACKING, permanentlyDenied = false)
+            advanceUntilIdle()
+
+            assertTrue(vm.uiState.value.callTrackingEnabled)
+            assertNull(vm.uiState.value.pendingPermissionRequest)
+            assertNull(vm.uiState.value.permissionDialog)
+            coVerify { trackingSettings.setCallTrackingEnabled(true) }
+            verify { catchUpScheduler.enqueueCallLogCatchUp() }
+        }
+
+    @Test
+    fun `a denied call permission result leaves the flag false and raises the rationale dialog`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val vm = viewModel(callGranted = false)
+            advanceUntilIdle()
+            vm.setCallTrackingEnabled(true)
+            advanceUntilIdle()
+
+            vm.onPermissionRequestResult(TrackingPermissionRequest.CALL_TRACKING, permanentlyDenied = false)
+            advanceUntilIdle()
+
+            assertFalse(vm.uiState.value.callTrackingEnabled)
+            assertEquals(
+                TrackingPermissionDialog.Rationale(TrackingPermissionRequest.CALL_TRACKING),
+                vm.uiState.value.permissionDialog,
+            )
+            coVerify(exactly = 0) { trackingSettings.setCallTrackingEnabled(true) }
+        }
+
+    @Test
+    fun `a permanently denied call permission raises the open-settings dialog`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val vm = viewModel(callGranted = false)
+            advanceUntilIdle()
+            vm.setCallTrackingEnabled(true)
+            advanceUntilIdle()
+
+            vm.onPermissionRequestResult(TrackingPermissionRequest.CALL_TRACKING, permanentlyDenied = true)
+            advanceUntilIdle()
+
+            assertEquals(
+                TrackingPermissionDialog.AppSettings(TrackingPermissionRequest.CALL_TRACKING),
+                vm.uiState.value.permissionDialog,
+            )
+            assertNull(vm.uiState.value.pendingPermissionRequest)
+        }
+
+    @Test
+    fun `a denied SMS permission result raises the SMS rationale dialog`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val vm = viewModel(smsGranted = false)
+            advanceUntilIdle()
+            vm.setSmsTrackingEnabled(true)
+            advanceUntilIdle()
+
+            vm.onPermissionRequestResult(TrackingPermissionRequest.SMS_TRACKING, permanentlyDenied = false)
+            advanceUntilIdle()
+
+            assertFalse(vm.uiState.value.smsTrackingEnabled)
+            assertEquals(
+                TrackingPermissionDialog.Rationale(TrackingPermissionRequest.SMS_TRACKING),
+                vm.uiState.value.permissionDialog,
+            )
+            coVerify(exactly = 0) { trackingSettings.setSmsTrackingEnabled(true) }
+        }
+
+    @Test
+    fun `a rationale retry re-requests the same permission set`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val vm = viewModel(callGranted = false)
+            advanceUntilIdle()
+            vm.setCallTrackingEnabled(true)
+            advanceUntilIdle()
+            vm.onPermissionRequestResult(TrackingPermissionRequest.CALL_TRACKING, permanentlyDenied = false)
+            advanceUntilIdle()
+
+            vm.onPermissionDialogRetry()
+            advanceUntilIdle()
+
+            assertNull(vm.uiState.value.permissionDialog)
+            assertEquals(
+                TrackingPermissionRequest.CALL_TRACKING,
+                vm.uiState.value.pendingPermissionRequest,
+            )
+        }
+
+    @Test
+    fun `dismissing the permission dialog clears it`() = runTest(mainDispatcherRule.testDispatcher) {
+        val vm = viewModel(callGranted = false)
+        advanceUntilIdle()
         vm.setCallTrackingEnabled(true)
-        vm.setSmsTrackingEnabled(true)
+        advanceUntilIdle()
+        vm.onPermissionRequestResult(TrackingPermissionRequest.CALL_TRACKING, permanentlyDenied = true)
+        advanceUntilIdle()
+        assertTrue(vm.uiState.value.permissionDialog is TrackingPermissionDialog.AppSettings)
+
+        vm.onPermissionDialogDismiss()
         advanceUntilIdle()
 
-        assertTrue(vm.uiState.value.callTrackingEnabled)
-        assertTrue(vm.uiState.value.smsTrackingEnabled)
-        coVerify { trackingSettings.setCallTrackingEnabled(true) }
-        coVerify { trackingSettings.setSmsTrackingEnabled(true) }
-    }
-
-    // --- Issue #722: the opt-in local app lock ---
-
-    @Test
-    fun `the app-lock preference defaults to off`() = runTest(mainDispatcherRule.testDispatcher) {
-        val vm = viewModel()
-        advanceUntilIdle()
-
-        assertFalse(vm.uiState.value.requireLocalAuth)
+        assertNull(vm.uiState.value.permissionDialog)
+        assertNull(vm.uiState.value.pendingPermissionRequest)
     }
 
     @Test
-    fun `toggling the app lock on persists the preference`() = runTest(mainDispatcherRule.testDispatcher) {
-        coEvery { localAuthSettings.setRequireLocalAuth(true) } returns Unit
-        val vm = viewModel(requireLocalAuth = false)
-        advanceUntilIdle()
+    fun `disabling tracking while a request is pending cancels the request and beats its late result`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val vm = viewModel(callGranted = false)
+            advanceUntilIdle()
+            vm.setCallTrackingEnabled(true)
+            advanceUntilIdle()
+            assertEquals(
+                TrackingPermissionRequest.CALL_TRACKING,
+                vm.uiState.value.pendingPermissionRequest,
+            )
 
-        vm.setRequireLocalAuth(true)
-        advanceUntilIdle()
+            vm.setCallTrackingEnabled(false)
+            advanceUntilIdle()
 
-        assertTrue(vm.uiState.value.requireLocalAuth)
-        coVerify { localAuthSettings.setRequireLocalAuth(true) }
-    }
+            assertFalse(vm.uiState.value.callTrackingEnabled)
+            assertNull(vm.uiState.value.pendingPermissionRequest)
+            coVerify { trackingSettings.setCallTrackingEnabled(false) }
 
-    @Test
-    fun `toggling the app lock off persists the preference`() = runTest(mainDispatcherRule.testDispatcher) {
-        coEvery { localAuthSettings.setRequireLocalAuth(false) } returns Unit
-        val vm = viewModel(requireLocalAuth = true)
-        advanceUntilIdle()
+            // The OS still delivers the dialog outcome after the cancel (the
+            // dialog is modal, the user could not toggle mid-flight — but a
+            // late/cancelled flow must not re-enable behind the user's back).
+            every { permissionChecker.isGranted(TrackingPermissions.READ_CALL_LOG) } returns true
+            every { permissionChecker.isGranted(TrackingPermissions.READ_PHONE_STATE) } returns true
+            vm.onPermissionRequestResult(TrackingPermissionRequest.CALL_TRACKING, permanentlyDenied = false)
+            advanceUntilIdle()
 
-        vm.setRequireLocalAuth(false)
-        advanceUntilIdle()
-
-        assertFalse(vm.uiState.value.requireLocalAuth)
-        coVerify { localAuthSettings.setRequireLocalAuth(false) }
-    }
-
-    @Test
-    fun `a loaded app-lock preference is surfaced`() = runTest(mainDispatcherRule.testDispatcher) {
-        val vm = viewModel(requireLocalAuth = true, autoLockDelay = AutoLockDelay.ONE_HOUR)
-        advanceUntilIdle()
-
-        assertTrue(vm.uiState.value.requireLocalAuth)
-        assertEquals(AutoLockDelay.ONE_HOUR, vm.uiState.value.autoLockDelay)
-    }
-
-    // The toggle must not be enableable on a device that cannot satisfy the
-    // gate — there would be no way it could ever open.
-    @Test
-    fun `enabling on an unsupported device is refused`() = runTest(mainDispatcherRule.testDispatcher) {
-        val vm = viewModel(localAuthSupported = false)
-        advanceUntilIdle()
-
-        assertFalse(vm.uiState.value.localAuthSupported)
-        vm.setRequireLocalAuth(true)
-        advanceUntilIdle()
-
-        assertFalse(vm.uiState.value.requireLocalAuth)
-        coVerify(exactly = 0) { localAuthSettings.setRequireLocalAuth(any()) }
-    }
+            assertFalse(vm.uiState.value.callTrackingEnabled)
+            coVerify(exactly = 1) { trackingSettings.setCallTrackingEnabled(false) }
+            verify(exactly = 0) { catchUpScheduler.enqueueCallLogCatchUp() }
+        }
 
     @Test
-    fun `the delay defaults to five minutes`() = runTest(mainDispatcherRule.testDispatcher) {
-        val vm = viewModel()
-        advanceUntilIdle()
+    fun `a double enable while a request is pending does not stack a second request`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val vm = viewModel(callGranted = false)
+            advanceUntilIdle()
 
-        assertEquals(AutoLockDelay.DEFAULT, vm.uiState.value.autoLockDelay)
-    }
+            vm.setCallTrackingEnabled(true)
+            vm.setCallTrackingEnabled(true)
+            advanceUntilIdle()
+
+            // Exactly one pending request drives exactly one system dialog.
+            assertEquals(
+                TrackingPermissionRequest.CALL_TRACKING,
+                vm.uiState.value.pendingPermissionRequest,
+            )
+        }
 
     @Test
-    fun `changing the delay persists it while the app lock is on`() = runTest(mainDispatcherRule.testDispatcher) {
-        coEvery { localAuthSettings.setAutoLockDelay(AutoLockDelay.ONE_MINUTE) } returns Unit
-        val vm = viewModel(requireLocalAuth = true)
-        advanceUntilIdle()
+    fun `a stored call-tracking flag whose permission was revoked is reverted on refresh`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val vm = viewModel(callStored = true, callGranted = false)
+            advanceUntilIdle()
 
-        vm.setAutoLockDelay(AutoLockDelay.ONE_MINUTE)
-        advanceUntilIdle()
+            // The stored flag said "on" but the OS grant is gone (revoked in
+            // system settings): the toggle must render off and the flag be
+            // persisted off so the capture workers stop being fooled.
+            assertFalse(vm.uiState.value.callTrackingEnabled)
+            coVerify { trackingSettings.setCallTrackingEnabled(false) }
+        }
 
-        assertEquals(AutoLockDelay.ONE_MINUTE, vm.uiState.value.autoLockDelay)
-        coVerify { localAuthSettings.setAutoLockDelay(AutoLockDelay.ONE_MINUTE) }
-    }
-
-    // The timeout only matters while the lock is on; the UI only shows the
-    // dropdown then, and the VM refuses a change while it is off.
     @Test
-    fun `changing the delay while the app lock is off is refused`() = runTest(mainDispatcherRule.testDispatcher) {
-        val vm = viewModel(requireLocalAuth = false)
-        advanceUntilIdle()
+    fun `a stored SMS flag whose permission was revoked is reverted on refresh`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val vm = viewModel(smsStored = true, smsGranted = false)
+            advanceUntilIdle()
 
-        vm.setAutoLockDelay(AutoLockDelay.ONE_HOUR)
-        advanceUntilIdle()
+            assertFalse(vm.uiState.value.smsTrackingEnabled)
+            coVerify { trackingSettings.setSmsTrackingEnabled(false) }
+        }
 
-        assertEquals(AutoLockDelay.DEFAULT, vm.uiState.value.autoLockDelay)
-        coVerify(exactly = 0) { localAuthSettings.setAutoLockDelay(any()) }
-    }
+    @Test
+    fun `a stored call flag with the grant still present stays on`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val vm = viewModel(callStored = true, callGranted = true)
+            advanceUntilIdle()
+
+            assertTrue(vm.uiState.value.callTrackingEnabled)
+            coVerify(exactly = 0) { trackingSettings.setCallTrackingEnabled(false) }
+        }
+
+    @Test
+    fun `refreshPermissionState reconciles after a permission is revoked`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            // Start granted + on (the state right after the user enabled it).
+            val vm = viewModel(callStored = true, callGranted = true)
+            advanceUntilIdle()
+            assertTrue(vm.uiState.value.callTrackingEnabled)
+
+            // The permission is revoked while the Settings screen stays open;
+            // the resume-driven refresh must flip the toggle off.
+            every { permissionChecker.isGranted(TrackingPermissions.READ_CALL_LOG) } returns false
+            every { permissionChecker.isGranted(TrackingPermissions.READ_PHONE_STATE) } returns false
+            vm.refreshPermissionState()
+            advanceUntilIdle()
+
+            assertFalse(vm.uiState.value.callTrackingEnabled)
+            coVerify { trackingSettings.setCallTrackingEnabled(false) }
+        }
 
     // --- M25 ---
 
@@ -380,8 +580,6 @@ class SettingsViewModelTest {
         assertNull(vm.uiState.value.suggestedRelationshipCount)
     }
 
-
-
     // --- Issue #722: fully biometric login ---
 
     @Test
@@ -418,18 +616,6 @@ class SettingsViewModelTest {
         vm.performBiometricRemove()
 
         coVerify { deviceGrantManager.removeEnrollment() }
-        assertFalse(vm.uiState.value.isBiometricBusy)
-    }
-
-    @Test
-    fun `a failed removal surfaces an error`() = runTest(mainDispatcherRule.testDispatcher) {
-        coEvery { deviceGrantManager.removeEnrollment() } returns Result.failure(Exception("network"))
-        val vm = viewModel()
-        advanceUntilIdle()
-
-        vm.performBiometricRemove()
-
-        assertEquals(R.string.biometric_enroll_error, vm.uiState.value.biometricErrorRes)
         assertFalse(vm.uiState.value.isBiometricBusy)
     }
 

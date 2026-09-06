@@ -33,6 +33,7 @@ class TrackingSettingsRepositoryImplTest {
         repository.setSmsTrackingEnabled(false)
         repository.setNotificationsEnabled(true)
         repository.setLastCallLogTimestamp(0L)
+        repository.setLastSmsTimestamp(0L)
     }
 
     @Test
@@ -81,6 +82,18 @@ class TrackingSettingsRepositoryImplTest {
         repository.setLastCallLogTimestamp(123_456L)
 
         assertEquals(123_456L, repository.lastCallLogTimestamp())
+    }
+
+    @Test
+    fun `lastSmsTimestamp defaults to zero`() = runTest {
+        assertEquals(0L, repository.lastSmsTimestamp())
+    }
+
+    @Test
+    fun `setLastSmsTimestamp persists the value`() = runTest {
+        repository.setLastSmsTimestamp(654_321L)
+
+        assertEquals(654_321L, repository.lastSmsTimestamp())
     }
 
     @Test

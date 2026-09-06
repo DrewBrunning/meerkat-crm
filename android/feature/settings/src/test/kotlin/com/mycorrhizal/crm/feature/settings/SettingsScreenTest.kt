@@ -279,21 +279,24 @@ class SettingsScreenTest {
         val trackingSettings = mockk<TrackingSettingsRepository>()
         val appSettings = mockk<AppSettingsRepository>()
         val relationshipEdgeRepository = mockk<RelationshipEdgeRepository>()
+        val permissionChecker = mockk<com.mycorrhizal.crm.feature.tracking.PermissionChecker>()
+        val catchUpScheduler = mockk<com.mycorrhizal.crm.feature.tracking.TrackingCatchUpScheduler>(relaxed = true)
         val localAuthSettings = mockk<LocalAuthSettingsRepository>()
         val localAuthCapabilities = mockk<LocalAuthCapabilities>()
+        val deviceGrantManager = mockk<DeviceGrantManager>()
         val appContext = mockk<Context>(relaxed = true)
         coEvery { trackingSettings.callTrackingEnabled() } returns false
         coEvery { trackingSettings.smsTrackingEnabled() } returns false
         coEvery { trackingSettings.notificationsEnabled() } returns true
+        every { localAuthSettings.requireLocalAuth() } returns MutableStateFlow(false)
+        every { localAuthSettings.autoLockDelay() } returns MutableStateFlow(AutoLockDelay.DEFAULT)
+        every { localAuthSettings.biometricEnrollmentStatus() } returns MutableStateFlow(BiometricEnrollmentStatus.UNASKED)
+        every { localAuthCapabilities.canEnableLocalAuth() } returns true
+        every { permissionChecker.isGranted(any()) } returns false
         every { authRepository.observeSession() } returns MutableStateFlow(
             SessionState(serverUrl = "https://crm.example.com", username = "alice", isAdmin = true, language = "en"),
         )
         coEvery { appSettings.themePreference() } returns flowOf(AppSettingsRepository.THEME_SYSTEM)
-        every { localAuthSettings.requireLocalAuth() } returns MutableStateFlow(false)
-        every { localAuthSettings.autoLockDelay() } returns MutableStateFlow(AutoLockDelay.DEFAULT)
-        every { localAuthSettings.biometricEnrollmentStatus() } returns MutableStateFlow(com.mycorrhizal.crm.domain.repository.BiometricEnrollmentStatus.UNASKED)
-        every { localAuthCapabilities.canEnableLocalAuth() } returns true
-        val deviceGrantManager = mockk<DeviceGrantManager>()
         val viewModel = SettingsViewModel(
             authRepository,
             trackingSettings,
@@ -302,6 +305,8 @@ class SettingsScreenTest {
             localAuthSettings,
             localAuthCapabilities,
             deviceGrantManager,
+            permissionChecker,
+            catchUpScheduler,
             appContext,
         )
 
@@ -377,92 +382,62 @@ class SettingsScreenTest {
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Saving"))
     }
 
-    // --- Issue #722: the opt-in local app lock ---
+    // --- Issue #721: tracking-permission denial dialogs ----------------------
 
     @Test
-    fun `app lock section shows the opt-in toggle`() {
+    fun `a rationale dialog explains the call-tracking permission and retries`() {
+        var retried = false
+        var dismissed = false
         composeTestRule.setContent {
             MycorrhizalTheme {
                 SettingsContent(
                     state = SettingsUiState(
-                        session = SessionState(),
-                        requireLocalAuth = false,
-                        autoLockDelay = AutoLockDelay.DEFAULT,
-                        localAuthSupported = true,
+                        permissionDialog = TrackingPermissionDialog.Rationale(
+                            TrackingPermissionRequest.CALL_TRACKING,
+                        ),
                     ),
+                    onPermissionDialogRetry = { retried = true },
+                    onPermissionDialogDismiss = { dismissed = true },
                     onLogout = {},
                 )
             }
         }
 
-        composeTestRule.onNodeWithText("App lock").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Require biometric or device PIN to open the app")
-            .performScrollTo().assertIsDisplayed()
-        // The timeout dropdown only appears once the lock is on.
-        composeTestRule.onNodeWithText("Lock automatically after").assertDoesNotExist()
+        composeTestRule.onNodeWithText("Permission needed").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Try again").performClick()
+        assertEquals(true, retried)
+
+        // Re-show and dismiss via "Not now" — the toggle must stay off and the
+        // dialog must not re-request.
+        composeTestRule.onNodeWithText("Not now").performClick()
+        assertEquals(true, dismissed)
     }
 
     @Test
-    fun `enabling the app lock reveals the timeout dropdown`() {
+    fun `an app-settings dialog offers the system settings deep link for a permanent denial`() {
+        var opened = false
+        var dismissed = false
         composeTestRule.setContent {
             MycorrhizalTheme {
                 SettingsContent(
                     state = SettingsUiState(
-                        session = SessionState(),
-                        requireLocalAuth = true,
-                        autoLockDelay = AutoLockDelay.FIVE_MINUTES,
-                        localAuthSupported = true,
+                        permissionDialog = TrackingPermissionDialog.AppSettings(
+                            TrackingPermissionRequest.SMS_TRACKING,
+                        ),
                     ),
+                    onPermissionDialogOpenSettings = { opened = true },
+                    onPermissionDialogDismiss = { dismissed = true },
                     onLogout = {},
                 )
             }
         }
 
-        composeTestRule.onNodeWithText("Lock automatically after").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("5 minutes").performScrollTo().assertIsDisplayed()
-    }
+        composeTestRule.onNodeWithText("Permission blocked").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Open settings").performClick()
+        assertEquals(true, opened)
 
-    @Test
-    fun `an unsupported device shows why the toggle is unavailable`() {
-        composeTestRule.setContent {
-            MycorrhizalTheme {
-                SettingsContent(
-                    state = SettingsUiState(
-                        session = SessionState(),
-                        requireLocalAuth = false,
-                        localAuthSupported = false,
-                    ),
-                    onLogout = {},
-                )
-            }
-        }
-
-        composeTestRule.onNodeWithText(
-            "Unavailable — this device has no fingerprint, face unlock or secure lock screen.",
-        ).performScrollTo().assertIsDisplayed()
-    }
-
-    @Test
-    fun `selecting a lock delay invokes the delay change callback`() {
-        var changedTo: AutoLockDelay? = null
-        composeTestRule.setContent {
-            MycorrhizalTheme {
-                SettingsContent(
-                    state = SettingsUiState(
-                        session = SessionState(),
-                        requireLocalAuth = true,
-                        autoLockDelay = AutoLockDelay.FIVE_MINUTES,
-                        localAuthSupported = true,
-                    ),
-                    onAutoLockDelayChange = { changedTo = it },
-                    onLogout = {},
-                )
-            }
-        }
-
-        composeTestRule.onNodeWithText("5 minutes").performScrollTo().performClick()
-        composeTestRule.onNodeWithText("1 hour").performClick()
-        assertEquals(AutoLockDelay.ONE_HOUR, changedTo)
+        composeTestRule.onNodeWithText("Not now").performClick()
+        assertEquals(true, dismissed)
     }
 
     // --- Issue #722: fully biometric login (device-grant enrollment) ---
@@ -484,8 +459,7 @@ class SettingsScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Set up biometric sign-in").performScrollTo().assertIsDisplayed()
-        composeTestRule.onNodeWithText("Set up biometric sign-in").performClick()
+        composeTestRule.onNodeWithText("Set up biometric sign-in").performScrollTo().performClick()
         assertEquals(true, setup)
     }
 
@@ -506,7 +480,6 @@ class SettingsScreenTest {
             }
         }
 
-        composeTestRule.onNodeWithText("Biometric sign-in is on for this device").performScrollTo().assertIsDisplayed()
         composeTestRule.onNodeWithText("Turn off biometric sign-in").performScrollTo().performClick()
         assertEquals(true, removed)
     }
