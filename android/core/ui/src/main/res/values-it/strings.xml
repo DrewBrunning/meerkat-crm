@@ -419,7 +419,7 @@
     <string name="settings_password_change_button">Aggiorna password</string>
     <string name="settings_password_mismatch">Le nuove password non coincidono.</string>
 
-    <!-- Impostazioni: blocco locale dell'app (issue #722) -->
+    <!-- Impostazioni: blocco locale dell\'app (issue #722) -->
     <string name="settings_local_auth">Blocco dell\'app</string>
     <string name="settings_local_auth_enable">Richiedi impronta, volto o PIN del dispositivo per aprire l\'app</string>
     <string name="settings_local_auth_enable_hint">All\'apertura dell\'app, o dopo un po\' in background, sblocca con impronta, volto o PIN del dispositivo prima di mostrare i tuoi contatti.</string>
@@ -431,13 +431,23 @@
     <string name="settings_local_auth_delay_1h">1 ora</string>
     <string name="settings_local_auth_unavailable">Non disponibile: questo dispositivo non ha impronte, sblocco col volto o blocco schermo sicuro.</string>
 
-    <!-- Schermata di blocco dell'app (issue #722) -->
+    <!-- Schermata di blocco dell\'app (issue #722) -->
     <string name="app_lock_heading">I tuoi dati sono bloccati</string>
     <string name="app_lock_signed_in_as">Accesso come %1$s</string>
     <string name="app_lock_subtitle">Sblocca con impronta, volto o PIN del dispositivo per continuare.</string>
     <string name="app_lock_unlock">Sblocca</string>
     <string name="app_lock_auth_failed">Impossibile sbloccare. Riprova.</string>
     <string name="app_lock_unsupported">Lo sblocco con impronta, volto o PIN non è disponibile su questo dispositivo. Esci per accedere con la tua password.</string>
+    <!-- Accesso biometrico (issue #722) -->
+    <string name="biometric_enroll_dialog_title">Accedere con i dati biometrici?</string>
+    <string name="biometric_enroll_dialog_body">Usa impronta, volto o PIN del dispositivo per sbloccare questa app invece di digitare la password la prossima volta.</string>
+    <string name="biometric_enroll_action">Configura</string>
+    <string name="biometric_enroll_not_now">Non ora</string>
+    <string name="biometric_enroll_never">Non chiedere più</string>
+    <string name="biometric_enroll_error">Impossibile configurare l\'accesso biometrico. Riprova.</string>
+    <string name="settings_biometric_signin_setup">Configura l\'accesso biometrico</string>
+    <string name="settings_biometric_signin_enabled">L\'accesso biometrico è attivo su questo dispositivo</string>
+    <string name="settings_biometric_signin_remove">Disattiva l\'accesso biometrico</string>
 
     <!-- Settings: webhooks (M25) -->
     <string name="settings_webhooks_title">Webhooks</string>

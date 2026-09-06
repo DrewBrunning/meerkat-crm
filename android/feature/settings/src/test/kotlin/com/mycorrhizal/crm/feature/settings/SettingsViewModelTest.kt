@@ -1,9 +1,11 @@
 package com.mycorrhizal.crm.feature.settings
 
 import android.content.Context
+import com.mycorrhizal.crm.data.auth.DeviceGrantManager
 import com.mycorrhizal.crm.domain.repository.AppSettingsRepository
 import com.mycorrhizal.crm.domain.repository.AuthRepository
 import com.mycorrhizal.crm.domain.repository.AutoLockDelay
+import com.mycorrhizal.crm.domain.repository.BiometricEnrollmentStatus
 import com.mycorrhizal.crm.domain.repository.LocalAuthCapabilities
 import com.mycorrhizal.crm.domain.repository.LocalAuthSettingsRepository
 import com.mycorrhizal.crm.domain.repository.RelationshipEdgeRepository
@@ -39,6 +41,7 @@ class SettingsViewModelTest {
     private val relationshipEdgeRepository = mockk<RelationshipEdgeRepository>()
     private val localAuthSettings = mockk<LocalAuthSettingsRepository>()
     private val localAuthCapabilities = mockk<LocalAuthCapabilities>()
+    private val deviceGrantManager = mockk<DeviceGrantManager>()
     private val appContext = mockk<Context>(relaxed = true)
 
     private fun viewModel(
@@ -55,6 +58,7 @@ class SettingsViewModelTest {
         coEvery { appSettings.themePreference() } returns flowOf(themePreference)
         every { localAuthSettings.requireLocalAuth() } returns MutableStateFlow(requireLocalAuth)
         every { localAuthSettings.autoLockDelay() } returns MutableStateFlow(autoLockDelay)
+        every { localAuthSettings.biometricEnrollmentStatus() } returns MutableStateFlow(BiometricEnrollmentStatus.UNASKED)
         every { localAuthCapabilities.canEnableLocalAuth() } returns localAuthSupported
         return SettingsViewModel(
             authRepository,
@@ -63,6 +67,7 @@ class SettingsViewModelTest {
             relationshipEdgeRepository,
             localAuthSettings,
             localAuthCapabilities,
+            deviceGrantManager,
             appContext,
         )
     }
@@ -374,4 +379,6 @@ class SettingsViewModelTest {
         vm.onRelationshipSuggestBannerShown()
         assertNull(vm.uiState.value.suggestedRelationshipCount)
     }
+
+
 }

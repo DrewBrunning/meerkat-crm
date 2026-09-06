@@ -1,6 +1,7 @@
 package com.mycorrhizal.crm.data.session
 
 import com.mycorrhizal.crm.domain.repository.AutoLockDelay
+import com.mycorrhizal.crm.domain.repository.BiometricEnrollmentStatus
 import com.mycorrhizal.crm.domain.repository.LocalAuthSettingsRepository
 import com.mycorrhizal.crm.domain.repository.SessionState
 import kotlinx.coroutines.CoroutineScope
@@ -25,11 +26,16 @@ class DefaultAppLockControllerTest {
     private class FakeLocalAuthSettingsRepository : LocalAuthSettingsRepository {
         private val require = MutableStateFlow(false)
         private val delay = MutableStateFlow(AutoLockDelay.DEFAULT)
+        private val enrollment = MutableStateFlow(BiometricEnrollmentStatus.UNASKED)
 
         override fun requireLocalAuth(): Flow<Boolean> = require
         override suspend fun setRequireLocalAuth(enabled: Boolean) { require.value = enabled }
         override fun autoLockDelay(): Flow<AutoLockDelay> = delay
         override suspend fun setAutoLockDelay(delay: AutoLockDelay) { this.delay.value = delay }
+        override fun biometricEnrollmentStatus(): Flow<BiometricEnrollmentStatus> = enrollment
+        override suspend fun setBiometricEnrollmentStatus(status: BiometricEnrollmentStatus) {
+            enrollment.value = status
+        }
     }
 
     private class Harness(var now: Long = 0L) {

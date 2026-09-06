@@ -2,12 +2,15 @@ package com.mycorrhizal.crm.feature.settings
 
 import android.content.Context
 import android.content.Intent
+import android.os.Build
 import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.mycorrhizal.crm.data.auth.DeviceGrantManager
 import com.mycorrhizal.crm.domain.repository.AppSettingsRepository
 import com.mycorrhizal.crm.domain.repository.AuthRepository
 import com.mycorrhizal.crm.domain.repository.AutoLockDelay
+import com.mycorrhizal.crm.domain.repository.BiometricEnrollmentStatus
 import com.mycorrhizal.crm.domain.repository.LocalAuthCapabilities
 import com.mycorrhizal.crm.domain.repository.LocalAuthSettingsRepository
 import com.mycorrhizal.crm.domain.repository.RelationshipEdgeRepository
@@ -46,6 +49,10 @@ data class SettingsUiState(
     val autoLockDelay: AutoLockDelay = AutoLockDelay.DEFAULT,
     /** Whether the device can currently satisfy the local gate (strong biometric or secure lock screen). */
     val localAuthSupported: Boolean = true,
+    // Issue #722: fully biometric login — enrollment state + in-flight flags.
+    val biometricEnrollmentStatus: BiometricEnrollmentStatus = BiometricEnrollmentStatus.UNASKED,
+    val isBiometricBusy: Boolean = false,
+    @StringRes val biometricErrorRes: Int? = null,
 )
 
 sealed interface SettingsEvent {
@@ -66,6 +73,7 @@ class SettingsViewModel @Inject constructor(
     private val relationshipEdgeRepository: RelationshipEdgeRepository,
     private val localAuthSettings: LocalAuthSettingsRepository,
     private val localAuthCapabilities: LocalAuthCapabilities,
+    private val deviceGrantManager: DeviceGrantManager,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
@@ -106,6 +114,11 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             localAuthSettings.autoLockDelay().collect { delay ->
                 _uiState.update { it.copy(autoLockDelay = delay) }
+            }
+        }
+        viewModelScope.launch {
+            localAuthSettings.biometricEnrollmentStatus().collect { status ->
+                _uiState.update { it.copy(biometricEnrollmentStatus = status) }
             }
         }
         _uiState.update { it.copy(localAuthSupported = localAuthCapabilities.canEnableLocalAuth()) }
@@ -154,6 +167,46 @@ class SettingsViewModel @Inject constructor(
         _uiState.update { it.copy(autoLockDelay = delay) }
         viewModelScope.launch { localAuthSettings.setAutoLockDelay(delay) }
     }
+
+    // --- Issue #722: fully biometric login (device-grant enrollment) ---
+
+    /**
+     * Enroll this device for biometric sign-in: mint a server grant and store
+     * it behind the encrypted envelope. After this, an expired session on this
+     * device resumes with a biometric unlock instead of a password.
+     */
+    fun enrollBiometricSignIn() {
+        if (_uiState.value.isBiometricBusy) return
+        _uiState.update { it.copy(isBiometricBusy = true, biometricErrorRes = null) }
+        viewModelScope.launch {
+            deviceGrantManager.enroll(deviceLabel()).fold(
+                onSuccess = { _uiState.update { it.copy(isBiometricBusy = false) } },
+                onFailure = {
+                    _uiState.update {
+                        it.copy(isBiometricBusy = false, biometricErrorRes = R.string.biometric_enroll_error)
+                    }
+                },
+            )
+        }
+    }
+
+    /** Revoke this device's grant and clear the local copy (status drops to OPTED_OUT). */
+    fun removeBiometricSignIn() {
+        if (_uiState.value.isBiometricBusy) return
+        _uiState.update { it.copy(isBiometricBusy = true, biometricErrorRes = null) }
+        viewModelScope.launch {
+            deviceGrantManager.removeEnrollment().fold(
+                onSuccess = { _uiState.update { it.copy(isBiometricBusy = false) } },
+                onFailure = {
+                    _uiState.update {
+                        it.copy(isBiometricBusy = false, biometricErrorRes = R.string.biometric_enroll_error)
+                    }
+                },
+            )
+        }
+    }
+
+    private fun deviceLabel(): String = Build.MODEL.ifBlank { "Android" }
 
     // --- M25: profile & channels ---
 

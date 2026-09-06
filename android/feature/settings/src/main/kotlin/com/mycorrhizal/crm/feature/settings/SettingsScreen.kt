@@ -54,6 +54,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.mycorrhizal.crm.domain.repository.AppSettingsRepository
 import com.mycorrhizal.crm.domain.repository.AutoLockDelay
+import com.mycorrhizal.crm.domain.repository.BiometricEnrollmentStatus
 import com.mycorrhizal.crm.ui.R
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -149,6 +150,8 @@ fun SettingsScreen(
             onNotificationsChange = viewModel::setNotificationsEnabled,
             onRequireLocalAuthChange = viewModel::setRequireLocalAuth,
             onAutoLockDelayChange = viewModel::setAutoLockDelay,
+            onEnrollBiometricSignIn = viewModel::enrollBiometricSignIn,
+            onRemoveBiometricSignIn = viewModel::removeBiometricSignIn,
             onLogout = viewModel::logout,
             modifier = Modifier.padding(padding),
         )
@@ -179,6 +182,9 @@ fun SettingsContent(
     // Issue #722: the opt-in local app lock.
     onRequireLocalAuthChange: (Boolean) -> Unit = {},
     onAutoLockDelayChange: (AutoLockDelay) -> Unit = {},
+    // Issue #722: fully biometric login.
+    onEnrollBiometricSignIn: () -> Unit = {},
+    onRemoveBiometricSignIn: () -> Unit = {},
     onLogout: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -361,6 +367,46 @@ fun SettingsContent(
                 options = AutoLockDelay.entries.map { it.name },
                 optionLabel = { lockDelayOptionLabel(it) },
                 onSelect = { name -> onAutoLockDelayChange(AutoLockDelay.valueOf(name)) },
+            )
+        }
+
+        // Issue #722: fully biometric login — enroll this device so an expired
+        // session resumes with a biometric unlock instead of a password. Only
+        // meaningful on a device that can actually pass the local gate.
+        if (state.biometricEnrollmentStatus == BiometricEnrollmentStatus.ENROLLED) {
+            Text(
+                text = stringResource(R.string.settings_biometric_signin_enabled),
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            OutlinedButton(
+                onClick = onRemoveBiometricSignIn,
+                enabled = !state.isBiometricBusy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (state.isBiometricBusy) {
+                    CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
+                }
+                Text(stringResource(R.string.settings_biometric_signin_remove))
+            }
+        } else if (state.localAuthSupported) {
+            OutlinedButton(
+                onClick = onEnrollBiometricSignIn,
+                enabled = !state.isBiometricBusy,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                if (state.isBiometricBusy) {
+                    CircularProgressIndicator(modifier = Modifier.padding(end = 8.dp))
+                }
+                Text(stringResource(R.string.settings_biometric_signin_setup))
+            }
+        }
+        state.biometricErrorRes?.let { res ->
+            Text(
+                text = stringResource(res),
+                color = MaterialTheme.colorScheme.error,
+                style = MaterialTheme.typography.bodySmall,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Assertive },
             )
         }
 

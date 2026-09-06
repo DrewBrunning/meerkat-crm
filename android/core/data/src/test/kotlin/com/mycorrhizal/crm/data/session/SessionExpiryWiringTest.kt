@@ -89,6 +89,48 @@ class SessionExpiryWiringTest {
         assertFalse(restarted.observeSession().first().isLoggedIn)
     }
 
+    // Issue #722: when this install holds a device grant, a 401 first tries one
+    // grant exchange. A successful exchange keeps the session — the JWT simply
+    // expired, not the account.
+    @Test
+    fun `a successful grant refresh on 401 keeps the session`() = runTest {
+        val notifier = SessionExpiryNotifier()
+        val manager = DefaultSessionManager(FakeTokenStorage(), FakeSessionPrefsStorage())
+        manager.setSession("https://crm.example.com", "jwt-1", SessionState(userId = 7))
+        var refreshTried = false
+
+        SessionExpiryWiring(notifier, manager, refresher = {
+            refreshTried = true
+            manager.setToken("jwt-2")
+            true
+        }).start(this)
+
+        notifier.onSessionExpired()
+        advanceUntilIdle()
+
+        assertTrue("the grant refresh must be attempted", refreshTried)
+        assertEquals("jwt-2", manager.bearerToken())
+        assertTrue(manager.observeSession().first().isLoggedIn)
+    }
+
+    // Issue #722: a 401 whose grant exchange fails (grant revoked, server
+    // rejects) falls back to the normal clear — a revoked device must end
+    // exactly as a 401 always has.
+    @Test
+    fun `a failed grant refresh on 401 clears the session`() = runTest {
+        val notifier = SessionExpiryNotifier()
+        val manager = DefaultSessionManager(FakeTokenStorage(), FakeSessionPrefsStorage())
+        manager.setSession("https://crm.example.com", "jwt-1", SessionState(userId = 7))
+
+        SessionExpiryWiring(notifier, manager, refresher = { false }).start(this)
+
+        notifier.onSessionExpired()
+        advanceUntilIdle()
+
+        assertNull(manager.bearerToken())
+        assertFalse(manager.observeSession().first().isLoggedIn)
+    }
+
     @Test
     fun `signals arriving before registration are not lost once registered`() = runTest {
         // A 401 that fires before the wiring registers must still clear the

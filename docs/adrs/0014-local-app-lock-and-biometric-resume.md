@@ -96,13 +96,18 @@ Three candidate designs were evaluated:
    the same path issue #678 already hardened. No dead end: the user types their password (and, for a
    2FA account, a fresh TOTP code).
 
-7. **No backend change.** The backend is pure stateless JWT with no refresh tokens, no blocklist and
-   no server-side device registry; the only revocation is `users.token_version`, bumped on password
-   change/reset and 2FA toggles. A stored JWT stays valid until `exp` (~96 h default) or a bump, so a
-   biometric resume of the existing stored session needs no server machinery. There is deliberately
-   **no long-lived "remember this device" grant** that would let a biometric unlock mint a fresh token
-   past `exp`; that would mean server-side refresh tokens / per-device credentials — a real design
-   change with a real server-side secret, explicitly out of scope for this issue (see Consequences).
+7. **Revocable device grants make biometric a full login.** The "phone is something I have, the
+   biometric is something I am" argument is right *locally* — the OS verifies both before the
+   authenticated tree renders — but the server can only ever see one factor (possession of a
+   credential), so the grant is treated and documented as the standard refresh-token model, never as
+   server-verified 2FA. An enrolled install holds a long-lived, **hashed**, revocable device grant
+   (migration 000051, mirroring `api_tokens`), minted after an interactive login and exchanged for a
+   fresh session JWT via public `POST /auth/device/session` (rate-limited like `/login`). On a 401 the
+   app tries **one** grant exchange before falling back to `clearSession` (issue #678's wiring), so an
+   expired-but-valid session resumes after the local biometric gate. The server **revokes every grant**
+   on password change/reset and 2FA enable/disable/reset (the same `token_version` bump sites) and on
+   account deletion, so a stolen password or a changed 2FA posture cannot keep a passwordless door
+   open, and a revoked device still ends exactly as a 401 always has.
 
 ## Scope → implementation map
 
@@ -111,8 +116,8 @@ Three candidate designs were evaluated:
 | 1. Evaluation + decision | This ADR + `docs/security/masvs-l1.md` P7 |
 | 2. Local gate on the authenticated tree | `DefaultAppLockController` (state machine), `MainViewModel` + `MycorrhizalApp` root branch |
 | 3. Opt-in setting, encrypted-preferences-note, default off | `LocalAuthSettingsRepository(Impl)` (plain DataStore — a preference, not a credential; the secret it gates stays in `EncryptedTokenStorage`) + Settings UI |
-| 4. Biometric login as a general resume | The app-lock surface (works online and offline); reachable on every cold start / grace-timeout resume |
-| 5. Expired-token UX | Existing 401 → `clearSession` (issue #678); documented in P7 |
+| 4. Biometric login as a general resume | The app-lock surface plus a revocable **device grant** (`device_grants` + `POST /auth/device/session`), so biometric resume also bridges past JWT expiry (one grant exchange on 401, then `clearSession`) |
+| 5. Expired-token UX | One grant exchange on 401, then the existing 401 → `clearSession` fallback (issue #678) |
 | 6. `clearSession` / `SessionExpiryInterceptor` interaction | Controller transitions pinned by `DefaultAppLockControllerTest` |
 | 7. Security docs | `masvs-l1.md` P7, `asvs-l2.md` P7, `data-retention-lifecycle.md` §8 note |
 | 8. Tests | Controller state machine, settings VM + screen, root branch, lock VM + screen, prompt-posture guard |
@@ -125,7 +130,8 @@ Three candidate designs were evaluated:
 - **Neutral:** the biometric prompt is the OS dialog, not an in-app view; the app cannot style it, and
   its exact look varies by OEM/Android version. Robolectric cannot drive a real `BiometricPrompt`, so
   the OS call is a thin, guard-tested seam and the gate logic around it is fully unit-tested.
-- **Negative / out of scope:** no app-level PIN (device credential only — see Context); no refresh
-  tokens / remembered-device grant (a biometric unlock cannot mint a token past `exp`; the user
-  re-enters the password). Weak (Class 2) biometrics are not offered on their own. A biometric-prompt
-  that is cancelled on a device whose credential was just removed leaves only "Log out".
+- **Negative / out of scope:** no app-level PIN (device credential only — see Context). Weak (Class 2)
+  biometrics are not offered on their own. A biometric-prompt that is cancelled on a device whose
+  credential was just removed leaves only "Log out". The device grant is a powerful possession
+  credential and is defended accordingly (hashed at rest, revocable, rate-limited exchange), but the
+  server still sees a single factor — it is not claimed as server-verified 2FA.

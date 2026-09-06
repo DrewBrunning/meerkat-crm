@@ -87,6 +87,7 @@ import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.mycorrhizal.crm.applock.AppLockScreen
 import com.mycorrhizal.crm.data.session.AppLockState
+import com.mycorrhizal.crm.enroll.BiometricEnrollmentPromptHost
 import com.mycorrhizal.crm.feature.auth.LoginScreen
 import com.mycorrhizal.crm.feature.auth.RegisterScreen
 import com.mycorrhizal.crm.feature.auth.ForgotPasswordScreen
@@ -235,6 +236,12 @@ fun MycorrhizalApp(
     // the gate has cleared (rootSurface never returns Main while Resolving).
     val appLockState by mainViewModel.appLockState.collectAsStateWithLifecycle()
 
+    // Issue #722: the one-shot biometric-enrollment prompt fires right after
+    // an interactive login (password / API token / 2FA / register auto-login),
+    // never on a cold-start session resume. Shown as its own dialog window, so
+    // it can be mounted after the surface branch below without a layout box.
+    var showEnrollmentPrompt by rememberSaveable { mutableStateOf(false) }
+
     // Issue #202: the status-bar style is owned here, above the isLoggedIn
     // branch, so the auth screens get it too. They have no green app bar — the
     // bone surface runs straight up behind the status bar — but MainActivity's
@@ -285,7 +292,11 @@ fun MycorrhizalApp(
             }
             when (authScreen) {
                 AuthScreen.LOGIN -> LoginScreen(
-                    onLoggedIn = { /* session flow flips isLoggedIn, recomposition swaps the tree */ },
+                    onLoggedIn = {
+                        // session flow flips isLoggedIn, recomposition swaps
+                        // the tree; issue #722 then offers biometric sign-in.
+                        showEnrollmentPrompt = true
+                    },
                     onSignInWithSso = { serverUrl ->
                         // M6 §4: `client=android` makes the backend redirect back to
                         // the mycorrhizal://oidc/callback deep link (MainActivity)
@@ -301,7 +312,10 @@ fun MycorrhizalApp(
                     onOidcErrorShown = onOidcErrorShown,
                 )
                 AuthScreen.REGISTER -> RegisterScreen(
-                    onRegistered = { /* auto-login flips isLoggedIn */ },
+                    onRegistered = {
+                        // auto-login flips isLoggedIn; offer biometric sign-in.
+                        showEnrollmentPrompt = true
+                    },
                     onBack = { authScreen = AuthScreen.LOGIN },
                 )
                 AuthScreen.FORGOT_PASSWORD -> ForgotPasswordScreen(
@@ -326,6 +340,13 @@ fun MycorrhizalApp(
                 onDeepLinkHandled = onDeepLinkHandled,
             )
         }
+    }
+
+    // Issue #722: the one-shot biometric-enrollment prompt after an
+    // interactive login. Its dialog renders in its own window, so mounting it
+    // here (above every surface) needs no layout container.
+    if (showEnrollmentPrompt) {
+        BiometricEnrollmentPromptHost(onDone = { showEnrollmentPrompt = false })
     }
 }
 

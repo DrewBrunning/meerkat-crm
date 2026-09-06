@@ -200,15 +200,17 @@ Issue #650 asked for an "is a newer release available" signal on the admin Syste
 
 Android now offers an opt-in local gate — a Class 3 biometric or device-credential (PIN/pattern/
 password) check before a *persisted session* is resumed into the authenticated tree, after a cold
-start or a background period past a configurable grace timeout. This is a **client-side, device-local
-decision** and deliberately does not touch the server's authentication surface: the resumed credential
-is the same stateless JWT the server already issued (`backend/services/user_service.go`, V2/V3 rows
-above), so there is no new token type, no refresh-token grant, no server-side device registration, and
-nothing in this design changes the V2/V3 evidence. In particular there is **no** "remember this device
-so a biometric can mint a fresh token past `exp`" grant — resuming past JWT expiry requires a normal
-password (and, for a 2FA account, a fresh TOTP) login, exactly as before; an expired token lands the
-user on the login screen via the existing 401 → `clearSession` path after a successful unlock, never a
-dead end. The client-side rationale, threat model and decision are recorded in `masvs-l1.md` P7 and
+start or a background period past a configurable grace timeout. This is a **device-local,
+client-side decision**, but it does add one server-side surface to allow a biometric unlock to be a
+genuine alternative to the password: a **revocable device grant** (`device_grants`, migration
+000051 — SHA-256 hashes only, no plaintext at rest) minted after an interactive login and exchanged
+for a fresh session JWT via the public, rate-limited `POST /auth/device/session`. The resumed session
+is still the same JWT the server already issues (V2/V3 evidence above), and the grant itself is
+revoked by the same `token_version`-style events: password change/reset and 2FA enable/disable/reset
+all revoke every grant. There is **no** unbounded "remember this device" token that survives those
+events. An expired-but-valid session resumes via the grant on the next 401 (one exchange, then the
+existing `clearSession` fallback); a revoked grant still ends the session exactly as a 401 always has.
+The client-side rationale, threat model and decision are recorded in `masvs-l1.md` P7 and
 `docs/adrs/0014-local-app-lock-and-biometric-resume.md`.
 
 ---

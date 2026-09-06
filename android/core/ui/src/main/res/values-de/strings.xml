@@ -438,6 +438,16 @@
     <string name="app_lock_unlock">Entsperren</string>
     <string name="app_lock_auth_failed">Entsperren fehlgeschlagen. Bitte versuche es erneut.</string>
     <string name="app_lock_unsupported">Fingerabdruck-, Gesichts- oder Geräte-PIN-Entsperrung ist auf diesem Gerät nicht verfügbar. Melde dich ab, um dich mit deinem Passwort anzumelden.</string>
+    <!-- Biometrische Anmeldung (issue #722) -->
+    <string name="biometric_enroll_dialog_title">Mit Biometrie anmelden?</string>
+    <string name="biometric_enroll_dialog_body">Verwende beim nächsten Mal deinen Fingerabdruck, dein Gesicht oder deine Geräte-PIN, um diese App zu entsperren, statt dein Passwort einzutippen.</string>
+    <string name="biometric_enroll_action">Einrichten</string>
+    <string name="biometric_enroll_not_now">Später</string>
+    <string name="biometric_enroll_never">Nie wieder fragen</string>
+    <string name="biometric_enroll_error">Biometrische Anmeldung konnte nicht eingerichtet werden. Bitte versuche es erneut.</string>
+    <string name="settings_biometric_signin_setup">Biometrische Anmeldung einrichten</string>
+    <string name="settings_biometric_signin_enabled">Biometrische Anmeldung ist für dieses Gerät aktiv</string>
+    <string name="settings_biometric_signin_remove">Biometrische Anmeldung deaktivieren</string>
 
     <!-- Settings: webhooks (M25) -->
     <string name="settings_webhooks_title">Webhooks</string>

@@ -11,8 +11,10 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import com.mycorrhizal.crm.data.auth.DeviceGrantManager
 import com.mycorrhizal.crm.domain.repository.AppSettingsRepository
 import com.mycorrhizal.crm.domain.repository.AutoLockDelay
+import com.mycorrhizal.crm.domain.repository.BiometricEnrollmentStatus
 import com.mycorrhizal.crm.domain.repository.AuthRepository
 import com.mycorrhizal.crm.domain.repository.LocalAuthCapabilities
 import com.mycorrhizal.crm.domain.repository.LocalAuthSettingsRepository
@@ -289,7 +291,9 @@ class SettingsScreenTest {
         coEvery { appSettings.themePreference() } returns flowOf(AppSettingsRepository.THEME_SYSTEM)
         every { localAuthSettings.requireLocalAuth() } returns MutableStateFlow(false)
         every { localAuthSettings.autoLockDelay() } returns MutableStateFlow(AutoLockDelay.DEFAULT)
+        every { localAuthSettings.biometricEnrollmentStatus() } returns MutableStateFlow(com.mycorrhizal.crm.domain.repository.BiometricEnrollmentStatus.UNASKED)
         every { localAuthCapabilities.canEnableLocalAuth() } returns true
+        val deviceGrantManager = mockk<DeviceGrantManager>()
         val viewModel = SettingsViewModel(
             authRepository,
             trackingSettings,
@@ -297,6 +301,7 @@ class SettingsScreenTest {
             relationshipEdgeRepository,
             localAuthSettings,
             localAuthCapabilities,
+            deviceGrantManager,
             appContext,
         )
 
@@ -459,4 +464,51 @@ class SettingsScreenTest {
         composeTestRule.onNodeWithText("1 hour").performClick()
         assertEquals(AutoLockDelay.ONE_HOUR, changedTo)
     }
+
+    // --- Issue #722: fully biometric login (device-grant enrollment) ---
+
+    @Test
+    fun `a supported device that is not enrolled offers biometric sign-in setup`() {
+        var setup = false
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                SettingsContent(
+                    state = SettingsUiState(
+                        session = SessionState(),
+                        localAuthSupported = true,
+                        biometricEnrollmentStatus = BiometricEnrollmentStatus.UNASKED,
+                    ),
+                    onEnrollBiometricSignIn = { setup = true },
+                    onLogout = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Set up biometric sign-in").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Set up biometric sign-in").performClick()
+        assertEquals(true, setup)
+    }
+
+    @Test
+    fun `an enrolled device shows that biometric sign-in is on and can be turned off`() {
+        var removed = false
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                SettingsContent(
+                    state = SettingsUiState(
+                        session = SessionState(),
+                        localAuthSupported = true,
+                        biometricEnrollmentStatus = BiometricEnrollmentStatus.ENROLLED,
+                    ),
+                    onRemoveBiometricSignIn = { removed = true },
+                    onLogout = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Biometric sign-in is on for this device").performScrollTo().assertIsDisplayed()
+        composeTestRule.onNodeWithText("Turn off biometric sign-in").performScrollTo().performClick()
+        assertEquals(true, removed)
+    }
+
 }

@@ -46,6 +46,15 @@ interface LocalAuthSettingsRepository {
     fun autoLockDelay(): Flow<AutoLockDelay>
 
     suspend fun setAutoLockDelay(delay: AutoLockDelay)
+
+    /**
+     * Whether the user has been asked to enroll this device for biometric
+     * sign-in, and their answer ([BiometricEnrollmentStatus]). A preference,
+     * not a credential — the grant itself lives in the device-grant store.
+     */
+    fun biometricEnrollmentStatus(): Flow<BiometricEnrollmentStatus>
+
+    suspend fun setBiometricEnrollmentStatus(status: BiometricEnrollmentStatus)
 }
 
 /**
@@ -67,3 +76,57 @@ interface LocalAuthCapabilities {
     /** Whether a Class 3 biometric (not merely the device-credential fallback) is enrolled. */
     fun hasStrongBiometric(): Boolean
 }
+
+/**
+ * Whether the user has been asked to enroll this device for biometric sign-in
+ * (issue #722's fully-biometric-login layer), persisted on-device:
+ *  - [UNASKED]: not asked yet — the login screen prompts again at the next
+ *    username/password login.
+ *  - [OPTED_OUT]: the user chose "never ask again" (or removed biometric
+ *    sign-in) — no prompt until the app is reinstalled; enrollment is still
+ *    available from Settings.
+ *  - [ENROLLED]: a device grant is stored for this install.
+ */
+enum class BiometricEnrollmentStatus {
+    UNASKED,
+    OPTED_OUT,
+    ENROLLED;
+
+    companion object {
+        fun fromName(name: String?): BiometricEnrollmentStatus =
+            entries.firstOrNull { it.name == name } ?: UNASKED
+    }
+}
+
+/**
+ * Server half of fully biometric login (issue #722). A device grant is a
+ * long-lived, revocable credential minted by the backend while the caller is
+ * authenticated; [exchangeDeviceSession] proves possession of it and receives
+ * a fresh session JWT. The grant itself never leaves the device after
+ * enrollment (see the data-layer manager).
+ */
+interface DeviceGrantRepository {
+    /**
+     * POST /api/v1/auth/device/grants — enroll this device. Returns the
+     * one-time plaintext grant, which the caller must store securely.
+     */
+    suspend fun createDeviceGrant(label: String): Result<DeviceGrantCreated>
+
+    /**
+     * POST /api/v1/auth/device/session — exchange possession of [deviceToken]
+     * for a fresh session JWT. The returned token is persisted into the
+     * session (same path a password login uses), so the caller only checks the
+     * Result.
+     */
+    suspend fun exchangeDeviceSession(deviceToken: String): Result<Unit>
+
+    /** POST /api/v1/auth/device/grants/revoke-all — the lost-phone path. */
+    suspend fun revokeAllDeviceGrants(): Result<Unit>
+}
+
+/** A freshly-minted device grant (the plaintext appears exactly once). */
+data class DeviceGrantCreated(
+    val id: Long,
+    val label: String,
+    val token: String,
+)

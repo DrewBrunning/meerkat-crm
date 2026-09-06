@@ -263,6 +263,18 @@ nothing in the app (templates live in the device's own secure hardware); the las
 that drives the relock grace period is held in memory only and dies with the process. Clearing the
 app's data (or a logout, which wipes the Room mirror per §8) leaves nothing extra behind.
 
+**Device grant for fully biometric login (issue #722).** An enrolled install also holds a plaintext
+**device grant** on-device (EncryptedSharedPreferences `secure_device_grant`, Keystore master key —
+same envelope as the session JWT) and the matching hashed row server-side in `device_grants`
+(SHA-256 only; migration 000051). The grant's only job is to exchange for a fresh session JWT when
+the stored one expires (`POST /auth/device/session`). On-device: removed by "Turn off biometric
+sign-in" in Settings; survives logout by design (the user signed this device in). Server-side: revoked
+individually (`DELETE /auth/device/grants/:id`) or all at once (`/auth/device/grants/revoke-all`), by
+password change/reset and 2FA
+enable/disable/reset, and swept by account deletion (`DeleteUser`) — a soft-deleted grant row is
+revoked, not reused. Backups: the DB snapshot carries only the hash; the plaintext exists solely in
+the device's encrypted store and is not part of any server backup.
+
 ## 9. Browser-side storage (frontend SPA)
 
 - **`localStorage`**: holds only `user_info` (id/username/admin flag/self-contact UID) and UI

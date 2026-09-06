@@ -438,6 +438,16 @@
     <string name="app_lock_unlock">Déverrouiller</string>
     <string name="app_lock_auth_failed">Impossible de déverrouiller. Veuillez réessayer.</string>
     <string name="app_lock_unsupported">Le déverrouillage par empreinte, visage ou code PIN n\'est pas disponible sur cet appareil. Déconnectez-vous pour vous connecter avec votre mot de passe.</string>
+    <!-- Connexion biométrique (issue #722) -->
+    <string name="biometric_enroll_dialog_title">Se connecter avec la biométrie ?</string>
+    <string name="biometric_enroll_dialog_body">Utilisez votre empreinte, votre visage ou votre code PIN pour déverrouiller cette app au lieu de saisir votre mot de passe la prochaine fois.</string>
+    <string name="biometric_enroll_action">Configurer</string>
+    <string name="biometric_enroll_not_now">Plus tard</string>
+    <string name="biometric_enroll_never">Ne plus demander</string>
+    <string name="biometric_enroll_error">Impossible de configurer la connexion biométrique. Veuillez réessayer.</string>
+    <string name="settings_biometric_signin_setup">Configurer la connexion biométrique</string>
+    <string name="settings_biometric_signin_enabled">La connexion biométrique est activée sur cet appareil</string>
+    <string name="settings_biometric_signin_remove">Désactiver la connexion biométrique</string>
 
     <!-- Settings: webhooks (M25) -->
     <string name="settings_webhooks_title">Webhooks</string>

@@ -6,8 +6,10 @@ import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.longPreferencesKey
+import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import com.mycorrhizal.crm.domain.repository.AutoLockDelay
+import com.mycorrhizal.crm.domain.repository.BiometricEnrollmentStatus
 import com.mycorrhizal.crm.domain.repository.LocalAuthSettingsRepository
 import dagger.hilt.android.qualifiers.ApplicationContext
 import javax.inject.Inject
@@ -30,6 +32,7 @@ class LocalAuthSettingsRepositoryImpl @Inject constructor(
 
     private val requireLocalAuthKey = booleanPreferencesKey("require_local_auth")
     private val autoLockDelayMinutesKey = longPreferencesKey("auto_lock_delay_minutes")
+    private val enrollmentStatusKey = stringPreferencesKey("biometric_enrollment_status")
 
     override fun requireLocalAuth(): Flow<Boolean> =
         context.localAuthDataStore.data.map { it[requireLocalAuthKey] ?: false }
@@ -45,5 +48,14 @@ class LocalAuthSettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setAutoLockDelay(delay: AutoLockDelay) {
         context.localAuthDataStore.edit { it[autoLockDelayMinutesKey] = delay.minutes }
+    }
+
+    override fun biometricEnrollmentStatus(): Flow<BiometricEnrollmentStatus> =
+        context.localAuthDataStore.data.map { prefs ->
+            BiometricEnrollmentStatus.fromName(prefs[enrollmentStatusKey])
+        }
+
+    override suspend fun setBiometricEnrollmentStatus(status: BiometricEnrollmentStatus) {
+        context.localAuthDataStore.edit { it[enrollmentStatusKey] = status.name }
     }
 }

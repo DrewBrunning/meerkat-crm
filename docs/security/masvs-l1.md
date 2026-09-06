@@ -178,12 +178,17 @@ a secure lock screen the toggle is disabled with the reason, so the gate can nev
 way to open it. The biometric comparison happens in the OS (Keystore-authenticated); the app stores no
 biometric material and no PIN hash.
 
-**No backend change.** The stored JWT is a stateless bearer credential valid until its ~96 h `exp` or a
-server-side `token_version` bump; biometrics gate access to *resuming it*, which needs no server
-machinery. There is deliberately no long-lived "remember this device" credential that would let a
-biometric unlock mint a fresh token past `exp` — that would require server-side device grants/refresh
-tokens (out of scope; see the ADR). An expired token therefore lands the user on the login screen after
-unlock via the existing 401 → `clearSession` path, never a dead end.
+**Server half — revocable device grants.** To make biometric a genuine alternative to the password
+(not just a 96 h resume window), an enrolled install holds a **device grant**: a long-lived, hashed,
+revocable per-device credential minted after an interactive login (`backend/database/migrations/
+000051_device_grants.*`), exchanged for a fresh session JWT via `POST /auth/device/session`
+(`device_grant_controller.go`). On a 401 the app tries one grant exchange before falling back to
+`clearSession` (`SessionExpiryWiring`), so an expired-but-valid session resumes seamlessly after the
+device's own biometric gate; a *revoked* grant still ends exactly as a 401 always has. The server
+revokes every grant on password change/reset and 2FA enable/disable/reset, so a stolen password or a
+changed 2FA posture cannot keep a passwordless door open. Phone (have) + biometric (are) is verified
+*locally* by the OS; the server sees a single possession factor — the standard refresh-token model,
+which is how the docs describe it rather than claiming server-verified 2FA.
 
 ---
 

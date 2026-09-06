@@ -268,18 +268,38 @@ object DataModule {
         prefsStorage: SessionPrefsStorage,
         localDataCleaner: SessionDataCleaner,
         sessionExpiryNotifier: SessionExpiryNotifier,
+        // Issue #722: a `Provider` (not the manager itself) breaks the
+        // cycle — DeviceGrantManager needs the session manager, which is the
+        // very singleton this provider is building. The manager is only
+        // resolved when a 401 actually arrives, by which point it exists.
+        deviceGrantManager: javax.inject.Provider<com.mycorrhizal.crm.data.auth.DeviceGrantManager>,
     ): DefaultSessionManager {
         val manager = DefaultSessionManager(tokenStorage, prefsStorage, localDataCleaner)
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
         // Issue #678: a 401 on any API call must clear the session so the app
         // lands on the auth flow rather than a stuck or half-rendered screen.
         // The wiring is a plain class so the behavior is unit-tested.
-        SessionExpiryWiring(sessionExpiryNotifier, manager).start(scope)
+        //
+        // Issue #722: when this install holds a device grant, the 401 first
+        // tries one grant exchange so an expired-but-valid session resumes
+        // seamlessly; only a failed/absent refresh clears to the login screen.
+        SessionExpiryWiring(
+            sessionExpiryNotifier,
+            manager,
+            refresher = { deviceGrantManager.get().refreshSessionFromStoredGrant() },
+        ).start(scope)
         // Hydrate the stored JWT/server URL into memory asynchronously so a
         // returning user is already logged in on launch (H3 review fix).
         scope.launch { manager.init() }
         return manager
     }
+
+    @Provides
+    @Singleton
+    fun provideDeviceGrantTokenStorage(
+        @ApplicationContext context: android.content.Context,
+    ): com.mycorrhizal.crm.data.session.DeviceGrantTokenStorage =
+        com.mycorrhizal.crm.data.session.EncryptedDeviceGrantTokenStorage(context)
 
     // Issue #722: the app-lock gate controller + its process-lifecycle wiring.
     // ProcessLifecycleOwner (not the Activity's lifecycle) is the source of
@@ -462,4 +482,10 @@ abstract class DataBindsModule {
     @Binds
     @Singleton
     abstract fun bindAppLockController(impl: DefaultAppLockController): AppLockController
+
+    @Binds
+    @Singleton
+    abstract fun bindDeviceGrantRepository(
+        impl: com.mycorrhizal.crm.data.auth.DeviceGrantManager,
+    ): com.mycorrhizal.crm.domain.repository.DeviceGrantRepository
 }

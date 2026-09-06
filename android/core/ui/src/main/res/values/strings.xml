@@ -447,6 +447,17 @@
     <string name="app_lock_auth_failed">Couldn\'t unlock. Please try again.</string>
     <string name="app_lock_unsupported">Fingerprint, face or device PIN unlock is not available on this device. Log out to sign in with your password.</string>
 
+    <!-- Biometric sign-in enrollment (issue #722) -->
+    <string name="biometric_enroll_dialog_title">Sign in with biometrics?</string>
+    <string name="biometric_enroll_dialog_body">Use your fingerprint, face or device PIN to unlock this app instead of typing your password next time.</string>
+    <string name="biometric_enroll_action">Set up</string>
+    <string name="biometric_enroll_not_now">Not now</string>
+    <string name="biometric_enroll_never">Never ask again</string>
+    <string name="biometric_enroll_error">Couldn\'t set up biometric sign-in. Please try again.</string>
+    <string name="settings_biometric_signin_setup">Set up biometric sign-in</string>
+    <string name="settings_biometric_signin_enabled">Biometric sign-in is on for this device</string>
+    <string name="settings_biometric_signin_remove">Turn off biometric sign-in</string>
+
     <!-- Settings: webhooks (M25) -->
     <string name="settings_webhooks_title">Webhooks</string>
     <string name="settings_webhooks_description">Receive HTTP POST notifications when events occur in your CRM.</string>

@@ -3,6 +3,7 @@ package com.mycorrhizal.crm.data.repository
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
 import com.mycorrhizal.crm.domain.repository.AutoLockDelay
+import com.mycorrhizal.crm.domain.repository.BiometricEnrollmentStatus
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
@@ -62,5 +63,20 @@ class LocalAuthSettingsRepositoryImplTest {
     fun `an absent or unknown persisted delay falls back to the default`() = runTest {
         assertEquals(AutoLockDelay.FIVE_MINUTES, AutoLockDelay.fromMinutes(99_999L))
         assertEquals(AutoLockDelay.FIVE_MINUTES, AutoLockDelay.DEFAULT)
+    }
+
+    @Test
+    fun `biometricEnrollmentStatus defaults to unasked`() = runTest {
+        repository.setBiometricEnrollmentStatus(BiometricEnrollmentStatus.UNASKED)
+        assertEquals(BiometricEnrollmentStatus.UNASKED, repository.biometricEnrollmentStatus().first())
+    }
+
+    @Test
+    fun `setBiometricEnrollmentStatus persists the value`() = runTest {
+        repository.setBiometricEnrollmentStatus(BiometricEnrollmentStatus.ENROLLED)
+        assertEquals(BiometricEnrollmentStatus.ENROLLED, repository.biometricEnrollmentStatus().first())
+
+        repository.setBiometricEnrollmentStatus(BiometricEnrollmentStatus.OPTED_OUT)
+        assertEquals(BiometricEnrollmentStatus.OPTED_OUT, repository.biometricEnrollmentStatus().first())
     }
 }
