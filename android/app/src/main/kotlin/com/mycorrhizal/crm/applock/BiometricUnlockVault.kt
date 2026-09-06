@@ -6,7 +6,6 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import android.util.Base64
-import androidx.biometric.BiometricManager
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -79,16 +78,16 @@ internal class BiometricUnlockVault(
      * biometric enrollment change), in which case the stale token + key are
      * cleared so the next unlock can re-establish them.
      */
-    fun finish(spec: UnlockCipherSpec): Boolean { // # pragma: no cover — AndroidKeyStore is unavailable under Robolectric; see BiometricUnlockVaultGuardTest
+    fun finish(spec: UnlockCipherSpec, cipher: Cipher): Boolean { // # pragma: no cover — AndroidKeyStore is unavailable under Robolectric; see BiometricUnlockVaultGuardTest
         return try {
             when (spec) {
                 is UnlockCipherSpec.Encrypt -> {
-                    val wrapped = spec.cipher.doFinal(PLAINTEXT)
+                    val wrapped = cipher.doFinal(PLAINTEXT)
                     storeWrapped(wrapped)
                     true
                 }
                 is UnlockCipherSpec.Decrypt -> {
-                    val plain = spec.cipher.doFinal(spec.wrapped)
+                    val plain = cipher.doFinal(spec.wrapped)
                     plain.contentEquals(PLAINTEXT)
                 }
             }
@@ -120,8 +119,8 @@ internal class BiometricUnlockVault(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
             builder.setUserAuthenticationParameters(
                 0, // no duration — every use must be freshly authorized
-                BiometricManager.Authenticators.BIOMETRIC_STRONG or
-                    BiometricManager.Authenticators.DEVICE_CREDENTIAL,
+                KeyProperties.AUTH_BIOMETRIC_STRONG or
+                    KeyProperties.AUTH_DEVICE_CREDENTIAL,
             )
         }
         generator.init(builder.build())

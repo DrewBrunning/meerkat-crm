@@ -73,8 +73,13 @@ class BiometricAppUnlockPrompter(
                     })
                 }
 
-                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) { // # pragma: no cover — OS-only callback; crypto is consumed in vault.finish
-                    val ok = vault.finish(prepared) // # pragma: no cover
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) { // # pragma: no cover — OS-only callback; the authentication result's CryptoObject feeds vault.finish
+                    val cipher = result.cryptoObject?.cipher // # pragma: no cover
+                    if (cipher == null) { // # pragma: no cover
+                        continuation.resume(AppLockAuthOutcome.Error) // # pragma: no cover
+                        return // # pragma: no cover
+                    }
+                    val ok = vault.finish(prepared, cipher) // # pragma: no cover
                     continuation.resume(if (ok) AppLockAuthOutcome.Success else AppLockAuthOutcome.Error) // # pragma: no cover
                 }
 

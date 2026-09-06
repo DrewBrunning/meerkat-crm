@@ -25,8 +25,9 @@ class BiometricUnlockCryptoGuardTest {
             prompterSource.contains("BiometricPrompt.CryptoObject(prepared.cipher)"),
         )
         assertTrue(
-            "the success callback must feed the authentication into a cryptographic operation",
-            prompterSource.contains("vault.finish(prepared)"),
+            "the success callback must consume the authentication result's crypto object",
+            prompterSource.contains("result.cryptoObject") &&
+                prompterSource.contains("vault.finish(prepared, cipher)"),
         )
         assertTrue(vaultSource.contains("fun finish"))
     }
@@ -35,9 +36,7 @@ class BiometricUnlockCryptoGuardTest {
     fun `the gate key requires a fresh user authentication and dies on biometric change`() {
         assertTrue(vaultSource.contains("setUserAuthenticationRequired(true)"))
         assertTrue(vaultSource.contains("setInvalidatedByBiometricEnrollment(true)"))
-        assertTrue(
-            vaultSource.contains("BiometricManager.Authenticators.BIOMETRIC_STRONG"),
-        )
-        assertTrue(vaultSource.contains("BiometricManager.Authenticators.DEVICE_CREDENTIAL"))
+        assertTrue(vaultSource.contains("KeyProperties.AUTH_BIOMETRIC_STRONG"))
+        assertTrue(vaultSource.contains("KeyProperties.AUTH_DEVICE_CREDENTIAL"))
     }
 }
