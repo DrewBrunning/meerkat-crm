@@ -10,6 +10,15 @@ import { defineConfig, devices } from '@playwright/test';
 export default defineConfig({
   testDir: './e2e',
 
+  // Issue #476 (WEB-02): the service-worker upgrade suite lives under
+  // e2e/sw-upgrade/ but runs under its OWN config (playwright.sw.config.ts)
+  // against its own two-build harness on :7300 -- never under this config,
+  // which runs against the single-build docker stack. Excluding it here is
+  // what keeps `npx playwright test` from accidentally trying to run those
+  // specs against the wrong server. The project-level testIgnore below
+  // repeats the pattern for the authenticated project.
+  testIgnore: [/sw-upgrade/],
+
   fullyParallel: true,
 
   // Fail the build on CI if you accidentally left test.only in the source code
@@ -53,7 +62,7 @@ export default defineConfig({
         storageState: 'playwright/.auth/user.json',
       },
       dependencies: ['setup'],
-      testIgnore: /.*\.setup\.ts/,
+      testIgnore: [/.*\.setup\.ts/, /sw-upgrade/],
     },
   ],
 

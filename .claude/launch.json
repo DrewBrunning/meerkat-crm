@@ -15,6 +15,12 @@
       "port": 7300
     },
     {
+      "name": "frontend-sw-upgrade-e2e",
+      "runtimeExecutable": "sh",
+      "runtimeArgs": ["-c", "cd frontend && npx --yes yarn test:e2e:sw --headed"],
+      "port": 7300
+    },
+    {
       "name": "backend-dev",
       "runtimeExecutable": "sh",
       "runtimeArgs": ["-c", "cd backend && JWT_SECRET_KEY=dev-secret-key-for-local-testing-only-not-for-prod PROFILE_PHOTO_DIR=/tmp/mycorrhizal-photos-dev SQLITE_DB_PATH=./mycorrhizal.db FRONTEND_URL='*' CARDDAV_ENABLED=false make dev"],

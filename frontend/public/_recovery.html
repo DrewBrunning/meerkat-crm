@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex, nofollow" />
+    <title>Mycorrhizal CRM — recovery</title>
+    <style>
+      /* Issue #476 (WEB-02): the recovery page is the escape hatch for a
+         broken service worker. It must keep working even when the SPA's own
+         JS never boots, so it is deliberately a self-contained static page:
+         no framework, no external stylesheet, nothing that a poisoned worker
+         could have cached. */
+      body {
+        margin: 0;
+        font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+        background: #f5f6f8;
+        color: #1c1e21;
+      }
+      main {
+        max-width: 30rem;
+        margin: 12vh auto 0;
+        padding: 2rem;
+        background: #fff;
+        border: 1px solid #d5d8dc;
+        border-radius: 8px;
+      }
+      h1 {
+        font-size: 1.35rem;
+        margin: 0 0 0.75rem;
+      }
+      p {
+        line-height: 1.5;
+        margin: 0.5rem 0;
+      }
+      a {
+        color: #1466b8;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Recovering Mycorrhizal CRM</h1>
+      <p id="status">Clearing cached app data&hellip;</p>
+      <p>
+        This page clears the app&rsquo;s offline cache and service worker so the
+        next load starts fresh from the server. You will be returned to the app
+        automatically.
+      </p>
+      <p><a id="manual" href="/">Return to the app</a></p>
+    </main>
+    <script src="/_recovery.js"></script>
+  </body>
+</html>
