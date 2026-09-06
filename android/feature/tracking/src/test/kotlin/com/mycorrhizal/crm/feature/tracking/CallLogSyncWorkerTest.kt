@@ -14,6 +14,7 @@ import io.mockk.coVerify
 import io.mockk.mockk
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertTrue
+import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -28,12 +29,22 @@ import org.robolectric.fakes.RoboCursor
  * resolver -- not by mocking ContentResolver directly (see CallLogReaderTest
  * for that simpler pattern, which only works because CallLogReader there is
  * constructed directly with a mocked resolver).
+ *
+ * Issue #721: the worker now also gates on the READ_CALL_LOG OS grant (granted
+ * by default in setup; the denial path is its own test), so every test that
+ * expects the provider to be read must grant it first.
  */
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], application = Application::class)
 class CallLogSyncWorkerTest {
 
     private val context = ApplicationProvider.getApplicationContext<Context>()
+
+    @Before
+    fun grantCallLogPermission() {
+        Shadows.shadowOf(context as Application)
+            .grantPermissions(android.Manifest.permission.READ_CALL_LOG)
+    }
 
     private fun stubCallLog(rows: List<Array<Any?>>) {
         val cursor = RoboCursor().apply {
@@ -61,7 +72,31 @@ class CallLogSyncWorkerTest {
         )
         worker.doWork()
 
-        coVerify(exactly = 0) { pendingInteractions.record(any()) }
+        coVerify(exactly = 0) { pendingInteractions.recordIfNew(any()) }
+    }
+
+    @Test
+    fun `a missing READ_CALL_LOG grant is a no-op success, not a worker failure`() = runTest {
+        Shadows.shadowOf(context as Application).denyPermissions(android.Manifest.permission.READ_CALL_LOG)
+        val pendingInteractions = mockk<PendingInteractionRepository>(relaxed = true)
+        val contacts = mockk<ContactRepository>(relaxed = true)
+        val settings = mockk<TrackingSettingsRepository>()
+        coEvery { settings.callTrackingEnabled() } returns true
+        coEvery { settings.lastCallLogTimestamp() } returns 500L
+
+        val worker = CallLogSyncWorker(
+            appContext = context,
+            workerParams = mockk(relaxed = true),
+            pendingInteractionRepository = pendingInteractions,
+            contactRepository = contacts,
+            trackingSettings = settings,
+        )
+        val result = worker.doWork()
+
+        // Missing grant = logged no-op, never a crash/retry (issue #721).
+        assertTrue(result is androidx.work.ListenableWorker.Result.Success)
+        coVerify(exactly = 0) { pendingInteractions.recordIfNew(any()) }
+        coVerify(exactly = 0) { settings.setLastCallLogTimestamp(any()) }
     }
 
     @Test
@@ -112,7 +147,7 @@ class CallLogSyncWorkerTest {
 
         assertTrue(result is androidx.work.ListenableWorker.Result.Success)
         coVerify {
-            pendingInteractions.record(
+            pendingInteractions.recordIfNew(
                 PendingInteraction(
                     timestampMillis = 5000L,
                     kind = InteractionCapture.KIND_CALL,
@@ -123,7 +158,7 @@ class CallLogSyncWorkerTest {
             )
         }
         coVerify {
-            pendingInteractions.record(
+            pendingInteractions.recordIfNew(
                 PendingInteraction(
                     timestampMillis = 7000L,
                     kind = InteractionCapture.KIND_CALL,
@@ -156,7 +191,7 @@ class CallLogSyncWorkerTest {
         worker.doWork()
 
         coVerify {
-            pendingInteractions.record(
+            pendingInteractions.recordIfNew(
                 PendingInteraction(
                     timestampMillis = 1000L,
                     kind = InteractionCapture.KIND_CALL,

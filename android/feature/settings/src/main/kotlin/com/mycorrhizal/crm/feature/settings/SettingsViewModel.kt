@@ -10,6 +10,9 @@ import com.mycorrhizal.crm.domain.repository.AuthRepository
 import com.mycorrhizal.crm.domain.repository.RelationshipEdgeRepository
 import com.mycorrhizal.crm.domain.repository.SessionState
 import com.mycorrhizal.crm.domain.repository.TrackingSettingsRepository
+import com.mycorrhizal.crm.feature.tracking.PermissionChecker
+import com.mycorrhizal.crm.feature.tracking.TrackingCatchUpScheduler
+import com.mycorrhizal.crm.feature.tracking.TrackingPermissions
 import com.mycorrhizal.crm.network.foldApiError
 import com.mycorrhizal.crm.ui.R
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -20,6 +23,23 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+
+/** Which opt-in a runtime-permission request belongs to. */
+enum class TrackingPermissionRequest {
+    CALL_TRACKING,
+    SMS_TRACKING,
+}
+
+/**
+ * Why a tracking-permission dialog is showing (issue #721).
+ * [Rationale] follows a plain denial — explain and offer a retry.
+ * [AppSettings] follows a permanent denial ("don't ask again") — the only
+ * remaining path is the system app-settings page.
+ */
+sealed interface TrackingPermissionDialog {
+    data class Rationale(val request: TrackingPermissionRequest) : TrackingPermissionDialog
+    data class AppSettings(val request: TrackingPermissionRequest) : TrackingPermissionDialog
+}
 
 data class SettingsUiState(
     val session: SessionState = SessionState(),
@@ -38,6 +58,16 @@ data class SettingsUiState(
     /** Number of relationship edges the last suggest run newly created (null = not yet run). */
     val suggestedRelationshipCount: Int? = null,
     @StringRes val relationshipSuggestErrorRes: Int? = null,
+    /**
+     * Issue #721: a tracking toggle was switched on whose OS permissions are
+     * not (all) granted — the UI must show the runtime permission dialog for
+     * this request and report the outcome back via
+     * [SettingsViewModel.onPermissionRequestResult]. Null when no system
+     * dialog is pending.
+     */
+    val pendingPermissionRequest: TrackingPermissionRequest? = null,
+    /** Issue #721: a tracking-permission denial dialog to render (or null). */
+    val permissionDialog: TrackingPermissionDialog? = null,
 )
 
 sealed interface SettingsEvent {
@@ -56,6 +86,8 @@ class SettingsViewModel @Inject constructor(
     private val trackingSettings: TrackingSettingsRepository,
     private val appSettings: AppSettingsRepository,
     private val relationshipEdgeRepository: RelationshipEdgeRepository,
+    private val permissionChecker: PermissionChecker,
+    private val catchUpScheduler: TrackingCatchUpScheduler,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
 
@@ -71,15 +103,7 @@ class SettingsViewModel @Inject constructor(
                 _uiState.update { it.copy(session = session) }
             }
         }
-        viewModelScope.launch {
-            _uiState.update {
-                it.copy(
-                    callTrackingEnabled = trackingSettings.callTrackingEnabled(),
-                    smsTrackingEnabled = trackingSettings.smsTrackingEnabled(),
-                    notificationsEnabled = trackingSettings.notificationsEnabled(),
-                )
-            }
-        }
+        refreshPermissionState()
         viewModelScope.launch {
             appSettings.themePreference().collect { pref ->
                 _uiState.update { it.copy(themePreference = pref) }
@@ -87,26 +111,189 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun setCallTrackingEnabled(enabled: Boolean) {
-        _uiState.update { it.copy(callTrackingEnabled = enabled) }
+    /**
+     * Issue #721: reconcile the tracking toggles with the real OS grant state.
+     *
+     * The DataStore flag is only ever true while the matching permissions are
+     * granted. If the flag is true but a permission was revoked in system
+     * settings since, tracking is *off*: the flag is persisted false, the
+     * foreground detection service stops, and the toggle renders off — a
+     * toggle that claims "on" while capturing nothing would be lying. Called
+     * on ViewModel creation and again whenever the screen resumes (a revoke
+     * while the Settings screen is open, followed by a return from system
+     * settings, must flip the toggle immediately).
+     */
+    fun refreshPermissionState() {
         viewModelScope.launch {
-            trackingSettings.setCallTrackingEnabled(enabled)
-            if (enabled) {
-                startCallDetectionService()
-            } else {
+            val callStored = trackingSettings.callTrackingEnabled()
+            val smsStored = trackingSettings.smsTrackingEnabled()
+            val callGranted = callPermissionsGranted()
+            val smsGranted = smsPermissionsGranted()
+
+            if (callStored && !callGranted) {
+                trackingSettings.setCallTrackingEnabled(false)
                 stopCallDetectionService()
+            }
+            if (smsStored && !smsGranted) {
+                trackingSettings.setSmsTrackingEnabled(false)
+            }
+
+            _uiState.update {
+                it.copy(
+                    callTrackingEnabled = callStored && callGranted,
+                    smsTrackingEnabled = smsStored && smsGranted,
+                    notificationsEnabled = trackingSettings.notificationsEnabled(),
+                )
             }
         }
     }
 
+    // --- tracking toggles (issue #721) ---
+
+    /**
+     * Turning call tracking on only takes effect once READ_CALL_LOG +
+     * READ_PHONE_STATE are granted. Already granted → enable immediately;
+     * otherwise ask the UI to show the runtime permission dialog (the toggle
+     * itself stays off until [onPermissionRequestResult] reports the grant).
+     */
+    fun setCallTrackingEnabled(enabled: Boolean) {
+        if (_uiState.value.pendingPermissionRequest != null && enabled) return
+        if (!enabled) {
+            // A disable wins over an in-flight request *for the same feature*:
+            // the system dialog is modal, so a toggle-off while one is up is a
+            // deliberate cancel — clearing the pending request also makes a
+            // late dialog outcome (which the OS still delivers) a no-op in
+            // onPermissionRequestResult.
+            _uiState.update {
+                it.copy(
+                    callTrackingEnabled = false,
+                    pendingPermissionRequest = if (_uiState.value.pendingPermissionRequest == TrackingPermissionRequest.CALL_TRACKING) {
+                        null
+                    } else {
+                        _uiState.value.pendingPermissionRequest
+                    },
+                )
+            }
+            viewModelScope.launch {
+                trackingSettings.setCallTrackingEnabled(false)
+                stopCallDetectionService()
+            }
+            return
+        }
+        if (callPermissionsGranted()) {
+            enableCallTracking()
+        } else {
+            _uiState.update { it.copy(pendingPermissionRequest = TrackingPermissionRequest.CALL_TRACKING) }
+        }
+    }
+
+    /**
+     * SMS tracking mirrors [setCallTrackingEnabled] with the READ_SMS +
+     * RECEIVE_SMS grant set.
+     */
     fun setSmsTrackingEnabled(enabled: Boolean) {
-        _uiState.update { it.copy(smsTrackingEnabled = enabled) }
-        viewModelScope.launch { trackingSettings.setSmsTrackingEnabled(enabled) }
+        if (_uiState.value.pendingPermissionRequest != null && enabled) return
+        if (!enabled) {
+            _uiState.update {
+                it.copy(
+                    smsTrackingEnabled = false,
+                    pendingPermissionRequest = if (_uiState.value.pendingPermissionRequest == TrackingPermissionRequest.SMS_TRACKING) {
+                        null
+                    } else {
+                        _uiState.value.pendingPermissionRequest
+                    },
+                )
+            }
+            viewModelScope.launch { trackingSettings.setSmsTrackingEnabled(false) }
+            return
+        }
+        if (smsPermissionsGranted()) {
+            enableSmsTracking()
+        } else {
+            _uiState.update { it.copy(pendingPermissionRequest = TrackingPermissionRequest.SMS_TRACKING) }
+        }
     }
 
     fun setNotificationsEnabled(enabled: Boolean) {
         _uiState.update { it.copy(notificationsEnabled = enabled) }
         viewModelScope.launch { trackingSettings.setNotificationsEnabled(enabled) }
+    }
+
+    /**
+     * The OS permission dialog for [request] closed. The grant is re-read
+     * from the real permission state (the most reliable source — the result
+     * map and the checker can diverge on partial grants). Granted → enable
+     * (persist flag, start capture, kick the immediate catch-up). Denied →
+     * leave the flag false and raise the rationale dialog, or the
+     * permanent-denial "open system settings" dialog when [permanentlyDenied]
+     * (the user checked "don't ask again", so the OS will not show the dialog
+     * again).
+     */
+    fun onPermissionRequestResult(request: TrackingPermissionRequest, permanentlyDenied: Boolean) {
+        // A disable issued while the (modal) system dialog was up cleared the
+        // pending request; the OS still delivers the outcome, but the cancel
+        // wins — only a request we are still waiting on is acted on.
+        if (_uiState.value.pendingPermissionRequest != request) return
+        _uiState.update { it.copy(pendingPermissionRequest = null) }
+        val granted = when (request) {
+            TrackingPermissionRequest.CALL_TRACKING -> callPermissionsGranted()
+            TrackingPermissionRequest.SMS_TRACKING -> smsPermissionsGranted()
+        }
+        if (granted) {
+            when (request) {
+                TrackingPermissionRequest.CALL_TRACKING -> enableCallTracking()
+                TrackingPermissionRequest.SMS_TRACKING -> enableSmsTracking()
+            }
+        } else {
+            _uiState.update {
+                it.copy(
+                    permissionDialog = if (permanentlyDenied) {
+                        TrackingPermissionDialog.AppSettings(request)
+                    } else {
+                        TrackingPermissionDialog.Rationale(request)
+                    },
+                )
+            }
+        }
+    }
+
+    /** "Not now" (or the system back button) on a tracking-permission dialog. */
+    fun onPermissionDialogDismiss() {
+        _uiState.update { it.copy(permissionDialog = null) }
+    }
+
+    /** "Try again" on a rationale dialog — re-request the same permission set. */
+    fun onPermissionDialogRetry() {
+        val request = (_uiState.value.permissionDialog as? TrackingPermissionDialog.Rationale)?.request ?: return
+        _uiState.update {
+            it.copy(permissionDialog = null, pendingPermissionRequest = request)
+        }
+    }
+
+    private fun callPermissionsGranted(): Boolean =
+        TrackingPermissions.CALL_TRACKING.all { permissionChecker.isGranted(it) }
+
+    private fun smsPermissionsGranted(): Boolean =
+        TrackingPermissions.SMS_TRACKING.all { permissionChecker.isGranted(it) }
+
+    private fun enableCallTracking() {
+        _uiState.update { it.copy(callTrackingEnabled = true) }
+        viewModelScope.launch {
+            trackingSettings.setCallTrackingEnabled(true)
+            startCallDetectionService()
+            // Issue #721 scope #5: don't wait for the periodic cadence or the
+            // next call — stage recent call-log history right after the grant.
+            catchUpScheduler.enqueueCallLogCatchUp()
+        }
+    }
+
+    private fun enableSmsTracking() {
+        _uiState.update { it.copy(smsTrackingEnabled = true) }
+        viewModelScope.launch {
+            trackingSettings.setSmsTrackingEnabled(true)
+            // Issue #721 scope #5: stage recent outgoing texts right after the grant.
+            catchUpScheduler.enqueueSmsBackfill()
+        }
     }
 
     // --- M25: profile & channels ---

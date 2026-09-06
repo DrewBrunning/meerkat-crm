@@ -46,6 +46,24 @@ interface PendingInteractionRepository {
     suspend fun deleteSynced()
 
     /**
+     * Records [interaction] unless an identical row already exists — same
+     * kind, phone number and timestamp — returning true only when a new row
+     * was staged.
+     *
+     * Issue #721: the provider-backed readers (call-log catch-up, SMS backfill)
+     * can be triggered by two independent WorkManager chains at once (a
+     * phone-state one-shot next to the periodic catch-up, or the grant-time
+     * backfill next to the periodic one), and both advance the watermark only
+     * *after* staging. Without a dedupe the overlapping runs would stage the
+     * same interaction twice — and since rows are deleted once synced, the
+     * duplicate would only surface on the server. The identical-row check is
+     * exact (provider DATE is a single, shared timestamp source per reader), so
+     * it is safe; a missed watermark advance can only ever *under*-report, never
+     * double-report.
+     */
+    suspend fun recordIfNew(interaction: PendingInteraction): Boolean
+
+    /**
      * Persists [key] as the row's idempotency key. Used to backfill a row that
      * somehow still has none (an upgrade edge that the migration should have
      * covered) so the worker never syncs a keyless row.
@@ -79,6 +97,9 @@ interface TrackingSettingsRepository {
     /** Last timestamp processed by the call-log reader (dedupe). */
     suspend fun lastCallLogTimestamp(): Long
     suspend fun setLastCallLogTimestamp(ts: Long)
+    /** Last timestamp processed by the SMS-history reader (dedupe). */
+    suspend fun lastSmsTimestamp(): Long
+    suspend fun setLastSmsTimestamp(ts: Long)
     /** When the periodic interaction sync last ran. */
     suspend fun lastInteractionSyncAt(): Long?
 }

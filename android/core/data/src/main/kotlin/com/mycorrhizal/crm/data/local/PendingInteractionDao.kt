@@ -42,6 +42,18 @@ interface PendingInteractionDao {
     )
     suspend fun trimUnsynced(keep: Int)
 
+    /**
+     * Issue #721: exact-match dedupe for [PendingInteractionRepository.recordIfNew]
+     * — an already-staged interaction with the same kind / phone / timestamp
+     * (the signature a provider-backed reader yields for the same underlying
+     * call or message) must not be staged twice by an overlapping run.
+     */
+    @Query(
+        "SELECT COUNT(*) FROM pending_interactions WHERE kind = :kind " +
+            "AND phoneNumber = :phoneNumber AND timestampMillis = :timestampMillis",
+    )
+    suspend fun countExact(kind: String, phoneNumber: String, timestampMillis: Long): Int
+
     @Query("SELECT * FROM pending_interactions WHERE kind = :kind AND phoneNumber = :phoneNumber AND timestampMillis > :sinceMillis ORDER BY timestampMillis DESC LIMIT 1")
     suspend fun findRecent(kind: String, phoneNumber: String, sinceMillis: Long): PendingInteraction?
 }

@@ -40,20 +40,7 @@ class PendingInteractionRepositoryImpl @Inject constructor(
 ) : PendingInteractionRepository {
     override suspend fun record(interaction: DomainPendingInteraction) {
         database.withTransaction {
-            dao.insert(
-                com.mycorrhizal.crm.data.local.PendingInteraction(
-                    id = interaction.id,
-                    timestampMillis = interaction.timestampMillis,
-                    kind = interaction.kind,
-                    direction = interaction.direction,
-                    phoneNumber = interaction.phoneNumber,
-                    matchedContactId = interaction.matchedContactId,
-                    synced = interaction.synced,
-                    syncedAt = interaction.syncedAt,
-                    idempotencyKey = interaction.idempotencyKey
-                        ?: UUID.randomUUID().toString(),
-                ),
-            )
+            dao.insert(interaction.toEntity())
             dao.trimUnsynced(OUTBOX_UNSYNCED_CAP)
         }
     }
@@ -67,6 +54,21 @@ class PendingInteractionRepositoryImpl @Inject constructor(
 
     override suspend fun deleteSynced() {
         dao.deleteSynced()
+    }
+
+    override suspend fun recordIfNew(interaction: DomainPendingInteraction): Boolean {
+        val phoneNumber = interaction.phoneNumber
+        return database.withTransaction {
+            if (phoneNumber != null &&
+                dao.countExact(interaction.kind, phoneNumber, interaction.timestampMillis) > 0
+            ) {
+                false
+            } else {
+                dao.insert(interaction.toEntity())
+                dao.trimUnsynced(OUTBOX_UNSYNCED_CAP)
+                true
+            }
+        }
     }
 
     override suspend fun setIdempotencyKey(id: Long, key: String) {
@@ -89,4 +91,17 @@ private fun com.mycorrhizal.crm.data.local.PendingInteraction.toDomain(): Domain
         synced = synced,
         syncedAt = syncedAt,
         idempotencyKey = idempotencyKey,
+    )
+
+private fun DomainPendingInteraction.toEntity(): com.mycorrhizal.crm.data.local.PendingInteraction =
+    com.mycorrhizal.crm.data.local.PendingInteraction(
+        id = id,
+        timestampMillis = timestampMillis,
+        kind = kind,
+        direction = direction,
+        phoneNumber = phoneNumber,
+        matchedContactId = matchedContactId,
+        synced = synced,
+        syncedAt = syncedAt,
+        idempotencyKey = idempotencyKey ?: UUID.randomUUID().toString(),
     )

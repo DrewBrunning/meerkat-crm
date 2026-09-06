@@ -393,6 +393,16 @@
     <string name="settings_call_tracking">Log calls as activities</string>
     <string name="settings_sms_tracking">Log messages as activities</string>
     <string name="settings_notifications">Show notifications</string>
+    <!-- Issue #721: runtime-permission flow for the tracking toggles. -->
+    <string name="settings_permission_rationale_title">Permission needed</string>
+    <string name="settings_call_permission_rationale">Call tracking logs calls as activities, which needs access to your call log and phone state. Grant the permission to turn it on.</string>
+    <string name="settings_sms_permission_rationale">Message tracking logs texts as activities, which needs access to your messages. Grant the permission to turn it on.</string>
+    <string name="settings_permission_settings_title">Permission blocked</string>
+    <string name="settings_call_permission_settings">Call tracking needs the Call log and Phone permissions. They are blocked — enable them for Mycorrhizal in system settings, then switch the toggle back on.</string>
+    <string name="settings_sms_permission_settings">Message tracking needs the SMS permissions. They are blocked — enable them for Mycorrhizal in system settings, then switch the toggle back on.</string>
+    <string name="settings_permission_try_again">Try again</string>
+    <string name="settings_permission_open_settings">Open settings</string>
+    <string name="settings_permission_not_now">Not now</string>
     <string name="settings_value_placeholder">—</string>
     <string name="custom_links_title">Custom link actions</string>
     <string name="custom_links_new">New action</string>

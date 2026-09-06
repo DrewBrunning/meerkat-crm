@@ -48,13 +48,16 @@ class TrackingWorkerSchedulerTest {
     // moved to -- the workers' own doWork() behavior is covered by
     // ReminderNotificationWorkerTest/NotificationWorkersTest/CallLogSyncWorkerTest.
     @Test
-    fun `schedulePeriodic enqueues all four periodic workers`() {
+    fun `schedulePeriodic enqueues all six periodic workers`() {
         TrackingWorkerScheduler.schedulePeriodic(context)
 
         assertTrue(uniqueWorkState(TrackingWorkerScheduler.UNIQUE_INTERACTION_SYNC).isNotEmpty())
         assertTrue(uniqueWorkState(TrackingWorkerScheduler.UNIQUE_REMINDER_CHECK).isNotEmpty())
         assertTrue(uniqueWorkState(TrackingWorkerScheduler.UNIQUE_CADENCE_CHECK).isNotEmpty())
         assertTrue(uniqueWorkState(TrackingWorkerScheduler.UNIQUE_BIRTHDAY_CHECK).isNotEmpty())
+        // Issue #721: the capture catch-ups (call-log + outgoing-SMS backfill).
+        assertTrue(uniqueWorkState(TrackingWorkerScheduler.UNIQUE_CALL_LOG_CATCH_UP).isNotEmpty())
+        assertTrue(uniqueWorkState(TrackingWorkerScheduler.UNIQUE_SMS_BACKFILL).isNotEmpty())
     }
 
     @Test
@@ -63,5 +66,19 @@ class TrackingWorkerSchedulerTest {
         TrackingWorkerScheduler.schedulePeriodic(context)
 
         assertEquals(1, uniqueWorkState(TrackingWorkerScheduler.UNIQUE_INTERACTION_SYNC).size)
+    }
+
+    @Test
+    fun `enqueueCallLogCatchUp registers the one-shot call-log sync work`() {
+        TrackingWorkerScheduler.enqueueCallLogCatchUp(context)
+
+        assertTrue(uniqueWorkState(TrackingWorkerScheduler.UNIQUE_CALL_LOG_SYNC).isNotEmpty())
+    }
+
+    @Test
+    fun `enqueueSmsBackfill registers the one-shot SMS backfill work`() {
+        TrackingWorkerScheduler.enqueueSmsBackfill(context)
+
+        assertTrue(uniqueWorkState(TrackingWorkerScheduler.UNIQUE_SMS_BACKFILL_ONCE).isNotEmpty())
     }
 }
