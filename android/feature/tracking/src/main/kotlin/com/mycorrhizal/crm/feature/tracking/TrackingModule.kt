@@ -17,6 +17,16 @@ abstract class TrackingModule {
     abstract fun bindDeviceRegistrationStore(
         impl: SharedPrefsDeviceRegistrationStore,
     ): DeviceRegistrationStore
+
+    // Issue #721: the OS-grant query seam and the grant-time catch-up enqueue
+    // seam, both consumed by the Settings feature's ViewModel.
+    @Binds
+    abstract fun bindPermissionChecker(impl: AndroidPermissionChecker): PermissionChecker
+
+    @Binds
+    abstract fun bindTrackingCatchUpScheduler(
+        impl: TrackingCatchUpSchedulerImpl,
+    ): TrackingCatchUpScheduler
 }
 
 @Module

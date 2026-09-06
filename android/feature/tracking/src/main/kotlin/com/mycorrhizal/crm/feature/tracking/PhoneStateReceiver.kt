@@ -4,9 +4,6 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.telephony.TelephonyManager
-import androidx.work.ExistingWorkPolicy
-import androidx.work.OneTimeWorkRequestBuilder
-import androidx.work.WorkManager
 
 /**
  * Reacts to phone-state changes to stage finished calls (§6.1). Runs the
@@ -20,15 +17,11 @@ class PhoneStateReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (intent.action != TelephonyManager.ACTION_PHONE_STATE_CHANGED) return
-        val request = OneTimeWorkRequestBuilder<CallLogSyncWorker>().build()
-        WorkManager.getInstance(context).enqueueUniqueWork(
-            UNIQUE_CALL_LOG_SYNC,
-            ExistingWorkPolicy.REPLACE,
-            request,
-        )
+        TrackingWorkerScheduler.enqueueCallLogCatchUp(context)
     }
 
     companion object {
-        const val UNIQUE_CALL_LOG_SYNC = "call-log-sync"
+        /** Kept as an alias for callers/tests; the name lives in TrackingWorkerScheduler. */
+        const val UNIQUE_CALL_LOG_SYNC = TrackingWorkerScheduler.UNIQUE_CALL_LOG_SYNC
     }
 }

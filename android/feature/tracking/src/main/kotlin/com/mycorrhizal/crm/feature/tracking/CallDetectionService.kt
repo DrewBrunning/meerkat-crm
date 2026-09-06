@@ -78,7 +78,16 @@ class CallDetectionService : Service() {
             ),
         )
         val telephonyManager = getSystemService(TelephonyManager::class.java)
-        telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE)
+        // Issue #721: if READ_PHONE_STATE was revoked while the service was
+        // running and the system then restarts it (START_STICKY), listen()
+        // throws SecurityException — a missing grant is a logged no-op (the
+        // call-log capture keeps working via its own grant check), never a
+        // crash loop.
+        try {
+            telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_CALL_STATE)
+        } catch (e: SecurityException) {
+            android.util.Log.w(TAG, "READ_PHONE_STATE missing; phone-state listening disabled", e)
+        }
         resetSelfStop()
         return START_STICKY
     }
@@ -93,7 +102,11 @@ class CallDetectionService : Service() {
         quickCaptureOverlay?.dismiss()
         quickCaptureOverlay = null
         val telephonyManager = getSystemService(TelephonyManager::class.java)
-        telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_NONE)
+        try {
+            telephonyManager.listen(phoneStateListener, PhoneStateListener.LISTEN_NONE)
+        } catch (e: SecurityException) {
+            android.util.Log.w(TAG, "READ_PHONE_STATE missing while unregistering listener", e)
+        }
         super.onDestroy()
     }
 
@@ -102,5 +115,6 @@ class CallDetectionService : Service() {
     companion object {
         const val NOTIFICATION_ID = 1001
         private const val SELF_STOP_MS = 5 * 60 * 1000L
+        private const val TAG = "CallDetectionService"
     }
 }

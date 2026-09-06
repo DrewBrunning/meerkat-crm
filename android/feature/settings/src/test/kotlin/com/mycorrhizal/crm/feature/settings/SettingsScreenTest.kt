@@ -274,15 +274,26 @@ class SettingsScreenTest {
         val trackingSettings = mockk<TrackingSettingsRepository>()
         val appSettings = mockk<AppSettingsRepository>()
         val relationshipEdgeRepository = mockk<RelationshipEdgeRepository>()
+        val permissionChecker = mockk<com.mycorrhizal.crm.feature.tracking.PermissionChecker>()
+        val catchUpScheduler = mockk<com.mycorrhizal.crm.feature.tracking.TrackingCatchUpScheduler>(relaxed = true)
         val appContext = mockk<Context>(relaxed = true)
         coEvery { trackingSettings.callTrackingEnabled() } returns false
         coEvery { trackingSettings.smsTrackingEnabled() } returns false
         coEvery { trackingSettings.notificationsEnabled() } returns true
+        every { permissionChecker.isGranted(any()) } returns false
         every { authRepository.observeSession() } returns MutableStateFlow(
             SessionState(serverUrl = "https://crm.example.com", username = "alice", isAdmin = true, language = "en"),
         )
         coEvery { appSettings.themePreference() } returns flowOf(AppSettingsRepository.THEME_SYSTEM)
-        val viewModel = SettingsViewModel(authRepository, trackingSettings, appSettings, relationshipEdgeRepository, appContext)
+        val viewModel = SettingsViewModel(
+            authRepository,
+            trackingSettings,
+            appSettings,
+            relationshipEdgeRepository,
+            permissionChecker,
+            catchUpScheduler,
+            appContext,
+        )
 
         composeTestRule.setContent {
             MycorrhizalTheme(darkTheme = darkTheme) {
@@ -354,5 +365,63 @@ class SettingsScreenTest {
         composeTestRule.onNodeWithText("Update password")
             .performScrollTo()
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Saving"))
+    }
+
+    // --- Issue #721: tracking-permission denial dialogs ----------------------
+
+    @Test
+    fun `a rationale dialog explains the call-tracking permission and retries`() {
+        var retried = false
+        var dismissed = false
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                SettingsContent(
+                    state = SettingsUiState(
+                        permissionDialog = TrackingPermissionDialog.Rationale(
+                            TrackingPermissionRequest.CALL_TRACKING,
+                        ),
+                    ),
+                    onPermissionDialogRetry = { retried = true },
+                    onPermissionDialogDismiss = { dismissed = true },
+                    onLogout = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Permission needed").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Try again").performClick()
+        assertEquals(true, retried)
+
+        // Re-show and dismiss via "Not now" — the toggle must stay off and the
+        // dialog must not re-request.
+        composeTestRule.onNodeWithText("Not now").performClick()
+        assertEquals(true, dismissed)
+    }
+
+    @Test
+    fun `an app-settings dialog offers the system settings deep link for a permanent denial`() {
+        var opened = false
+        var dismissed = false
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                SettingsContent(
+                    state = SettingsUiState(
+                        permissionDialog = TrackingPermissionDialog.AppSettings(
+                            TrackingPermissionRequest.SMS_TRACKING,
+                        ),
+                    ),
+                    onPermissionDialogOpenSettings = { opened = true },
+                    onPermissionDialogDismiss = { dismissed = true },
+                    onLogout = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Permission blocked").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Open settings").performClick()
+        assertEquals(true, opened)
+
+        composeTestRule.onNodeWithText("Not now").performClick()
+        assertEquals(true, dismissed)
     }
 }

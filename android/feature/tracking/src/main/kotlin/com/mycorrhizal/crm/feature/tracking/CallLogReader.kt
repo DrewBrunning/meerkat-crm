@@ -2,6 +2,7 @@ package com.mycorrhizal.crm.feature.tracking
 
 import android.content.ContentResolver
 import android.provider.CallLog
+import android.util.Log
 
 /** One call-log entry as captured for tracking (§6.1). */
 data class CallLogEntry(
@@ -25,6 +26,14 @@ object CallLogKinds {
  */
 class CallLogReader(private val contentResolver: ContentResolver) {
 
+    /**
+     * Issue #721: a missing READ_CALL_LOG grant (revoked in system settings
+     * while the worker was enqueued, or a direct call in a test) makes
+     * [ContentResolver.query] throw [SecurityException]. That is a state of
+     * the world to degrade from, never a reason for the worker to crash — the
+     * caller already gates on the grant; this catch is the belt-and-braces
+     * turn of the reader into a logged no-op.
+     */
     fun readSince(sinceMillis: Long, limit: Int = 50): List<CallLogEntry> {
         val out = mutableListOf<CallLogEntry>()
         val projection = arrayOf(
@@ -34,13 +43,18 @@ class CallLogReader(private val contentResolver: ContentResolver) {
             CallLog.Calls.DURATION,
             CallLog.Calls.CACHED_NAME,
         )
-        val cursor = contentResolver.query(
-            CallLog.Calls.CONTENT_URI,
-            projection,
-            "${CallLog.Calls.DATE} > ?",
-            arrayOf(sinceMillis.toString()),
-            "${CallLog.Calls.DATE} DESC LIMIT $limit",
-        ) ?: return out
+        val cursor = try {
+            contentResolver.query(
+                CallLog.Calls.CONTENT_URI,
+                projection,
+                "${CallLog.Calls.DATE} > ?",
+                arrayOf(sinceMillis.toString()),
+                "${CallLog.Calls.DATE} DESC LIMIT $limit",
+            )
+        } catch (e: SecurityException) {
+            Log.w(TAG, "Call-log read denied (READ_CALL_LOG missing?); treating as empty", e)
+            return out
+        } ?: return out
         cursor.use {
             val numIdx = it.getColumnIndexOrThrow(CallLog.Calls.NUMBER)
             val typeIdx = it.getColumnIndexOrThrow(CallLog.Calls.TYPE)
@@ -60,5 +74,9 @@ class CallLogReader(private val contentResolver: ContentResolver) {
             }
         }
         return out
+    }
+
+    private companion object {
+        const val TAG = "CallLogReader"
     }
 }

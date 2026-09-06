@@ -78,4 +78,15 @@ class CallLogReaderTest {
 
         assertTrue(entries.isEmpty())
     }
+
+    @Test
+    fun `a missing READ_CALL_LOG grant (SecurityException) is an empty list, not a crash`() {
+        every {
+            contentResolver.query(CallLog.Calls.CONTENT_URI, fullProjection, any(), any(), any())
+        } throws SecurityException("Permission Denial: reading com.android.providers.contacts")
+
+        val entries = reader.readSince(sinceMillis = 0L)
+
+        assertTrue(entries.isEmpty())
+    }
 }

@@ -24,6 +24,7 @@ class TrackingSettingsRepositoryImpl @Inject constructor(
     private val smsTracking = booleanPreferencesKey("sms_tracking_enabled")
     private val notifications = booleanPreferencesKey("notifications_enabled")
     private val lastCallLogTs = longPreferencesKey("last_call_log_timestamp")
+    private val lastSmsTs = longPreferencesKey("last_sms_timestamp")
     private val lastSyncAt = longPreferencesKey("last_interaction_sync_at")
 
     override suspend fun callTrackingEnabled(): Boolean =
@@ -52,6 +53,13 @@ class TrackingSettingsRepositoryImpl @Inject constructor(
 
     override suspend fun setLastCallLogTimestamp(ts: Long) {
         context.trackingDataStore.edit { it[lastCallLogTs] = ts }
+    }
+
+    override suspend fun lastSmsTimestamp(): Long =
+        context.trackingDataStore.data.first()[lastSmsTs] ?: 0L
+
+    override suspend fun setLastSmsTimestamp(ts: Long) {
+        context.trackingDataStore.edit { it[lastSmsTs] = ts }
     }
 
     override suspend fun lastInteractionSyncAt(): Long? =

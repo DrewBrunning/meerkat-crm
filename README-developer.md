@@ -90,6 +90,25 @@
   - The seed backend data is persistent — `docker compose -f docker-compose.test.yml down -v` resets it between runs if you want a clean slate.
   - CI runs this on every push/PR to main via the `android-e2e` job in [.github/workflows/android-tests.yml](.github/workflows/android-tests.yml).
 
+**Android call/SMS tracking runbook (issue #721)**
+- The "Log calls as activities" / "Log messages as activities" toggles in Settings (Tracking & notifications) are **opt-in and runtime-permission-gated**: flipping a toggle on requests the matching dangerous permissions (`READ_CALL_LOG` + `READ_PHONE_STATE` for calls; `READ_SMS` + `RECEIVE_SMS` for messages) through the system dialog. The opt-in flag is only stored once the grant lands.
+  - Denied once → the toggle stays off and a rationale dialog offers "Try again".
+  - Denied permanently ("don't ask again") → the dialog offers "Open settings", a deep link to the app's page in system settings.
+  - The permissions were being **requested nowhere** before this issue — the bug report was literally true: nothing captured anything, because no runtime grant ever happened. The capture machinery itself (`CallLogSyncWorker`, `SmsReceiver`, etc.) was already in place; it was starved of permissions.
+- What each toggle captures once granted:
+  - **Calls**: every call is staged from the call log by `CallLogSyncWorker`, triggered live by `PhoneStateReceiver` on a phone-state change, periodically (30-min catch-up for missed broadcasts), and once immediately after the grant (recent history). Gated on `READ_CALL_LOG`.
+  - **Messages**: *incoming* texts are captured live by `SmsReceiver` (`RECEIVE_SMS`); *outgoing* texts — which no broadcast can observe — are captured by `SmsBackfillWorker` reading the Sent folder (`READ_SMS`), every 15 min plus once immediately after the grant. Only the peer number + timestamp are ever stored or synced; the message body is never persisted (§6.2 privacy boundary).
+- Staged rows land in the encrypted on-device outbox (`pending_interactions`) and are synced by `InteractionSyncWorker` as contact Activities (see the OfflineSyncE2eTest section above).
+- Verify on a physical device (Pixel 8a) running a debug build, against the `docker-compose.test.yml` backend:
+  ```bash
+  docker compose -f docker-compose.test.yml up -d --build
+  adb reverse tcp:7300 tcp:7300
+  cd android && ./gradlew :app:installDebug
+  ```
+  Then in the app: log in → Settings → flip "Log calls as activities" on → grant → make/receive a call to a known contact → it appears on that contact's activity feed. Repeat for "Log messages as activities" with a text. Deny the dialog → the toggle snaps back off with a rationale; revoke the permission in system settings and re-enter Settings → the toggle renders off, not "on".
+- The unit/Robolectric suite covers the permission state machine (`SettingsViewModelTest`), the grant-gated workers (`CallLogSyncWorkerTest`, `SmsBackfillWorkerTest`), the readers' missing-grant no-op (`CallLogReaderTest`, `SmsHistoryReaderTest`), and the scheduler additions (`TrackingWorkerSchedulerTest`). `TrackingPermissionsE2eTest` exercises the real toggle → flag → catch-up wiring on the harness.
+- Distribution note: this app ships **only via F-Droid/Obtainium** — the Play Store restricted-permissions policy for `READ_SMS`/`READ_CALL_LOG` is deliberately out of scope; a future Play build would be a separate feature-stripped flavor and must not compromise this build.
+
 **Android Room migration tests (issue #480)**
 - `android/core/data`'s `AppDatabase` (`version = CURRENT_VERSION`, `Migrations.kt`) now exports its schema JSON to `android/core/data/schemas/` on every compile (`exportSchema = true`, wired via `room.schemaLocation` in `core/data/build.gradle.kts`); commit the JSON diff alongside any migration you add. There's no schema JSON below version 16 — `AppDatabase`'s doc comment explains why and what that means for testing.
 - `REGISTERED_MIGRATIONS` in `Migrations.kt` is the single source of truth for which version bump has a hand-written `Migration`; `DataModule.provideDatabase` builds its `.addMigrations(...)` call from that list. Run `cd android && ./gradlew :core:data:testDebugUnitTest` to run the whole Robolectric suite, including:

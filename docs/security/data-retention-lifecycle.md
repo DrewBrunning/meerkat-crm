@@ -7,7 +7,7 @@ each asset, not how long it survives.
 
 | | |
 |---|---|
-| **Last updated** | 2026-08-31 (issues [#414](https://github.com/DrewBrunning/mycorrhizal-crm/issues/414), [#420](https://github.com/DrewBrunning/mycorrhizal-crm/issues/420), [#424](https://github.com/DrewBrunning/mycorrhizal-crm/issues/424), [#622](https://github.com/DrewBrunning/mycorrhizal-crm/issues/622), [#391](https://github.com/DrewBrunning/mycorrhizal-crm/issues/391), [#389](https://github.com/DrewBrunning/mycorrhizal-crm/issues/389), [#651](https://github.com/DrewBrunning/mycorrhizal-crm/issues/651), [#351](https://github.com/DrewBrunning/mycorrhizal-crm/issues/351), [#353](https://github.com/DrewBrunning/mycorrhizal-crm/issues/353), [#549](https://github.com/DrewBrunning/mycorrhizal-crm/issues/549), [#505](https://github.com/DrewBrunning/mycorrhizal-crm/issues/505)) |
+| **Last updated** | 2026-09-06 (issues [#414](https://github.com/DrewBrunning/mycorrhizal-crm/issues/414), [#420](https://github.com/DrewBrunning/mycorrhizal-crm/issues/420), [#424](https://github.com/DrewBrunning/mycorrhizal-crm/issues/424), [#622](https://github.com/DrewBrunning/mycorrhizal-crm/issues/622), [#391](https://github.com/DrewBrunning/mycorrhizal-crm/issues/391), [#389](https://github.com/DrewBrunning/mycorrhizal-crm/issues/389), [#651](https://github.com/DrewBrunning/mycorrhizal-crm/issues/651), [#351](https://github.com/DrewBrunning/mycorrhizal-crm/issues/351), [#353](https://github.com/DrewBrunning/mycorrhizal-crm/issues/353), [#549](https://github.com/DrewBrunning/mycorrhizal-crm/issues/549), [#505](https://github.com/DrewBrunning/mycorrhizal-crm/issues/505), [#721](https://github.com/DrewBrunning/mycorrhizal-crm/issues/721)) |
 | **Scope** | Backend (Go/Gin + SQLite), CardDAV/CalDAV (server role), Android client, browser/frontend, operator backups. |
 | **Companion docs** | `docs/security/pii-inventory.md` (the *minimization* lens — should each store exist, and is it more/kept-longer than needed), `docs/security/asvs-l2.md` V8 (Data Protection), `docs/deployment.md` (Backups section — the authoritative backup/restore runbook), `docs/security/masvs-l1.md` (Android storage controls). |
 
@@ -253,6 +253,34 @@ External DAV clients (phones, desktop DAV apps) sync against `backend/carddav`, 
   after logout" story leaves nothing recoverable outside the (encrypted) DB the OS itself controls.
 - **Backups**: none — this is a device-local cache with no server-visible backup; Android's own
   Auto Backup is out of scope for app-internal DB files of this kind and isn't configured for it.
+
+### Device-detected call/SMS staging (`pending_interactions`) (issue #721)
+
+The on-device staging rows for automatic call/SMS tracking. Distinct from the mirror above: the mirror
+is a rebuildable cache of server contacts, while `pending_interactions` is the **only copy** of a
+device-detected call/text until it syncs (each row becomes a server `Activity`; the idempotency-key
+design is ADR-0010 / CON-04, issue #479).
+
+- **Where / who**: the same SQLCipher-encrypted Room DB as §8 (`pending_interactions` table,
+  `android/core/data/.../local/PendingInteractionDao.kt`), keyed via Android Keystore. Local to the
+  device; unreadable without the app's key even with root file access. Each row holds only the
+  interaction kind (`call`/`message`), direction, phone number, timestamp and an optional link to a
+  cached contact id — **never an SMS body** (the §6.2 privacy boundary: the body is used only for
+  on-device contact matching at capture time and is not persisted).
+- **Retention**: rows persist until they sync, then are deleted. `InteractionSyncWorker` marks a row
+  synced once the server Activity create succeeds and `deleteSynced()` removes synced rows every run,
+  so a healthy row lives roughly one sync cadence (15-min periodic). Offline rows are bounded at 500
+  newest (`OUTBOX_UNSYNCED_CAP`, `record()`/`recordIfNew()` evict the oldest past the cap), so an
+  outbox can never grow without limit while the device is offline.
+- **Deletion / propagation**: capture stops (and the stored opt-in flag is reconciled to off) when the
+  user turns a tracking toggle off or revokes the matching runtime permission in system settings
+  (`SettingsViewModel.refreshPermissionState`, issue #721) — a revoked permission also makes the
+  capture workers no-op rather than crash. On logout or an invalidated session, `LocalDataCleaner`
+  wipes the whole Room DB (`clearAllTables()`), the outbox included. Deleting the matching server
+  contact does not cascade to the outbox; instead the queued interaction syncs unassociated per
+  ADR-0009 (its stale link is dropped on the next sync).
+- **Backups**: none — device-local, deleted with the DB; nothing here is in any server backup (§10).
+  The *synced* counterpart (the server Activity) follows §1's lifecycle once created.
 
 ## 9. Browser-side storage (frontend SPA)
 
