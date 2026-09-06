@@ -438,6 +438,14 @@
     <string name="app_lock_unlock">Sblocca</string>
     <string name="app_lock_auth_failed">Impossibile sbloccare. Riprova.</string>
     <string name="app_lock_unsupported">Lo sblocco con impronta, volto o PIN non è disponibile su questo dispositivo. Esci per accedere con la tua password.</string>
+    <!-- Compatibilità app/server (issue #528) -->
+    <string name="force_update_heading">Aggiornamento necessario</string>
+    <string name="force_update_message">Questo server richiede Mycorrhizal %1$s o versioni successive. Stai usando la versione %2$s, che questo server non supporta più.</string>
+    <string name="force_update_server">Server: %1$s</string>
+    <string name="force_update_instructions">Aggiorna l\'app Mycorrhizal per continuare a usare questo server. Se hai installato l\'app da un collegamento di download o da un canale di aggiornamento, installa la versione più recente che offre.</string>
+    <string name="server_outdated_notice_message">Questo server esegue la versione %1$s, più vecchia di questa app (versione %2$s). Alcune funzioni potrebbero non funzionare finché il server non viene aggiornato.</string>
+    <string name="server_outdated_notice_dismiss">Ignora</string>
+
     <!-- Accesso biometrico (issue #722) -->
     <string name="biometric_enroll_dialog_title">Accedere con i dati biometrici?</string>
     <string name="biometric_enroll_dialog_body">Usa impronta, volto o PIN del dispositivo per sbloccare questa app invece di digitare la password la prossima volta.</string>
