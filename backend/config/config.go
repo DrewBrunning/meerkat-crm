@@ -151,6 +151,15 @@ type Config struct {
 	// characters (enforced in Validate) — a short scrape credential is worse
 	// than none.
 	MetricsToken string
+
+	// MinClientVersion is the oldest client `versionName` this server still
+	// supports, advertised verbatim on GET /health as `min_client_version`
+	// (issue #528 — docs/client-compatibility-policy.md). Empty (the default)
+	// means no floor has been declared: every released client stays compatible.
+	// It is set via MIN_CLIENT_VERSION only when a MAINT-02 breaking change
+	// actually strands older clients — a floor is a deliberate, reviewed event,
+	// never a side effect of a release.
+	MinClientVersion string
 }
 
 // Defaults for the storage-trend thresholds (issue #652). Exported so the
@@ -262,6 +271,7 @@ func LoadConfig() *Config {
 		DataEncryptionKey:             getEnv("DATA_ENCRYPTION_KEY", ""),
 		DataEncryptionKeyFile:         getEnv("DATA_ENCRYPTION_KEY_FILE", ""),
 		MetricsToken:                  getEnv("METRICS_TOKEN", ""),
+		MinClientVersion:              getEnv("MIN_CLIENT_VERSION", ""),
 	}
 
 	// Assigned outside the aligned literal above so a longer key name does not
@@ -514,6 +524,21 @@ func isValidBase64Key(s string) bool {
 	return err == nil && len(raw) == 32
 }
 
+// clientVersionPattern matches the version shapes a client `versionName` (and
+// the server build version it is compared against) can legitimately take:
+// `major`, `major.minor`, or `major.minor.patch`, optionally followed by a
+// `-prerelease` or `+build` suffix, and optionally prefixed with `v`. The
+// floor value in MIN_CLIENT_VERSION is compared against client version
+// strings, so it must be a shape both sides can parse; anything else (a typo,
+// a stray path) is rejected at boot rather than silently failing open on the
+// client later. It deliberately does NOT require a full semver triple: a
+// two-part `0.6` floor is a valid, meaningful declaration.
+var clientVersionPattern = regexp.MustCompile(`^v?\d+(\.\d+){0,2}(-[0-9A-Za-z][0-9A-Za-z.-]*)?(\+[0-9A-Za-z][0-9A-Za-z.-]*)?$`)
+
+func isValidClientVersion(s string) bool {
+	return clientVersionPattern.MatchString(strings.TrimSpace(s))
+}
+
 func (e ValidationError) Error() string {
 	return fmt.Sprintf("Configuration Error [%s]: %s", e.Field, e.Message)
 }
@@ -715,6 +740,18 @@ func (c *Config) Validate() []ValidationError {
 		errors = append(errors, ValidationError{
 			Field:   "METRICS_TOKEN",
 			Message: "METRICS_TOKEN must be at least 16 characters when set.",
+		})
+	}
+
+	// MIN_CLIENT_VERSION (issue #528) is advertised on the unauthenticated
+	// GET /health and compared against client versionNames, so a set-but-garbled
+	// floor must fail boot: an operator who thinks they raised the floor and
+	// didn't would ship an unadvertised breaking change. Empty (the default)
+	// is the policy's normal state — no floor declared.
+	if c.MinClientVersion != "" && !isValidClientVersion(c.MinClientVersion) {
+		errors = append(errors, ValidationError{
+			Field:   "MIN_CLIENT_VERSION",
+			Message: fmt.Sprintf("Invalid minimum client version %q. Must look like a client versionName: major, major.minor, or major.minor.patch, optionally with a -prerelease or +build suffix (e.g. \"0.6.0\" or \"0.6.0-rc.1\").", c.MinClientVersion),
 		})
 	}
 

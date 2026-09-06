@@ -11823,6 +11823,11 @@
       "name": "HealthResponse",
       "properties": [
         {
+          "name": "api_contract_version",
+          "type": "string",
+          "required": false
+        },
+        {
           "name": "build_date",
           "type": "string",
           "required": false
@@ -11840,6 +11845,11 @@
         {
           "name": "database",
           "type": "object",
+          "required": false
+        },
+        {
+          "name": "min_client_version",
+          "type": "string",
           "required": false
         },
         {

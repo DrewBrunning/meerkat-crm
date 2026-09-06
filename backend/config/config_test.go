@@ -743,3 +743,69 @@ func TestLoadConfig_DataEncryptionKeyFileEnv(t *testing.T) {
 	assert.Empty(t, cfg.DataEncryptionKey)
 	assert.Equal(t, "/etc/mycorrhizal/at-rest.key", cfg.DataEncryptionKeyFile)
 }
+
+// --- MIN_CLIENT_VERSION (issue #528 / docs/client-compatibility-policy.md) ---
+
+// The compatibility floor is the policy's load-bearing surface: an empty
+// value means "no floor has ever been declared" and must validate, while a
+// set-but-garbled value must fail boot (an operator who thinks they raised
+// the floor and didn't would ship an unadvertised breaking change).
+func TestValidate_MinClientVersion(t *testing.T) {
+	validFloors := []string{
+		"0.6.0",
+		"0.6",
+		"1",
+		"0.6.0-rc.1",
+		"0.7.0+build.7",
+		"v0.6.0",
+	}
+	for _, floor := range validFloors {
+		t.Run("valid floor "+floor, func(t *testing.T) {
+			cfg := validConfig()
+			cfg.MinClientVersion = floor
+			assert.False(t, hasFieldError(cfg.Validate(), "MIN_CLIENT_VERSION"),
+				"%q must be accepted as a floor", floor)
+		})
+	}
+
+	invalidFloors := []string{
+		"banana",
+		"0.6.0/../../etc",
+		"latest",
+		"0,6",
+		"0.6.0.1", // four numeric segments: not a versionName shape
+		"-rc.1",
+		"0.6.",
+	}
+	for _, floor := range invalidFloors {
+		t.Run("invalid floor "+floor, func(t *testing.T) {
+			cfg := validConfig()
+			cfg.MinClientVersion = floor
+			assert.True(t, hasFieldError(cfg.Validate(), "MIN_CLIENT_VERSION"),
+				"%q must be rejected as a floor", floor)
+		})
+	}
+
+	t.Run("empty (the default) is valid — no floor declared", func(t *testing.T) {
+		cfg := validConfig()
+		cfg.MinClientVersion = ""
+		assert.False(t, hasFieldError(cfg.Validate(), "MIN_CLIENT_VERSION"))
+	})
+}
+
+func TestLoadConfig_MinClientVersionEnv(t *testing.T) {
+	t.Setenv("JWT_SECRET_KEY", "test-secret-key-that-is-long-enough-32")
+	t.Setenv("PROFILE_PHOTO_DIR", "/tmp/photos")
+	t.Setenv("SQLITE_DB_PATH", "/tmp/test.db")
+	t.Setenv("FRONTEND_URL", "http://localhost:5173")
+
+	t.Run("unset defaults to empty (no floor)", func(t *testing.T) {
+		t.Setenv("MIN_CLIENT_VERSION", "")
+		assert.Equal(t, "", LoadConfig().MinClientVersion)
+	})
+
+	t.Run("set is read through", func(t *testing.T) {
+		t.Setenv("MIN_CLIENT_VERSION", "0.6.0")
+		assert.Equal(t, "0.6.0", LoadConfig().MinClientVersion)
+	})
+}

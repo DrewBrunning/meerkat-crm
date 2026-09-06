@@ -10035,6 +10035,11 @@ components:
       description: >
         The flat status/database/version fields are retained from the
         pre-split /health; the per-facet breakdown is under checks.
+        api_contract_version / min_client_version are the client/server
+        compatibility contract (issue #528,
+        docs/client-compatibility-policy.md): api_contract_version is always
+        present ("v1" while the API is on /api/v1), and min_client_version is
+        absent until a MAINT-02 floor-move actually raises it.
       properties:
         status: { type: string, enum: [healthy, degraded, unhealthy] }
         timestamp: { type: string, format: date-time }
@@ -10043,9 +10048,24 @@ components:
           properties:
             status: { type: string, enum: [healthy, unhealthy] }
             response_time_ms: { type: number }
-        version: { type: string, example: "0.1.0" }
+        version: { type: string, example: "0.6.10" }
         commit: { type: string }
         build_date: { type: string }
+        api_contract_version:
+          type: string
+          description: >
+            The API contract generation this server speaks. "v1" while the API
+            is on /api/v1; a future "v2" is announced here before any client
+            is required to react to it.
+          example: "v1"
+        min_client_version:
+          type: string
+          description: >
+            The oldest client versionName the server still supports. Absent
+            (or null) means no floor has been declared: every released client
+            is compatible. Present only when a breaking API change (MAINT-02,
+            issue #491) has deliberately stranded older clients.
+          example: "0.6.0"
         checks:
           type: object
           properties:
