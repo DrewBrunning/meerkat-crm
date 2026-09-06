@@ -255,6 +255,19 @@ jobs:
           timeout 120 bash -c 'until curl -s http://localhost:7300/health/live > /dev/null 2>&1; do sleep 2; done'
           echo "App is ready"
 
+      # Issue #528: a second all-in-one backend (port 7301) booted with
+      # MIN_CLIENT_VERSION set above the debug APK's versionName. Only
+      # ForceUpdateGateE2ETest talks to it; the rest of the suite keeps using
+      # the floor-less 7300 instance (the policy's default posture).
+      - name: Start client-floor backend (issue #528)
+        run: |
+          docker compose -p mycorrhizal-compat -f docker-compose.compat-test.yml up -d
+          echo "Waiting for compatibility backend to be ready..."
+          timeout 120 bash -c 'until curl -s http://localhost:7301/health/live > /dev/null 2>&1; do sleep 2; done'
+          curl -s http://localhost:7301/health
+          echo ""
+          echo "Compatibility backend is ready"
+
       # Hardware acceleration for the emulator (required by android-emulator-runner).
       - name: Enable KVM
         run: |
@@ -287,6 +300,7 @@ jobs:
           # instrumented tests whose connected tasks fail.
           script: |
             adb reverse tcp:7300 tcp:7300
+            adb reverse tcp:7301 tcp:7301
             max_attempts=2; attempt=1; while true; do if ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.serverUrl=http://127.0.0.1:7300; then exit 0; fi; if [ "$attempt" -ge "$max_attempts" ]; then echo "connectedDebugAndroidTest failed after $max_attempts attempts" >&2; exit 1; fi; echo "connectedDebugAndroidTest failed on attempt $attempt/$max_attempts; preserving failing results and retrying"; mkdir -p "app/build/flaky-attempt-$attempt"; cp app/build/outputs/androidTest-results/connected/*.xml "app/build/flaky-attempt-$attempt/" 2>/dev/null || true; attempt=$((attempt + 1)); done
 
       # Issue #268: if the suite passed but only after a retry, the preserved
@@ -321,7 +335,9 @@ jobs:
 
       - name: Stop services
         if: always()
-        run: docker compose -f docker-compose.test.yml down -v
+        run: |
+          docker compose -f docker-compose.test.yml down -v
+          docker compose -p mycorrhizal-compat -f docker-compose.compat-test.yml down -v
 
   # COMPAT-02 (issue #473): the same instrumented E2E suite as android-e2e
   # above, but on an emulator at API 26 -- the declared minSdk floor
@@ -377,6 +393,15 @@ jobs:
           timeout 120 bash -c 'until curl -s http://localhost:7300/health/live > /dev/null 2>&1; do sleep 2; done'
           echo "App is ready"
 
+      # Issue #528: the client-floor backend ForceUpdateGateE2ETest drives (see
+      # the android-e2e job's step of the same name).
+      - name: Start client-floor backend (issue #528)
+        run: |
+          docker compose -p mycorrhizal-compat -f docker-compose.compat-test.yml up -d
+          echo "Waiting for compatibility backend to be ready..."
+          timeout 120 bash -c 'until curl -s http://localhost:7301/health/live > /dev/null 2>&1; do sleep 2; done'
+          echo "Compatibility backend is ready"
+
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -393,6 +418,7 @@ jobs:
           working-directory: ./android
           script: |
             adb reverse tcp:7300 tcp:7300
+            adb reverse tcp:7301 tcp:7301
             max_attempts=2; attempt=1; while true; do if ./gradlew :app:connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.serverUrl=http://127.0.0.1:7300; then exit 0; fi; if [ "$attempt" -ge "$max_attempts" ]; then echo "connectedDebugAndroidTest failed after $max_attempts attempts" >&2; exit 1; fi; echo "connectedDebugAndroidTest failed on attempt $attempt/$max_attempts; preserving failing results and retrying"; mkdir -p "app/build/flaky-attempt-$attempt"; cp app/build/outputs/androidTest-results/connected/*.xml "app/build/flaky-attempt-$attempt/" 2>/dev/null || true; attempt=$((attempt + 1)); done
 
       - name: Upload E2E results
@@ -412,7 +438,9 @@ jobs:
 
       - name: Stop services
         if: always()
-        run: docker compose -f docker-compose.test.yml down -v
+        run: |
+          docker compose -f docker-compose.test.yml down -v
+          docker compose -p mycorrhizal-compat -f docker-compose.compat-test.yml down -v
 
   # COMPAT-02 (issue #473 action 4 / the milestone's "unsupported
   # environments fail clearly" criterion): a device one API level BELOW
@@ -541,6 +569,7 @@ jobs:
           timeout 120 bash -c 'until curl -s http://localhost:7300/health/live > /dev/null 2>&1; do sleep 2; done'
           echo "App is ready"
 
+
       - name: Enable KVM
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -582,4 +611,6 @@ jobs:
 
       - name: Stop services
         if: always()
-        run: docker compose -f docker-compose.test.yml down -v
+        run: |
+          docker compose -f docker-compose.test.yml down -v
+          docker compose -p mycorrhizal-compat -f docker-compose.compat-test.yml down -v

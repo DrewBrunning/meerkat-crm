@@ -44,6 +44,20 @@ class E2eBackend(
 
     // --- session ------------------------------------------------------------
 
+    /** A lightweight reachability probe (the unauthenticated liveness check).
+     *  Used by tests that target a backend instance that only exists in some
+     *  CI legs (issue #528's force-update backend) so they skip cleanly when
+     *  it is not running. */
+    fun isReachable(): Boolean =
+        try {
+            val response = client.newCall(
+                Request.Builder().url("$serverUrl/health/live").build(),
+            ).execute()
+            response.use { it.isSuccessful }
+        } catch (_: Exception) {
+            false
+        }
+
     /** Registers the seed account. 409 (already exists from a prior run) is
      *  treated as success. */
     fun registerSeedUser(
