@@ -39,6 +39,10 @@ class SessionExpiryWiringTest {
         assertNull("the persisted token must be dropped", tokenStorage.stored)
         assertFalse("the session must flip to logged-out", manager.observeSession().first().isLoggedIn)
         assertEquals("local PII must be wiped on session end", 1, cleaner.clearCount)
+        // Issue #723: a 401-driven logout goes through the same clearSession as
+        // an explicit logout — the server URL survives it too, so the login
+        // screen that follows is pre-filled.
+        assertEquals("https://crm.example.com", manager.serverUrl())
     }
 
     @Test
