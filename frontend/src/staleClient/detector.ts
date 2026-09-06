@@ -47,6 +47,8 @@ let currentNotice: BlockNotice = { kind: 'none' };
 let suppressBlockedUntil = 0;
 let autoReloadAttempted = false;
 let checking = false;
+let visibilityListeners: Array<() => void> = [];
+let dirtyUnsubscribe: (() => void) | null = null;
 
 function emit(notice: BlockNotice): void {
   currentNotice = notice;
@@ -170,10 +172,11 @@ export function startStaleClientDetector(): boolean {
   };
   window.addEventListener('focus', onVisible);
   document.addEventListener('visibilitychange', onVisible);
+  visibilityListeners.push(onVisible);
 
   // A dirty form being saved/closed while a block is pending means the
   // reload can now proceed safely.
-  onDirtyChange(() => {
+  dirtyUnsubscribe = onDirtyChange(() => {
     if (currentNotice.kind === 'blocked' && currentNotice.dirty && !isAnythingDirty()) {
       if (Date.now() >= suppressBlockedUntil && !autoReloadAttempted && !hasRecentlyForcedReload()) {
         autoReloadAttempted = true;
@@ -193,6 +196,13 @@ export function stopStaleClientDetector(): void {
     window.clearInterval(intervalId);
     intervalId = null;
   }
+  for (const listener of visibilityListeners) {
+    window.removeEventListener('focus', listener);
+    document.removeEventListener('visibilitychange', listener);
+  }
+  visibilityListeners = [];
+  dirtyUnsubscribe?.();
+  dirtyUnsubscribe = null;
   running = false;
 }
 
