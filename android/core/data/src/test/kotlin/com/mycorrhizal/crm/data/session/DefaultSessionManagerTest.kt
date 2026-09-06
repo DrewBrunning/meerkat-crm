@@ -55,7 +55,7 @@ class DefaultSessionManagerTest {
     }
 
     @Test
-    fun `clearSession removes token and resets state`() = runTest {
+    fun `clearSession removes the token and profile but keeps the server url`() = runTest {
         val (manager, tokenStorage) = manager()
         manager.setSession(
             serverUrl = "https://crm.example.com",
@@ -66,7 +66,47 @@ class DefaultSessionManagerTest {
 
         assertNull(manager.bearerToken())
         assertNull(tokenStorage.stored)
-        assertFalse(manager.observeSession().first().isLoggedIn)
+        // Issue #723: the server URL is non-credential device config — logout
+        // keeps it so the login screen can pre-fill it (in memory AND prefs).
+        assertEquals("https://crm.example.com", manager.serverUrl())
+        assertEquals("https://crm.example.com", manager.baseUrl())
+        val state = manager.observeSession().first()
+        assertFalse(state.isLoggedIn)
+        assertEquals("https://crm.example.com", state.serverUrl)
+    }
+
+    @Test
+    fun `clearSession keepServerUrl=false wipes the server url too`() = runTest {
+        val (manager, tokenStorage) = manager()
+        manager.setSession(
+            serverUrl = "https://crm.example.com",
+            token = "jwt-1",
+            state = SessionState(userId = 7, username = "alice"),
+        )
+
+        manager.clearSession(keepServerUrl = false)
+
+        assertNull(manager.bearerToken())
+        assertNull(tokenStorage.stored)
+        assertNull(manager.serverUrl())
+        assertEquals(SessionState(), manager.observeSession().first())
+    }
+
+    @Test
+    fun `clearSession keeps the server url across a process restart`() = runTest {
+        val tokenStorage = FakeTokenStorage()
+        val prefsStorage = FakeSessionPrefsStorage()
+        val first = DefaultSessionManager(tokenStorage, prefsStorage)
+        first.setSession("https://crm.example.com", "jwt-1", SessionState(userId = 7))
+
+        first.clearSession()
+
+        // A fresh manager (new process) hydrates the retained URL — logout
+        // must not force the user to re-type it after an app relaunch.
+        val restarted = DefaultSessionManager(tokenStorage, prefsStorage)
+        restarted.init()
+        assertEquals("https://crm.example.com", restarted.serverUrl())
+        assertNull(restarted.bearerToken())
     }
 
     @Test
@@ -197,6 +237,9 @@ class DefaultSessionManagerTest {
             assertFalse(loggedOut.isLoggedIn)
             assertNull(loggedOut.userId)
             assertFalse("no stale username survives logout", loggedOut.username != null)
+            // Issue #723: the server URL is not part of the dropped session —
+            // it survives logout so the login screen can pre-fill it.
+            assertEquals("https://crm.example.com", loggedOut.serverUrl)
 
             // re-authenticated
             manager.setSession(

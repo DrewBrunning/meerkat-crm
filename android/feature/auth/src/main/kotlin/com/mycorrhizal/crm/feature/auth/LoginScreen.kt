@@ -130,6 +130,17 @@ fun LoginScreenContent(
     val snackbarHostState = remember { SnackbarHostState() }
 
     var serverUrl by rememberSaveable { mutableStateOf(uiState.serverUrl) }
+    // Issue #723: the ViewModel hydrates serverUrl from the persisted session
+    // asynchronously in init (it must await the startup session hydration), so
+    // a stored URL can arrive after the first composition. Mirror a
+    // later-arriving uiState.serverUrl into the field, but never over text the
+    // user is actively typing — once onServerUrlChange has fired, the field is
+    // the source of truth (the ViewModel keeps uiState.serverUrl in lock-step
+    // with it, so the mirror is otherwise a no-op).
+    var serverUrlEdited by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(uiState.serverUrl) {
+        if (!serverUrlEdited) serverUrl = uiState.serverUrl
+    }
     var identifier by rememberSaveable { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var apiToken by remember { mutableStateOf("") }
@@ -187,7 +198,11 @@ fun LoginScreenContent(
 
                 OutlinedTextField(
                     value = serverUrl,
-                    onValueChange = { serverUrl = it; onServerUrlChange(it) },
+                    onValueChange = {
+                        serverUrl = it
+                        serverUrlEdited = true
+                        onServerUrlChange(it)
+                    },
                     label = { Text(stringResource(R.string.login_server_url)) },
                     placeholder = { Text(stringResource(R.string.login_server_url_hint)) },
                     singleLine = true,

@@ -1,5 +1,6 @@
 package com.mycorrhizal.crm.feature.auth
 
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.autofill.ContentType
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.SemanticsProperties
@@ -12,6 +13,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextInput
 import com.mycorrhizal.crm.ui.theme.MycorrhizalTheme
 import org.junit.Assert.assertEquals
@@ -67,6 +69,87 @@ class LoginScreenTest {
         setContent(onServerUrlChange = { value = it })
         composeTestRule.onNodeWithText("Server URL").performTextInput("https://crm.example.com")
         assertEquals("https://crm.example.com", value)
+    }
+
+    // Issue #723: the ViewModel hydrates the persisted server URL asynchronously
+    // (init awaits the startup session hydration), so the value arrives in
+    // uiState AFTER the first composition. The field must pick it up.
+    @Test
+    fun `a server url arriving after first composition pre-fills the field`() {
+        val uiState = mutableStateOf(LoginUiState())
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                LoginScreenContent(
+                    uiState = uiState.value,
+                    onServerUrlChange = { value -> uiState.value = uiState.value.copy(serverUrl = value) },
+                    onModeChange = {},
+                    onSubmit = { _, _, _, _ -> },
+                )
+            }
+        }
+        // Compose once empty, then deliver the stored URL the way the
+        // ViewModel's init coroutine does.
+        uiState.value = LoginUiState(serverUrl = "https://crm.example.com")
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNode(hasText("https://crm.example.com") and hasSetTextAction())
+            .assertExists()
+    }
+
+    // Issue #723: mirroring a late-arriving uiState.serverUrl into the field
+    // must never clobber text the user is actively typing — once the user has
+    // edited, the field is the source of truth.
+    @Test
+    fun `a later ui state change does not clobber an in-progress server url edit`() {
+        val uiState = mutableStateOf(LoginUiState())
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                LoginScreenContent(
+                    uiState = uiState.value,
+                    onServerUrlChange = { value -> uiState.value = uiState.value.copy(serverUrl = value) },
+                    onModeChange = {},
+                    onSubmit = { _, _, _, _ -> },
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Server URL").performTextInput("https://typed.example.com")
+        // Simulate a rogue/out-of-band uiState update after the user typed
+        // (e.g. a delayed hydration value) — the typed text must win.
+        uiState.value = uiState.value.copy(serverUrl = "https://stored.example.com")
+        composeTestRule.waitForIdle()
+
+        composeTestRule.onNode(hasText("https://typed.example.com") and hasSetTextAction())
+            .assertExists()
+        composeTestRule.onNode(hasText("https://stored.example.com") and hasSetTextAction())
+            .assertDoesNotExist()
+    }
+
+    // Issue #723: a pre-filled URL stays fully editable — clearing and typing
+    // a new one drives the normal change callback (which persists it).
+    @Test
+    fun `editing the pre-filled server url still forwards the change`() {
+        val uiState = mutableStateOf(LoginUiState(serverUrl = "https://crm.example.com"))
+        var changed: String? = null
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                LoginScreenContent(
+                    uiState = uiState.value,
+                    onServerUrlChange = { value ->
+                        changed = value
+                        uiState.value = uiState.value.copy(serverUrl = value)
+                    },
+                    onModeChange = {},
+                    onSubmit = { _, _, _, _ -> },
+                )
+            }
+        }
+        composeTestRule.onNodeWithText("Server URL").performTextClearance()
+        composeTestRule.onNodeWithText("Server URL").performTextInput("https://beta.example.com")
+        composeTestRule.waitForIdle()
+
+        assertEquals("https://beta.example.com", changed)
+        composeTestRule.onNode(hasText("https://beta.example.com") and hasSetTextAction())
+            .assertExists()
     }
 
     @Test

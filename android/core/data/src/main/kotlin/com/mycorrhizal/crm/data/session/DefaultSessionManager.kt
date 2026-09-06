@@ -78,15 +78,24 @@ class DefaultSessionManager(
         tokenStorage.save(token)
     }
 
-    override suspend fun clearSession() {
+    override suspend fun clearSession(keepServerUrl: Boolean) {
         cachedToken = null
-        cachedServerUrl = null
         tokenStorage.clear()
-        prefsStorage.clear()
+        // Issue #723: the server URL is device config, not a session secret —
+        // keep it (in memory AND persisted) across logout so the login screen
+        // can pre-fill it. Only an explicit keepServerUrl=false wipes it.
+        if (!keepServerUrl) {
+            cachedServerUrl = null
+            prefsStorage.clear()
+        }
         // Issue #385: purge the offline PII mirror + image cache on logout /
         // account removal so a dropped session leaves no contact data on disk.
         localDataCleaner.clear()
-        sessionState.value = SessionState()
+        sessionState.value = if (keepServerUrl) {
+            SessionState(serverUrl = cachedServerUrl)
+        } else {
+            SessionState()
+        }
     }
 
     private fun refreshState() {
