@@ -15,6 +15,12 @@
 // recovery page must stay reachable from behind a broken worker.
 
 self.addEventListener('message', (event) => {
+  // Only ever honour control messages from a client of this origin. The real
+  // worker makes the same check (src/service-worker.ts); mirroring it here
+  // keeps the fixture a faithful stand-in for the product.
+  if (event.origin !== self.location.origin) {
+    return;
+  }
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }

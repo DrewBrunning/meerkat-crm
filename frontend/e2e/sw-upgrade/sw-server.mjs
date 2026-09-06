@@ -21,7 +21,6 @@
 // requests would be subject to whatever service worker is installed, and the
 // control surface must not be.
 
-import { existsSync, statSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import http from 'node:http';
 import path from 'node:path';
@@ -156,10 +155,25 @@ export class SwUpgradeServer {
   async serveFileOrFallback(res, pathname, buildDir) {
     const filePath = resolveInside(buildDir, pathname);
 
-    if (filePath !== null && existsSync(filePath) && statSync(filePath).isFile()) {
-      const headers = {};
-      const ext = path.extname(filePath).toLowerCase();
+    // Read the file directly -- one operation, no separate existence/type
+    // check that could race with the read (a stale check is exactly the bug
+    // the file is serving against). A missing file, a path that is a
+    // directory, or a transient removal all surface here as "not a readable
+    // file" and fall through to the 404/SPA-fallback logic below.
+    let body;
+    let ext = '';
+    if (filePath !== null) {
+      try {
+        body = await readFile(filePath);
+        ext = path.extname(filePath).toLowerCase();
+      } catch {
+        body = undefined;
+      }
+    }
+
+    if (body !== undefined) {
       const contentType = CONTENT_TYPES[ext] ?? 'application/octet-stream';
+      const headers = {};
 
       if (pathname === '/service-worker.js' || ext === '.html') {
         // The worker script and the app shell must never be served stale; the
@@ -173,7 +187,7 @@ export class SwUpgradeServer {
         headers['Cache-Control'] = 'public, max-age=31536000, immutable';
       }
 
-      this.writeBytes(res, 200, await readFile(filePath), contentType, headers);
+      this.writeBytes(res, 200, body, contentType, headers);
       return;
     }
 
@@ -186,12 +200,15 @@ export class SwUpgradeServer {
       return;
     }
 
-    const indexHtml = path.join(buildDir, 'index.html');
-    if (existsSync(indexHtml)) {
-      this.writeBytes(res, 200, await readFile(indexHtml), CONTENT_TYPES['.html'], {
+    // The SPA shell is itself read with a single operation (no prior check).
+    try {
+      const indexHtml = await readFile(path.join(buildDir, 'index.html'));
+      this.writeBytes(res, 200, indexHtml, CONTENT_TYPES['.html'], {
         'Cache-Control': 'no-cache',
       });
       return;
+    } catch {
+      // no shell -- fixture missing, reported below
     }
 
     res.writeHead(500, { 'Content-Type': 'text/plain' });

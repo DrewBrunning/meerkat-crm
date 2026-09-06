@@ -18,7 +18,6 @@
 
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, statSync } from 'node:fs';
 import { mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,13 +38,39 @@ const STAMP_FILE = path.join(FIXTURES_DIR, '.fixture-stamp');
 
 // Inputs that a fixture rebuild must track: if any of these change, the
 // emitted chunks/HTML may change and the cached fixtures would silently drift
-// from the source they claim to represent.
-const STAMPED_INPUT_GLOBS = ['src', 'public', 'index.html', 'vite.config.ts', 'package.json'];
+// from the source they claim to represent. Whether each entry is a directory
+// is known statically (src/ and public/ are directories; the rest are files),
+// so the stamp code never needs an existence check ahead of a read.
+const STAMPED_INPUTS = [
+  { rel: 'src', isDirectory: true },
+  { rel: 'public', isDirectory: true },
+  { rel: 'index.html', isDirectory: false },
+  { rel: 'vite.config.ts', isDirectory: false },
+  { rel: 'package.json', isDirectory: false },
+];
 
+// Reads a file that may or may not exist (an input the fixture build does not
+// care about is treated as empty). Using a single read rather than a separate
+// existence check avoids the check-then-read race a stale read could produce.
+async function readIfPresent(file) {
+  try {
+    return await readFile(file);
+  } catch {
+    return Buffer.alloc(0);
+  }
+}
+
+// Recursively lists files under `dir`. A missing directory is simply empty:
+// readdir is the single source of truth, no prior existence check needed.
 async function listFiles(dir) {
   const out = [];
   async function walk(current) {
-    const entries = await readdir(current, { withFileTypes: true });
+    let entries;
+    try {
+      entries = await readdir(current, { withFileTypes: true });
+    } catch {
+      return;
+    }
     for (const entry of entries) {
       if (entry.name === 'node_modules') continue;
       const full = path.join(current, entry.name);
@@ -56,34 +81,35 @@ async function listFiles(dir) {
       }
     }
   }
-  if (existsSync(dir)) await walk(dir);
+  await walk(dir);
   return out.sort();
 }
 
 export async function computeSourceStamp() {
   const hash = createHash('sha256');
-  for (const rel of STAMPED_INPUT_GLOBS) {
+  for (const { rel, isDirectory } of STAMPED_INPUTS) {
     const full = path.join(FRONTEND_DIR, rel);
-    if (!existsSync(full)) continue;
-    const stat = statSync(full);
     hash.update(`${rel}\0`);
-    if (stat.isDirectory()) {
+    if (isDirectory) {
       const files = await listFiles(full);
       for (const file of files) {
         hash.update(`${rel}/${file}\0`);
-        hash.update(await readFile(path.join(full, file)));
+        hash.update(await readIfPresent(path.join(full, file)));
       }
     } else {
-      hash.update(await readFile(full));
+      hash.update(await readIfPresent(full));
     }
   }
   return hash.digest('hex');
 }
 
 export async function fixturesNeedRebuild() {
-  if (!existsSync(STAMP_FILE)) return true;
   for (const label of FIXTURE_LABELS) {
-    if (!existsSync(path.join(FIXTURE_DIRS[label], 'index.html'))) return true;
+    try {
+      await readFile(path.join(FIXTURE_DIRS[label], 'index.html'));
+    } catch {
+      return true;
+    }
   }
   let previous;
   try {
