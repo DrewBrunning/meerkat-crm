@@ -82,8 +82,9 @@ import {
   Link,
   Navigate,
   Route,
-  BrowserRouter as Router,
+  RouterProvider,
   Routes,
+  createBrowserRouter,
   useLocation,
   useNavigate,
   useSearchParams,
@@ -113,6 +114,7 @@ import SystemEventsPage from './SystemEventsPage';
 import SystemStatusPage from './SystemStatusPage';
 import UsersPage from './UsersPage';
 import './App.css';
+import { AuthContext, useAuth } from './context/AuthContext';
 
 // T98: 180 -> 256. The old 180 was tight enough that four of the five locales
 // wrapped their longest nav label even at the pre-T98 16px (de/es/fr/it, at
@@ -789,6 +791,32 @@ function AppContent({
   );
 }
 
+// Issue #805: react-router's useBlocker (the discard guards' in-app route
+// navigation protection) only works under a *data* router -- the plain
+// <BrowserRouter>+<Routes> this file used never installed the DataRouterContext
+// useBlocker reads. The route tree is therefore moved onto a data router,
+// created once at module scope (RouterProvider refuses to own a router that is
+// recreated on render). AppContent still renders the declarative <Routes>
+// tree inside it, so the ~800-line logged-in/logged-out shell and its two
+// per-auth route branches move over without a behavioural rewrite -- the
+// top-level match is deliberately a single catch-all. What changes is the
+// context RouterProvider now installs: useDiscardGuard's navigation blocker
+// is live, so a dirty dialog intercepts a drawer link, a programmatic
+// navigate, or a browser Back/Forward instead of silently unmounting.
+function AppRoot() {
+  const { token, setToken } = useAuth();
+  return (
+    <>
+      <ScrollToTop />
+      <Box sx={{ display: 'flex' }}>
+        <AppContent token={token} setToken={setToken} />
+      </Box>
+    </>
+  );
+}
+
+const router = createBrowserRouter([{ path: '*', element: <AppRoot /> }]);
+
 function App() {
   const [token, setToken] = useState(getToken());
 
@@ -814,12 +842,9 @@ function App() {
   }, []);
 
   return (
-    <Router>
-      <ScrollToTop />
-      <Box sx={{ display: 'flex' }}>
-        <AppContent token={token} setToken={setToken} />
-      </Box>
-    </Router>
+    <AuthContext.Provider value={{ token, setToken }}>
+      <RouterProvider router={router} />
+    </AuthContext.Provider>
   );
 }
 

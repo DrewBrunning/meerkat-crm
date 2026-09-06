@@ -1,5 +1,6 @@
-import { cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, expect, test, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import { RouterProvider, createMemoryRouter } from 'react-router';
 import '../../i18n/config';
 import type { SourceImportWizard as Wizard } from '../../hooks/useSourceImportWizard';
 import SourceImportWizard from './SourceImportWizard';
@@ -207,4 +208,110 @@ test('Escape during an active import keeps it running instead of cancelling it',
   expect(cancel).not.toHaveBeenCalled();
   expect(cancelImport).not.toHaveBeenCalled();
   expect(onClose).toHaveBeenCalled();
+});
+
+// Issue #805: with the app on a data router, a live import session (fetching /
+// review) also guards *in-app route navigation* -- a drawer link, programmatic
+// navigate, or browser Back asks before abandoning the session, and Discard
+// routes through the same cancel the Cancel button uses.
+describe('SourceImportWizard in-app route navigation guard (issue #805)', () => {
+  function reviewWizard(cancel = vi.fn(), reset = vi.fn()): Wizard {
+    return makeWizard({
+      step: 'review',
+      preview: {
+        session_id: 's1',
+        rows: [],
+        total_rows: 0,
+        valid_rows: 0,
+        duplicate_count: 0,
+        error_count: 0,
+        totals: { activities: 0, notes: 0, reminders: 0, relationships: 0, gifts: 0 },
+        loss_report: [],
+      },
+      cancel,
+      reset,
+    });
+  }
+
+  function renderWizardInRouter(wizard: Wizard, onClose = vi.fn()) {
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/settings',
+          element: (
+            <SourceImportWizard
+              open
+              onClose={onClose}
+              titleKey="settings.monicaImport.title"
+              sourceLabel="Monica"
+              wizard={wizard}
+              connectStep={<div />}
+              onComplete={() => {}}
+            />
+          ),
+        },
+        { path: '/contacts', element: <div>contacts page</div> },
+      ],
+      { initialEntries: ['/settings'] },
+    );
+    render(<RouterProvider router={router} />);
+    return { router, onClose };
+  }
+
+  test('navigation away from the review step is suspended and asks before discarding', async () => {
+    const { router } = renderWizardInRouter(reviewWizard());
+
+    await act(async () => {
+      router.navigate('/contacts');
+    });
+
+    expect(router.state.location.pathname).toBe('/settings');
+    expect(screen.getByText('Discard unsaved changes?')).toBeInTheDocument();
+  });
+
+  test('Discard on a blocked navigation cancels the session, closes, and leaves', async () => {
+    const cancel = vi.fn();
+    const reset = vi.fn();
+    const onClose = vi.fn();
+    const { router } = renderWizardInRouter(reviewWizard(cancel, reset), onClose);
+
+    await act(async () => {
+      router.navigate('/contacts');
+    });
+    expect(screen.getByText('Discard unsaved changes?')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/contacts'));
+    expect(cancel).toHaveBeenCalled();
+    expect(reset).toHaveBeenCalled();
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  test('Keep editing keeps the live session on the current route', async () => {
+    const cancel = vi.fn();
+    const { router } = renderWizardInRouter(reviewWizard(cancel));
+
+    await act(async () => {
+      router.navigate('/contacts');
+    });
+    expect(screen.getByText('Discard unsaved changes?')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+
+    expect(router.state.location.pathname).toBe('/settings');
+    await waitFor(() => expect(screen.queryByText('Discard unsaved changes?')).toBeNull());
+    expect(cancel).not.toHaveBeenCalled();
+  });
+
+  test('the connect step (no live session) does not block navigation', async () => {
+    const { router } = renderWizardInRouter(makeWizard({ step: 'connect' }));
+
+    await act(async () => {
+      router.navigate('/contacts');
+    });
+
+    expect(router.state.location.pathname).toBe('/contacts');
+    expect(screen.queryByText('Discard unsaved changes?')).toBeNull();
+  });
 });

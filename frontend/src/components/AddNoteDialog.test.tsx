@@ -1,5 +1,6 @@
-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
-import { afterEach, beforeEach, expect, test, vi } from 'vitest';
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { RouterProvider, createMemoryRouter } from 'react-router';
 import '../i18n/config';
 import { SnackbarProvider } from '../context/SnackbarContext';
 import { DateFormatProvider } from '../DateFormatProvider';
@@ -194,4 +195,121 @@ test('a successful save clears the draft', async () => {
   renderDialog();
   await waitFor(() => expect(screen.getByLabelText('Content *')).toBeInTheDocument());
   expect(screen.getByLabelText('Content *')).toHaveValue('');
+});
+
+// Issue #805: with the app on a data router, a dirty note also guards *in-app
+// route navigation* -- the blocker intercepts a drawer link / programmatic
+// navigate / browser Back and asks before discarding, mirroring the
+// Cancel/Escape path. These render the dialog under a real data router so the
+// blocker machinery exists.
+describe('AddNoteDialog in-app route navigation guard (issue #805)', () => {
+  const draftKey = 'mycorrhizal:draft:note-dialog:unassigned';
+
+  function renderDialogInRouter() {
+    const onClose = vi.fn();
+    const router = createMemoryRouter(
+      [
+        {
+          path: '/notes',
+          element: (
+            <AddNoteDialog
+              open
+              onClose={onClose}
+              onSave={vi.fn().mockResolvedValue(undefined)}
+            />
+          ),
+        },
+        { path: '/contacts', element: <div>contacts page</div> },
+      ],
+      { initialEntries: ['/notes'] },
+    );
+    render(
+      <SnackbarProvider>
+        <DateFormatProvider>
+          <RouterProvider router={router} />
+        </DateFormatProvider>
+      </SnackbarProvider>,
+    );
+    return { router, onClose };
+  }
+
+  async function typeDirtyNote() {
+    await waitFor(() => expect(screen.getByLabelText('Content *')).toBeInTheDocument());
+    fireEvent.change(screen.getByLabelText('Content *'), {
+      target: { value: 'A note I have not saved yet.' },
+    });
+    await waitFor(() =>
+      expect(screen.getByLabelText('Content *')).toHaveValue('A note I have not saved yet.'),
+    );
+  }
+
+  test('in-app navigation away from a dirty note is suspended and asks before discarding', async () => {
+    mockFetchByUrl({ '/contacts?': contactsResponse });
+    const { router } = renderDialogInRouter();
+    await typeDirtyNote();
+    expect(sessionStorage.getItem(draftKey)).not.toBeNull();
+
+    // Simulate the browser Back button / a programmatic in-app navigation
+    // while the dirty dialog is open.
+    await act(async () => {
+      router.navigate('/contacts');
+    });
+
+    expect(router.state.location.pathname).toBe('/notes');
+    expect(screen.getByText('Discard unsaved changes?')).toBeInTheDocument();
+    expect(screen.getByLabelText('Content *')).toHaveValue('A note I have not saved yet.');
+  });
+
+  test('Keep editing cancels the navigation and leaves the draft intact', async () => {
+    mockFetchByUrl({ '/contacts?': contactsResponse });
+    const { router, onClose } = renderDialogInRouter();
+    await typeDirtyNote();
+
+    await act(async () => {
+      router.navigate('/contacts');
+    });
+    expect(screen.getByText('Discard unsaved changes?')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
+
+    expect(router.state.location.pathname).toBe('/notes');
+    await waitFor(() =>
+      expect(screen.queryByText('Discard unsaved changes?')).toBeNull(),
+    );
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByLabelText('Content *')).toHaveValue('A note I have not saved yet.');
+    expect(sessionStorage.getItem(draftKey)).not.toBeNull();
+  });
+
+  test('Discard closes the dialog, clears the draft, and lets the navigation through', async () => {
+    mockFetchByUrl({ '/contacts?': contactsResponse });
+    const { router, onClose } = renderDialogInRouter();
+    await typeDirtyNote();
+
+    await act(async () => {
+      router.navigate('/contacts');
+    });
+    expect(screen.getByText('Discard unsaved changes?')).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: 'Discard' }));
+
+    await waitFor(() => expect(router.state.location.pathname).toBe('/contacts'));
+    expect(onClose).toHaveBeenCalledTimes(1);
+    // A navigation discard is a real discard -- the draft must not reappear
+    // the next time the dialog opens.
+    expect(sessionStorage.getItem(draftKey)).toBeNull();
+  });
+
+  test('a clean note does not block navigation', async () => {
+    mockFetchByUrl({ '/contacts?': contactsResponse });
+    const { router } = renderDialogInRouter();
+    await waitFor(() => expect(screen.getByLabelText('Content *')).toBeInTheDocument());
+
+    await act(async () => {
+      router.navigate('/contacts');
+    });
+
+    expect(router.state.location.pathname).toBe('/contacts');
+    expect(screen.queryByText('Discard unsaved changes?')).toBeNull();
+  });
 });
