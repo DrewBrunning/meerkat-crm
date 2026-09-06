@@ -29,6 +29,19 @@ export interface HealthResponse {
   /** Short git SHA; absent on a build with no VCS info. May carry a "-dirty" suffix. */
   commit?: string;
   build_date?: string;
+  /**
+   * The API contract generation this server speaks — always present on a
+   * v0.6.10+ server ("v1" while the API is on /api/v1). Absent on a server
+   * that predates the field, which is treated as "v1" by consumers
+   * (docs/client-compatibility-policy.md, issues #475/#528).
+   */
+  api_contract_version?: string;
+  /**
+   * The oldest client version the server still supports. Absent until an
+   * operator raises the floor via MIN_CLIENT_VERSION (a MAINT-02 event);
+   * absence means no floor has ever been declared.
+   */
+  min_client_version?: string;
   /** Per-facet deep-health breakdown. Present on the deep /health response;
    * shape mirrors backend services.DeepHealth. Not consumed by the build card. */
   checks?: Record<string, unknown>;

@@ -38,6 +38,15 @@ COPY . .
 ARG VITE_API_URL
 ENV VITE_API_URL=${VITE_API_URL}
 
+# Stale-client identity (issue #475): the web bundle is stamped with the
+# release it was built from (docker-publish.yml passes APP_VERSION to every
+# build context), so a tab left open across a deploy can compare its own
+# version against the server's /health contract and force a reload when it
+# falls below the declared floor. Unset (local/dev builds) leaves the
+# mechanism disabled.
+ARG VITE_APP_VERSION
+ENV VITE_APP_VERSION=${VITE_APP_VERSION}
+
 RUN yarn build
 
 # Production stage - serve with unprivileged nginx
