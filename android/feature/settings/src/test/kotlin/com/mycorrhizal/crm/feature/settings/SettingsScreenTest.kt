@@ -11,8 +11,13 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import com.mycorrhizal.crm.data.auth.DeviceGrantManager
 import com.mycorrhizal.crm.domain.repository.AppSettingsRepository
+import com.mycorrhizal.crm.domain.repository.AutoLockDelay
+import com.mycorrhizal.crm.domain.repository.BiometricEnrollmentStatus
 import com.mycorrhizal.crm.domain.repository.AuthRepository
+import com.mycorrhizal.crm.domain.repository.LocalAuthCapabilities
+import com.mycorrhizal.crm.domain.repository.LocalAuthSettingsRepository
 import com.mycorrhizal.crm.domain.repository.RelationshipEdgeRepository
 import com.mycorrhizal.crm.domain.repository.SessionState
 import com.mycorrhizal.crm.domain.repository.TrackingSettingsRepository
@@ -276,10 +281,17 @@ class SettingsScreenTest {
         val relationshipEdgeRepository = mockk<RelationshipEdgeRepository>()
         val permissionChecker = mockk<com.mycorrhizal.crm.feature.tracking.PermissionChecker>()
         val catchUpScheduler = mockk<com.mycorrhizal.crm.feature.tracking.TrackingCatchUpScheduler>(relaxed = true)
+        val localAuthSettings = mockk<LocalAuthSettingsRepository>()
+        val localAuthCapabilities = mockk<LocalAuthCapabilities>()
+        val deviceGrantManager = mockk<DeviceGrantManager>()
         val appContext = mockk<Context>(relaxed = true)
         coEvery { trackingSettings.callTrackingEnabled() } returns false
         coEvery { trackingSettings.smsTrackingEnabled() } returns false
         coEvery { trackingSettings.notificationsEnabled() } returns true
+        every { localAuthSettings.requireLocalAuth() } returns MutableStateFlow(false)
+        every { localAuthSettings.autoLockDelay() } returns MutableStateFlow(AutoLockDelay.DEFAULT)
+        every { localAuthSettings.biometricEnrollmentStatus() } returns MutableStateFlow(BiometricEnrollmentStatus.UNASKED)
+        every { localAuthCapabilities.canEnableLocalAuth() } returns true
         every { permissionChecker.isGranted(any()) } returns false
         every { authRepository.observeSession() } returns MutableStateFlow(
             SessionState(serverUrl = "https://crm.example.com", username = "alice", isAdmin = true, language = "en"),
@@ -290,6 +302,9 @@ class SettingsScreenTest {
             trackingSettings,
             appSettings,
             relationshipEdgeRepository,
+            localAuthSettings,
+            localAuthCapabilities,
+            deviceGrantManager,
             permissionChecker,
             catchUpScheduler,
             appContext,
@@ -424,4 +439,49 @@ class SettingsScreenTest {
         composeTestRule.onNodeWithText("Not now").performClick()
         assertEquals(true, dismissed)
     }
+
+    // --- Issue #722: fully biometric login (device-grant enrollment) ---
+
+    @Test
+    fun `a supported device that is not enrolled offers biometric sign-in setup`() {
+        var setup = false
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                SettingsContent(
+                    state = SettingsUiState(
+                        session = SessionState(),
+                        localAuthSupported = true,
+                        biometricEnrollmentStatus = BiometricEnrollmentStatus.UNASKED,
+                    ),
+                    onEnrollBiometricSignIn = { setup = true },
+                    onLogout = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Set up biometric sign-in").performScrollTo().performClick()
+        assertEquals(true, setup)
+    }
+
+    @Test
+    fun `an enrolled device shows that biometric sign-in is on and can be turned off`() {
+        var removed = false
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                SettingsContent(
+                    state = SettingsUiState(
+                        session = SessionState(),
+                        localAuthSupported = true,
+                        biometricEnrollmentStatus = BiometricEnrollmentStatus.ENROLLED,
+                    ),
+                    onRemoveBiometricSignIn = { removed = true },
+                    onLogout = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Turn off biometric sign-in").performScrollTo().performClick()
+        assertEquals(true, removed)
+    }
+
 }

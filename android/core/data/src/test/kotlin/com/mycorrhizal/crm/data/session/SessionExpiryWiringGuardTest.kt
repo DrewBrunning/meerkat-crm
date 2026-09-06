@@ -33,7 +33,14 @@ class SessionExpiryWiringGuardTest {
         )
         assertTrue(
             "provideSessionManager must start SessionExpiryWiring",
-            dataModuleSource.contains("SessionExpiryWiring(sessionExpiryNotifier, manager).start"),
+            dataModuleSource.contains("SessionExpiryWiring(") &&
+                dataModuleSource.contains(".start(scope)"),
+        )
+        // Issue #722: the wiring must first try a device-grant exchange so an
+        // expired-but-valid session resumes on a biometric-enrolled device.
+        assertTrue(
+            "the 401 path must attempt a device-grant refresh before clearing",
+            dataModuleSource.contains("refresher = { deviceGrantManager.get().refreshSessionFromStoredGrant() }"),
         )
     }
 

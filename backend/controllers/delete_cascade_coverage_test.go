@@ -95,6 +95,7 @@ var declaredCascadeCoverage = map[string]cascadeBucket{
 	"contact_shares":         goCascadeUser,
 	"contact_subscriptions":  goCascadeUser,
 	"contacts":               goCascadeUser,
+	"device_grants":          goCascadeUser,
 	"device_registrations":   goCascadeUser,
 	"field_definitions":      goCascadeUser,
 	"households":             goCascadeUser,
@@ -427,6 +428,7 @@ func TestDeleteCascadeCoverage_DeleteUserSweepsEveryDeclaredUserTable(t *testing
 	require.NoError(t, db.Create(&models.WebhookDelivery{WebhookID: webhook.ID, EventType: "contact.created", Payload: "{}"}).Error)
 
 	require.NoError(t, db.Create(&models.ApiToken{UserID: target.ID, Name: "t", TokenHash: "h"}).Error)
+	require.NoError(t, db.Create(&models.DeviceGrant{UserID: target.ID, TokenHash: "dg", Label: "Pixel"}).Error)
 	require.NoError(t, db.Create(&models.CardDAVSync{UserID: target.ID, SyncToken: "tok", LastModified: time.Now()}).Error)
 	require.NoError(t, db.Create(&models.DeviceRegistration{UserID: target.ID, Token: "tok", Client: "fcm"}).Error)
 	require.NoError(t, db.Create(&models.DismissedHouseholdSuggestion{UserID: target.ID, AddressHash: "ah", MemberHash: "mh"}).Error)
@@ -463,6 +465,7 @@ func TestDeleteCascadeCoverage_DeleteUserSweepsEveryDeclaredUserTable(t *testing
 		scopedCount("contact_tags", &models.ContactTag{}, "user_id = ?", target.ID),
 		scopedCount("contacts", &models.Contact{}, "user_id = ?", target.ID),
 		scopedCount("conversation_agenda", &models.ConversationAgenda{}, "user_id = ?", target.ID),
+		scopedCount("device_grants", &models.DeviceGrant{}, "user_id = ?", target.ID),
 		scopedCount("device_registrations", &models.DeviceRegistration{}, "user_id = ?", target.ID),
 		scopedCount("dismissed_duplicate_pairs", &models.DismissedDuplicatePair{}, "user_id = ?", target.ID),
 		scopedCount("dismissed_household_suggestions", &models.DismissedHouseholdSuggestion{}, "user_id = ?", target.ID),

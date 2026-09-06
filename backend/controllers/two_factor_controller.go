@@ -183,6 +183,13 @@ func ConfirmTwoFactor(c *gin.Context) {
 		apperrors.AbortWithError(c, apperrors.ErrDatabase("query user").WithError(err))
 		return
 	}
+	// Issue #722: enabling 2FA ends every device grant. A grant minted under
+	// the pre-2FA posture let a stolen device mint sessions without the new
+	// second factor; remembered devices re-enroll on their next interactive
+	// login, which now stands behind the freshly-enabled 2FA.
+	if _, err := services.RevokeAllDeviceGrants(db, user.ID); err != nil {
+		logger.FromContext(c).Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after 2FA enrollment") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
+	}
 	// T18 audit: 2FA enabled (issue #381).
 	models.RecordAuditEvent(models.AuditEntityUser, fmt.Sprintf("%d", user.ID), models.AuditOpTOTPEnable, user.ID)
 	reissueSessionToken(c, user)
@@ -253,6 +260,13 @@ func DisableTwoFactor(c *gin.Context) {
 		logger.FromContext(c).Error().Err(err).Uint("user_id", userID).Msg("Failed to reload user after disabling 2FA")
 		apperrors.AbortWithError(c, apperrors.ErrDatabase("query user").WithError(err))
 		return
+	}
+	// Issue #722: disabling 2FA revokes every device grant — the TOTP that
+	// used to back a stolen grant is gone, so remembered devices must
+	// re-enroll under the weakened posture rather than quietly keeping a
+	// passwordless door open.
+	if _, err := services.RevokeAllDeviceGrants(db, user.ID); err != nil {
+		logger.FromContext(c).Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after disabling 2FA") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
 	}
 	// T18 audit: 2FA disabled (issue #381).
 	models.RecordAuditEvent(models.AuditEntityUser, fmt.Sprintf("%d", user.ID), models.AuditOpTOTPDisable, user.ID)

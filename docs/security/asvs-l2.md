@@ -196,6 +196,23 @@ Issue #650 asked for an "is a newer release available" signal on the admin Syste
 - **Decision:** stays opt-in through pre-1.0, non-goal to default it on or add any auto-update
   behaviour.
 
+### P7 — Android local app lock: biometric resume is client-side, V2/V3 unchanged (issue #722)
+
+Android now offers an opt-in local gate — a Class 3 biometric or device-credential (PIN/pattern/
+password) check before a *persisted session* is resumed into the authenticated tree, after a cold
+start or a background period past a configurable grace timeout. This is a **device-local,
+client-side decision**, but it does add one server-side surface to allow a biometric unlock to be a
+genuine alternative to the password: a **revocable device grant** (`device_grants`, migration
+000051 — SHA-256 hashes only, no plaintext at rest) minted after an interactive login and exchanged
+for a fresh session JWT via the public, rate-limited `POST /auth/device/session`. The resumed session
+is still the same JWT the server already issues (V2/V3 evidence above), and the grant itself is
+revoked by the same `token_version`-style events: password change/reset and 2FA enable/disable/reset
+all revoke every grant. There is **no** unbounded "remember this device" token that survives those
+events. An expired-but-valid session resumes via the grant on the next 401 (one exchange, then the
+existing `clearSession` fallback); a revoked grant still ends the session exactly as a 401 always has.
+The client-side rationale, threat model and decision are recorded in `masvs-l1.md` P7 and
+`docs/adrs/0014-local-app-lock-and-biometric-resume.md`.
+
 ---
 
 ## V1 — Architecture, Design and Threat Modeling

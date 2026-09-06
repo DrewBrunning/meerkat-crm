@@ -158,6 +158,9 @@ func buildCWTable(s seeded) map[string]cwRow {
 		"POST /api/v1/api-tokens":                       exempt(reasonCreate),
 		"POST /api/v1/notifications/devices":            exempt(reasonCreate),
 		"POST /api/v1/notifications/push-subscriptions": exempt(reasonCreate),
+		// Issue #722: a device grant is a fresh, revision-free row like an API
+		// token.
+		"POST /api/v1/auth/device/grants": exempt(reasonCreate),
 
 		// === PUT/DELETE on entities with no revision column (ADR 0006) ===
 		"PUT /api/v1/circles/:id":                             exempt(reasonNonRevision),
@@ -199,6 +202,8 @@ func buildCWTable(s seeded) map[string]cwRow {
 		"DELETE /api/v1/reminder-completions/:id":             exempt(reasonNonRevision),
 		"DELETE /api/v1/notifications/devices/:id":            exempt(reasonNonRevision),
 		"DELETE /api/v1/notifications/push-subscriptions/:id": exempt(reasonNonRevision),
+		"DELETE /api/v1/auth/device/grants/:id":               exempt(reasonNonRevision),
+		"POST /api/v1/auth/device/grants/revoke-all":          exempt(reasonNonRevision),
 
 		// === Membership / join sub-resources ===
 		"POST /api/v1/circles/:id/members":                 exempt(reasonMembership),
@@ -280,6 +285,7 @@ func buildCWTable(s seeded) map[string]cwRow {
 		"POST /api/v1/register":                            exempt(reasonAuth),
 		"POST /api/v1/login":                               exempt(reasonAuth),
 		"POST /api/v1/login/2fa":                           exempt(reasonAuth),
+		"POST /api/v1/auth/device/session":                 exempt(reasonAuth),
 		"POST /api/v1/logout":                              exempt(reasonAuth),
 		"POST /api/v1/check-password-strength":             exempt(reasonAuth),
 		"POST /api/v1/password-reset/request":              exempt(reasonAuth),

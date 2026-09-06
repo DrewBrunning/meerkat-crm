@@ -419,6 +419,36 @@
     <string name="settings_password_change_button">Actualizar contraseña</string>
     <string name="settings_password_mismatch">Las nuevas contraseñas no coinciden.</string>
 
+    <!-- Settings: bloqueo local de la app (issue #722) -->
+    <string name="settings_local_auth">Bloqueo de la app</string>
+    <string name="settings_local_auth_enable">Exigir biometría o PIN del dispositivo para abrir la app</string>
+    <string name="settings_local_auth_enable_hint">Al abrir la app, o después de estar un rato en segundo plano, desbloquéala con tu huella, rostro o PIN del dispositivo antes de mostrar tus contactos.</string>
+    <string name="settings_local_auth_delay">Bloquear automáticamente después de</string>
+    <string name="settings_local_auth_delay_immediately">Inmediatamente</string>
+    <string name="settings_local_auth_delay_1m">1 minuto</string>
+    <string name="settings_local_auth_delay_5m">5 minutos</string>
+    <string name="settings_local_auth_delay_15m">15 minutos</string>
+    <string name="settings_local_auth_delay_1h">1 hora</string>
+    <string name="settings_local_auth_unavailable">No disponible: este dispositivo no tiene huella, desbloqueo facial ni pantalla de bloqueo segura.</string>
+
+    <!-- Pantalla de bloqueo de la app (issue #722) -->
+    <string name="app_lock_heading">Tus datos están bloqueados</string>
+    <string name="app_lock_signed_in_as">Sesión iniciada como %1$s</string>
+    <string name="app_lock_subtitle">Desbloquea con tu huella, rostro o PIN del dispositivo para continuar.</string>
+    <string name="app_lock_unlock">Desbloquear</string>
+    <string name="app_lock_auth_failed">No se pudo desbloquear. Inténtalo de nuevo.</string>
+    <string name="app_lock_unsupported">El desbloqueo con huella, rostro o PIN no está disponible en este dispositivo. Cierra la sesión para iniciarla con tu contraseña.</string>
+    <!-- Inicio de sesión biométrico (issue #722) -->
+    <string name="biometric_enroll_dialog_title">¿Iniciar sesión con biometría?</string>
+    <string name="biometric_enroll_dialog_body">Usa tu huella, rostro o PIN del dispositivo para desbloquear esta app en lugar de escribir tu contraseña la próxima vez.</string>
+    <string name="biometric_enroll_action">Configurar</string>
+    <string name="biometric_enroll_not_now">Ahora no</string>
+    <string name="biometric_enroll_never">No volver a preguntar</string>
+    <string name="biometric_enroll_error">No se pudo configurar el inicio de sesión biométrico. Inténtalo de nuevo.</string>
+    <string name="settings_biometric_signin_setup">Configurar el inicio de sesión biométrico</string>
+    <string name="settings_biometric_signin_enabled">El inicio de sesión biométrico está activado en este dispositivo</string>
+    <string name="settings_biometric_signin_remove">Desactivar el inicio de sesión biométrico</string>
+
     <!-- Settings: webhooks (M25) -->
     <string name="settings_webhooks_title">Webhooks</string>
     <string name="settings_webhooks_description">Recibe notificaciones HTTP POST cuando ocurren eventos en tu CRM.</string>

@@ -67,3 +67,13 @@ docs/security/masvs-l1.md | `docker-publish.yml:225` | .github/workflows/docker-
 
 # --- Threat model ------------------------------------------------------------
 docs/security/threat-model.md | `backend/controllers/user_controller.go:234-243` | backend/controllers/user_controller.go  # the auth_token SetCookie block with all three flags; the row's lead-in is "Keep, verified against the exact code"
+# --- Line ranges shifted by the device-grant routes/revocation added for
+# issue #722 (routes.go and user_controller.go grew above these citations);
+# each still cites the described content a few lines on. ---
+docs/security/asvs-l2.md | `backend/routes/routes.go:639` | backend/routes/routes.go  # system-status route moved down when the device-grant routes were inserted above it (issue #722); row still cites the admin system-status surface
+docs/security/asvs-l2.md | `user_controller.go:674` | backend/controllers/user_controller.go  # the login handler's password-compare lines moved down with the grant-exchange block added above (issue #722)
+docs/security/asvs-l2.md | `routes/routes.go:58` | backend/routes/routes.go  # the check-password-strength route shifted down behind the new public device/session exchange route (issue #722)
+docs/security/asvs-l2.md | `backend/controllers/user_controller.go:499` | backend/controllers/user_controller.go  # the password-change email call in ConfirmPasswordReset shifted down behind the device-grant revocation block (issue #722)
+docs/security/asvs-l2.md | `user_controller.go:674` | backend/controllers/user_controller.go  # duplicate of the row above (same drifted range, different asvs-l2 row)
+docs/security/asvs-l2.md | `routes/routes.go:405-411` | backend/routes/routes.go  # export-route block shifted down behind the device-grant management routes (issue #722)
+docs/security/asvs-l2.md | `routes/routes.go:639` | backend/routes/routes.go  # duplicate of the system-status drift above (different asvs-l2 row, same shifted target)

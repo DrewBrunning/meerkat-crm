@@ -626,3 +626,33 @@ type LinkFieldTypeInput struct {
 type LinkFieldTypeReorderInput struct {
 	Order []string `json:"order" validate:"required,min=1,dive,uuid4"`
 }
+
+// DeviceGrantInput is the DTO for creating a device grant (issue #722's fully
+// biometric login). The label is a free-form device name shown in the
+// management list so the user can recognise ("Pixel 8a", "work tablet").
+type DeviceGrantInput struct {
+	Label string `json:"label" validate:"omitempty,max=100"`
+}
+
+// DeviceGrantResponse is what the management list returns — never the token.
+type DeviceGrantResponse struct {
+	ID         uint       `json:"id"`
+	Label      string     `json:"label"`
+	CreatedAt  time.Time  `json:"created_at"`
+	LastUsedAt *time.Time `json:"last_used_at"`
+	RevokedAt  *time.Time `json:"revoked_at"`
+}
+
+// DeviceGrantCreateResponse adds the one-time plaintext token, exactly like
+// ApiTokenCreateResponse — shown once at enrollment, never returned again.
+type DeviceGrantCreateResponse struct {
+	DeviceGrantResponse
+	Token string `json:"token"`
+}
+
+// DeviceGrantSessionInput is the public exchange request: possession of the
+// plaintext grant (which only exists on the device that enrolled it, behind
+// its biometric gate) is what mint a fresh session.
+type DeviceGrantSessionInput struct {
+	DeviceToken string `json:"device_token" validate:"required,min=32"`
+}

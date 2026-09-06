@@ -6,6 +6,10 @@ import com.mycorrhizal.crm.model.network.AddressSuggestionsResponse
 import com.mycorrhizal.crm.model.network.ApplyContactAddressSuggestionInput
 import com.mycorrhizal.crm.model.network.ContactAddressSuggestion
 import com.mycorrhizal.crm.model.network.ContactAddressSuggestionsResponse
+import com.mycorrhizal.crm.model.network.DeviceGrantCreateRequest
+import com.mycorrhizal.crm.model.network.DeviceGrantCreateResponse
+import com.mycorrhizal.crm.model.network.DeviceGrantExchangeRequest
+import com.mycorrhizal.crm.model.network.RevokeAllDeviceGrantsResponse
 import com.mycorrhizal.crm.model.network.DismissHouseholdSuggestionInput
 import com.mycorrhizal.crm.model.network.RelationshipSuggestionsResponse
 import com.mycorrhizal.crm.model.network.SuggestRelationshipsResponse
@@ -496,6 +500,36 @@ class ApiClient(
         executePostEmpty("$API_TOKENS_PATH/$id/rotate") { _, body ->
             moshi.adapter(ApiTokenCreateResponse::class.java).fromJson(body)
         }
+
+    // --- Issue #722: fully biometric login — device grants. The exchange is
+    // public and rate-limited like /login; create/revoke are authenticated.
+
+    /** POST /api/v1/auth/device/grants — enroll this device; `token` is shown exactly once. */
+    suspend fun createDeviceGrant(label: String?): Result<DeviceGrantCreateResponse> =
+        executePost("$DEVICE_GRANTS_PATH", DeviceGrantCreateRequest(label = label)) { _, body ->
+            moshi.adapter(DeviceGrantCreateResponse::class.java).fromJson(body)
+        }
+
+    /**
+     * POST /api/v1/auth/device/session — exchange possession of an unrevoked
+     * device grant for a fresh session. Like [login], the new JWT arrives as
+     * the `auth_token` Set-Cookie and is captured and returned here; the body
+     * only carries language/date_format.
+     */
+    suspend fun exchangeDeviceSession(deviceToken: String): Result<String> =
+        executePost("$DEVICE_SESSION_PATH", DeviceGrantExchangeRequest(deviceToken = deviceToken)) { response, _ ->
+            extractCookie(response.headers("Set-Cookie"), AUTH_COOKIE)
+        }
+
+    /** POST /api/v1/auth/device/grants/revoke-all — the lost-phone path; `{ revoked: N }`. */
+    suspend fun revokeAllDeviceGrants(): Result<RevokeAllDeviceGrantsResponse> =
+        executePostEmpty("$DEVICE_GRANTS_PATH/revoke-all") { _, body ->
+            moshi.adapter(RevokeAllDeviceGrantsResponse::class.java).fromJson(body)
+        }
+
+    /** DELETE /api/v1/auth/device/grants/{id} — revoke one enrolled device. */
+    suspend fun revokeDeviceGrant(id: Long): Result<Unit> =
+        executeDelete("$PLACEHOLDER_ORIGIN$DEVICE_GRANTS_PATH/$id")
 
     /** GET /api/v1/contacts (cursor-paginated list). */
     suspend fun listContacts(
@@ -2073,6 +2107,8 @@ class ApiClient(
         private const val ADMIN_USERS_PATH = "$API_V1/admin/users"
         private const val WEBHOOKS_PATH = "$API_V1/webhooks"
         private const val API_TOKENS_PATH = "$API_V1/api-tokens"
+        private const val DEVICE_GRANTS_PATH = "$API_V1/auth/device/grants"
+        private const val DEVICE_SESSION_PATH = "$API_V1/auth/device/session"
         private const val NOTIFICATIONS_CONFIG_PATH = "$API_V1/notifications/config"
         private const val NOTIFICATIONS_DEVICES_PATH = "$API_V1/notifications/devices"
         private const val CONTACTS_PATH = "$API_V1/contacts"

@@ -50,6 +50,7 @@ func TestMigrationsAddStorageSamples(t *testing.T) {
 	// Down drops the table. 000043 is no longer the migration tip — 000044
 	// (revision tokens) and 000045 (import source links) sit on top — so roll
 	// those back first, then 000043's own down migration.
+	require.NoError(t, MigrateDown(dbPath)) // rolls back 000051_device_grants
 	require.NoError(t, MigrateDown(dbPath)) // rolls back 000050_contacts_user_vcard_uid_index
 	require.NoError(t, MigrateDown(dbPath)) // rolls back 000049_integration_terminal_failures
 	require.NoError(t, MigrateDown(dbPath)) // rolls back 000048_job_execution_outcome

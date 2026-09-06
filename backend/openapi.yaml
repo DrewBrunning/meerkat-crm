@@ -339,6 +339,48 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/LogoutResponse"
+  /auth/device/session:
+    post:
+      summary: Exchange a device grant for a fresh session (biometric login)
+      operationId: exchangeDeviceGrant
+      security: []
+      description: >
+        Issue #722: the possession half of fully biometric login. A device
+        that holds an unrevoked grant — and whose owner has just passed the
+        device's own biometric check — exchanges it for a fresh session JWT,
+        minted exactly like a password login (auth_token cookie). Revoked,
+        unknown, or deleted-account grants are rejected like bad credentials.
+        Rate-limited like /login.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceGrantSessionInput"
+      responses:
+        "200":
+          description: Fresh session issued via auth_token cookie.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  language: { type: string }
+                  date_format: { type: string }
+        "400":
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Unknown or revoked device grant.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "429":
+          description: Rate limited.
   /check-password-strength:
     post:
       summary: Evaluate a password's strength without changing it
@@ -6715,6 +6757,102 @@ paths:
                 $ref: "#/components/schemas/Error"
 
   # --- API tokens ---
+  /auth/device/grants:
+    get:
+      summary: List the user's enrolled devices (device grants)
+      operationId: listDeviceGrants
+      description: >
+        Issue #722: the server half of fully biometric login. Never returns
+        the token — only enough to recognise and revoke a device.
+      responses:
+        "401":
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "200":
+          description: The user's device grants.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  device_grants:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/DeviceGrantResponse"
+    post:
+      summary: Enroll this device (create a device grant)
+      operationId: createDeviceGrant
+      description: >
+        Issue #722: mints a grant for the authenticated caller — the
+        enrollment moment is always right after an interactive login. The
+        plaintext token is returned only here, once.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeviceGrantInput"
+      responses:
+        "201":
+          description: Device enrolled (raw response, not wrapped).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DeviceGrantCreateResponse"
+        "400":
+          description: Validation failed.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /auth/device/grants/revoke-all:
+    post:
+      summary: Revoke every standing device grant for the current user
+      operationId: revokeAllDeviceGrants
+      description: >
+        Issue #722: the lost-phone path — end every remembered device at once
+        without knowing which one leaked.
+      responses:
+        "200":
+          description: Grants revoked.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revoked: { type: integer, description: "How many previously-active grants were revoked." }
+  /auth/device/grants/{id}:
+    delete:
+      summary: Revoke one device grant
+      operationId: revokeDeviceGrant
+      description: Soft-revoke (sets revoked_at). Ownership is scoped to the caller.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: integer }
+      responses:
+        "200":
+          description: Device grant revoked.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "400":
+          description: Non-integer id.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Device grant not found.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /api-tokens:
     get:
       summary: List the user's API tokens
@@ -12332,6 +12470,29 @@ components:
         - type: object
           properties:
             token: { type: string, description: "The plaintext token, shown only once." }
+    DeviceGrantInput:
+      type: object
+      properties:
+        label: { type: string, maxLength: 100, description: "A free-form device name shown in the management list so the user can recognise it." }
+    DeviceGrantResponse:
+      type: object
+      properties:
+        id: { type: integer }
+        label: { type: string }
+        created_at: { type: string, format: date-time }
+        last_used_at: { type: string, format: date-time, nullable: true }
+        revoked_at: { type: string, format: date-time, nullable: true }
+    DeviceGrantCreateResponse:
+      allOf:
+        - $ref: "#/components/schemas/DeviceGrantResponse"
+        - type: object
+          properties:
+            token: { type: string, description: "The plaintext device grant, shown exactly once at enrollment. Never returned again." }
+    DeviceGrantSessionInput:
+      type: object
+      required: [device_token]
+      properties:
+        device_token: { type: string, minLength: 32, description: "The plaintext grant held by an enrolled device." }
     WebhookInput:
       type: object
       required: [name, url, events]

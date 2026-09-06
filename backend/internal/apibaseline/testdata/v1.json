@@ -929,6 +929,97 @@
     },
     {
       "method": "GET",
+      "path": "/auth/device/grants",
+      "parameters": null,
+      "responses": [
+        {
+          "status": "200",
+          "schema": "object"
+        },
+        {
+          "status": "401",
+          "schema": "ref:Error"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/auth/device/grants",
+      "parameters": null,
+      "request_body": "ref:DeviceGrantInput",
+      "responses": [
+        {
+          "status": "201",
+          "schema": "ref:DeviceGrantCreateResponse"
+        },
+        {
+          "status": "400",
+          "schema": "ref:Error"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/auth/device/grants/revoke-all",
+      "parameters": null,
+      "responses": [
+        {
+          "status": "200",
+          "schema": "object"
+        }
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/auth/device/grants/{id}",
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "schema": "ref:MessageResponse"
+        },
+        {
+          "status": "400",
+          "schema": "ref:Error"
+        },
+        {
+          "status": "404",
+          "schema": "ref:Error"
+        }
+      ]
+    },
+    {
+      "method": "POST",
+      "path": "/auth/device/session",
+      "parameters": null,
+      "request_body": "ref:DeviceGrantSessionInput",
+      "responses": [
+        {
+          "status": "200",
+          "schema": "object"
+        },
+        {
+          "status": "400",
+          "schema": "ref:Error"
+        },
+        {
+          "status": "401",
+          "schema": "ref:Error"
+        },
+        {
+          "status": "429",
+          "schema": ""
+        }
+      ]
+    },
+    {
+      "method": "GET",
       "path": "/auth/oidc/callback",
       "parameters": [
         {
@@ -10404,6 +10495,91 @@
         },
         {
           "name": "timestamp",
+          "type": "string",
+          "required": true
+        }
+      ]
+    },
+    {
+      "name": "DeviceGrantCreateResponse",
+      "properties": [
+        {
+          "name": "created_at",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "id",
+          "type": "integer",
+          "required": false
+        },
+        {
+          "name": "label",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "last_used_at",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "revoked_at",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "token",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "DeviceGrantInput",
+      "properties": [
+        {
+          "name": "label",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "DeviceGrantResponse",
+      "properties": [
+        {
+          "name": "created_at",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "id",
+          "type": "integer",
+          "required": false
+        },
+        {
+          "name": "label",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "last_used_at",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "revoked_at",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "DeviceGrantSessionInput",
+      "properties": [
+        {
+          "name": "device_token",
           "type": "string",
           "required": true
         }
