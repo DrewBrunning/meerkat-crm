@@ -7,7 +7,7 @@ each asset, not how long it survives.
 
 | | |
 |---|---|
-| **Last updated** | 2026-09-06 (issues [#414](https://github.com/DrewBrunning/mycorrhizal-crm/issues/414), [#420](https://github.com/DrewBrunning/mycorrhizal-crm/issues/420), [#424](https://github.com/DrewBrunning/mycorrhizal-crm/issues/424), [#622](https://github.com/DrewBrunning/mycorrhizal-crm/issues/622), [#391](https://github.com/DrewBrunning/mycorrhizal-crm/issues/391), [#389](https://github.com/DrewBrunning/mycorrhizal-crm/issues/389), [#651](https://github.com/DrewBrunning/mycorrhizal-crm/issues/651), [#351](https://github.com/DrewBrunning/mycorrhizal-crm/issues/351), [#353](https://github.com/DrewBrunning/mycorrhizal-crm/issues/353), [#549](https://github.com/DrewBrunning/mycorrhizal-crm/issues/549), [#505](https://github.com/DrewBrunning/mycorrhizal-crm/issues/505), [#721](https://github.com/DrewBrunning/mycorrhizal-crm/issues/721)) |
+| **Last updated** | 2026-09-06 (issues [#414](https://github.com/DrewBrunning/mycorrhizal-crm/issues/414), [#420](https://github.com/DrewBrunning/mycorrhizal-crm/issues/420), [#424](https://github.com/DrewBrunning/mycorrhizal-crm/issues/424), [#622](https://github.com/DrewBrunning/mycorrhizal-crm/issues/622), [#391](https://github.com/DrewBrunning/mycorrhizal-crm/issues/391), [#389](https://github.com/DrewBrunning/mycorrhizal-crm/issues/389), [#651](https://github.com/DrewBrunning/mycorrhizal-crm/issues/651), [#351](https://github.com/DrewBrunning/mycorrhizal-crm/issues/351), [#353](https://github.com/DrewBrunning/mycorrhizal-crm/issues/353), [#549](https://github.com/DrewBrunning/mycorrhizal-crm/issues/549), [#505](https://github.com/DrewBrunning/mycorrhizal-crm/issues/505), [#721](https://github.com/DrewBrunning/mycorrhizal-crm/issues/721), [#723](https://github.com/DrewBrunning/mycorrhizal-crm/issues/723)) |
 | **Scope** | Backend (Go/Gin + SQLite), CardDAV/CalDAV (server role), Android client, browser/frontend, operator backups. |
 | **Companion docs** | `docs/security/pii-inventory.md` (the *minimization* lens — should each store exist, and is it more/kept-longer than needed), `docs/security/asvs-l2.md` V8 (Data Protection), `docs/deployment.md` (Backups section — the authoritative backup/restore runbook), `docs/security/masvs-l1.md` (Android storage controls). |
 
@@ -253,6 +253,31 @@ External DAV clients (phones, desktop DAV apps) sync against `backend/carddav`, 
   after logout" story leaves nothing recoverable outside the (encrypted) DB the OS itself controls.
 - **Backups**: none — this is a device-local cache with no server-visible backup; Android's own
   Auto Backup is out of scope for app-internal DB files of this kind and isn't configured for it.
+
+### Android session store (bearer token + server URL) (issues #385, #723)
+
+The device-side auth material and the non-credential server config that outlives it. Distinct from the
+mirror above: this is session state, not user data, but its lifecycle on the device is part of the
+logout story.
+
+- **Where / who**: the bearer JWT in EncryptedSharedPreferences
+  (`android/core/data/src/main/kotlin/com/mycorrhizal/crm/data/session/EncryptedTokenStorage.kt`,
+  AES-256-GCM, key in Android Keystore); the server URL in the plain DataStore file `session_prefs`
+  (`android/core/data/src/main/kotlin/com/mycorrhizal/crm/data/session/DataStoreSessionPrefsStorage.kt`).
+  Both are local to the device. The URL is deliberately in the plain store, not the encrypted one —
+  it is **not** a credential (the storage class's own doc comment says so), so its on-device retention
+  is a config decision, not a secret-handling one.
+- **Retention**: the JWT lives until the session ends. The server URL lives until the user switches
+  servers or clears the app's data — logout does not reset it.
+- **Deletion / propagation**: `DefaultSessionManager.clearSession()`
+  (`android/core/data/src/main/kotlin/com/mycorrhizal/crm/data/session/DefaultSessionManager.kt`) runs
+  on explicit logout, on account removal, and on the 401 / session-expiry path
+  (`SessionExpiryWiring`). It drops the JWT and — via `SessionDataCleaner`/`LocalDataCleaner` — the Room
+  mirror + image cache, but **keeps the server URL** by default (issue #723): the login screen reads it
+  back to pre-fill the field, so a self-hoster never re-types an origin that effectively never changes.
+  `clearSession(keepServerUrl = false)` remains available for an explicit forget-server action.
+- **Backups**: none — both are device-local (Android Auto Backup does not cover them); nothing here
+  reaches any server backup (§10).
 
 ### Device-detected call/SMS staging (`pending_interactions`) (issue #721)
 
@@ -708,6 +733,7 @@ per §1/§7/§8), but it is a genuine, named gap rather than a silently-accepted
 | FTS index follows soft/hard delete | `backend/database/migrate_test.go`, FTS trigger coverage |
 | Android mirror wiped on logout | `LocalDataCleaner` — see Android test suite |
 | Android mirror deletes tombstoned ids | `ContactRepositoryImpl` sync tests (`core/data/src/test/.../repository/`) |
+| Android server URL survives logout (non-credential config) | `DefaultSessionManagerTest` (`clearSession` cases incl. process restart), `SessionExpiryWiringTest` (`core/data/src/test/.../session/`), `LoginViewModelTest`/`LoginScreenTest` (`feature/auth`) |
 | No PII/credential in browser storage | `frontend/e2e/` (#419 Playwright regression) |
 | Backup restore actually restores | `frontend/e2e/backupRestore.spec.ts`, restore-drill job (#275) |
 | Metrics counters are RAM-only, bounded labels, token-gated | `backend/metrics/` (`registry_test.go`, `metrics_test.go`), `backend/controllers/metrics_controller_test.go`, `backend/routes/metrics_route_test.go` |

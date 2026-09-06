@@ -60,6 +60,25 @@ class LoginViewModel @Inject constructor(
     private val _events = Channel<LoginEvent>(Channel.BUFFERED)
     val events = _events.receiveAsFlow()
 
+    init {
+        // Issue #723: pre-fill the server URL persisted across logout (a
+        // self-hoster's origin effectively never changes, so re-entering it
+        // after every logout is friction with no upside). Await the startup
+        // session hydration first — on a cold start after logout the cached
+        // URL is still being loaded from disk when this runs, and reading
+        // before init() would return null. Never clobber a URL the user has
+        // already started typing in the brief window before hydration lands.
+        viewModelScope.launch {
+            sessionManager.awaitHydrated()
+            val storedUrl = sessionManager.serverUrl()
+            if (!storedUrl.isNullOrBlank()) {
+                _uiState.update { current ->
+                    if (current.serverUrl.isBlank()) current.copy(serverUrl = storedUrl) else current
+                }
+            }
+        }
+    }
+
     fun onServerUrlChange(value: String) {
         _uiState.update { it.copy(serverUrl = value) }
         // Persist immediately (not just on submit): the register and

@@ -78,6 +78,13 @@ interface SessionManager : TokenProvider, BaseUrlProvider {
      */
     suspend fun setToken(token: String)
 
-    /** Drop the session entirely (token + prefs). */
-    suspend fun clearSession()
+    /**
+     * Drop the session: bearer token, cached profile and (via the
+     * [SessionDataCleaner]) the local data mirror. The server URL survives by
+     * default (issue #723) — it is non-credential device config, not part of
+     * the session, so logout leaves it in place and the login screen can
+     * pre-fill it. Pass `keepServerUrl = false` only when the URL itself must
+     * go too (an explicit "forget this server" action, if one is ever added).
+     */
+    suspend fun clearSession(keepServerUrl: Boolean = true)
 }

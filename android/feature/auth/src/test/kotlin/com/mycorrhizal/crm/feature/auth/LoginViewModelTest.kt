@@ -1,7 +1,10 @@
 package com.mycorrhizal.crm.feature.auth
 
 import app.cash.turbine.test
+import com.mycorrhizal.crm.data.session.DefaultSessionManager
 import com.mycorrhizal.crm.data.session.SessionManager
+import com.mycorrhizal.crm.data.session.SessionPrefsStorage
+import com.mycorrhizal.crm.data.session.TokenStorage
 import com.mycorrhizal.crm.domain.repository.AuthRepository
 import com.mycorrhizal.crm.domain.repository.LoginOutcome
 import com.mycorrhizal.crm.domain.repository.SessionState
@@ -35,13 +38,19 @@ class LoginViewModelTest {
         val sessionManager: SessionManager,
     )
 
-    private fun harness(): Harness {
+    private fun harness(
+        storedServerUrl: String? = null,
+    ): Harness {
         val authRepository = mockk<AuthRepository>()
         coEvery { authRepository.observeSession() } returns MutableStateFlow(SessionState())
         coEvery { authRepository.complete2faLogin(any()) } returns Result.success(Unit)
         val sessionManager = mockk<SessionManager>()
         every { sessionManager.observeSession() } returns MutableStateFlow(SessionState())
         coEvery { sessionManager.setServerUrl(any()) } returns Unit
+        // Issue #723: init awaits startup hydration and reads the persisted
+        // server URL so the login screen can pre-fill it after a logout.
+        coEvery { sessionManager.awaitHydrated() } returns Unit
+        coEvery { sessionManager.serverUrl() } returns storedServerUrl
         val viewModel = LoginViewModel(
             loginUseCase = LoginUseCase(authRepository),
             loginWithApiTokenUseCase = LoginWithApiTokenUseCase(authRepository),
@@ -68,6 +77,100 @@ class LoginViewModelTest {
         assertFalse(state.isLoading)
         assertEquals("", state.serverUrl)
         assertFalse(state.twoFactorStep)
+    }
+
+    // Issue #723: the URL the session manager still holds after a logout is
+    // hydrated into the login form on init.
+    @Test
+    fun `init hydrates the persisted server url into the form`() = runTest(mainDispatcherRule.testDispatcher) {
+        val h = harness(storedServerUrl = "https://crm.example.com")
+        advanceUntilIdle()
+
+        assertEquals("https://crm.example.com", h.viewModel.uiState.value.serverUrl)
+    }
+
+    @Test
+    fun `init with no stored server url leaves the form blank`() = runTest(mainDispatcherRule.testDispatcher) {
+        val h = harness(storedServerUrl = null)
+        advanceUntilIdle()
+
+        assertEquals("", h.viewModel.uiState.value.serverUrl)
+    }
+
+    // Issue #723: hydration must not clobber a URL the user has already typed
+    // in the (tiny) window before the stored value finishes loading.
+    @Test
+    fun `hydration does not clobber a server url the user is already typing`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val h = harness(storedServerUrl = "https://old.example.com")
+            // Type before init's coroutine runs (init launches on the test
+            // dispatcher, so nothing has advanced yet).
+            h.viewModel.onServerUrlChange("https://new.example.com")
+            advanceUntilIdle()
+
+            assertEquals("https://new.example.com", h.viewModel.uiState.value.serverUrl)
+        }
+
+    // Issue #723: the pre-filled URL stays fully editable, and an edit is
+    // persisted immediately (the register/forgot flows read it from the
+    // session manager, M26).
+    @Test
+    fun `editing the pre-filled server url persists the change`() = runTest(mainDispatcherRule.testDispatcher) {
+        val h = harness(storedServerUrl = "https://crm.example.com")
+        advanceUntilIdle()
+
+        h.viewModel.onServerUrlChange("https://beta.example.com/")
+        advanceUntilIdle()
+
+        coVerify { h.sessionManager.setServerUrl("https://beta.example.com") }
+        assertEquals("https://beta.example.com/", h.viewModel.uiState.value.serverUrl)
+    }
+
+    // Issue #723, integration: the real DefaultSessionManager.clearSession()
+    // (run on explicit logout AND on the session-expiry/401 path) keeps the
+    // server URL, and a LoginViewModel created afterwards hydrates it into the
+    // form — the actual "log out → URL is pre-filled" story, minus the UI.
+    @Test
+    fun `the login form pre-fills the url a real logout retained`() =
+        runTest(mainDispatcherRule.testDispatcher) {
+            val manager = DefaultSessionManager(
+                tokenStorage = InMemoryTokenStorage(),
+                prefsStorage = InMemorySessionPrefsStorage(),
+            )
+            // Startup hydration (DataModule launches manager.init() at boot) —
+            // without it LoginViewModel's awaitHydrated() never returns.
+            manager.init()
+            manager.setSession("https://crm.example.com", "jwt-1", SessionState(userId = 7))
+
+            manager.clearSession()
+
+            assertNull(manager.bearerToken())
+            val authRepository = mockk<AuthRepository>()
+            coEvery { authRepository.observeSession() } returns MutableStateFlow(SessionState())
+            val viewModel = LoginViewModel(
+                loginUseCase = LoginUseCase(authRepository),
+                loginWithApiTokenUseCase = LoginWithApiTokenUseCase(authRepository),
+                sessionManager = manager,
+                authRepository = authRepository,
+            )
+            advanceUntilIdle()
+
+            assertEquals("https://crm.example.com", viewModel.uiState.value.serverUrl)
+            assertFalse(viewModel.uiState.value.twoFactorStep)
+        }
+
+    private class InMemoryTokenStorage : TokenStorage {
+        private var stored: String? = null
+        override suspend fun save(token: String) { stored = token }
+        override suspend fun load(): String? = stored
+        override suspend fun clear() { stored = null }
+    }
+
+    private class InMemorySessionPrefsStorage : SessionPrefsStorage {
+        private var stored: String? = null
+        override suspend fun save(serverUrl: String?) { stored = serverUrl }
+        override suspend fun loadServerUrl(): String? = stored
+        override suspend fun clear() { stored = null }
     }
 
     @Test
