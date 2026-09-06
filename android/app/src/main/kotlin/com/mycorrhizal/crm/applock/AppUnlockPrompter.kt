@@ -46,6 +46,13 @@ class BiometricAppUnlockPrompter(
     private val activity: FragmentActivity,
 ) : AppUnlockPrompter {
 
+    // detekt(TooGenericExceptionCaught): the AndroidKeyStore/cipher surface
+    // throws several unrelated checked+unchecked types; the only meaningful
+    // handling is "no usable auth-bound key" for all of them.
+    // detekt(SwallowedException): the failure is deliberately surfaced to the
+    // caller as NotAvailable (the gate never prompts unbound), so the original
+    // exception is intentionally not rethrown — logged so it is not lost.
+    @Suppress("TooGenericExceptionCaught", "SwallowedException")
     override suspend fun requestUnlock(
         title: String,
         subtitle: String,
@@ -58,6 +65,7 @@ class BiometricAppUnlockPrompter(
             // No usable auth-bound key (e.g. no secure lock screen) — there is
             // no way the prompt could succeed cryptographically, so report the
             // gate as unavailable rather than authenticating without binding.
+            android.util.Log.w(TAG, "No usable app-lock key; reporting the gate unavailable", e)
             continuation.resume(AppLockAuthOutcome.NotAvailable)
             return@suspendCancellableCoroutine
         }
@@ -97,6 +105,8 @@ class BiometricAppUnlockPrompter(
     }
 
     companion object {
+        private const val TAG = "BiometricAppUnlock"
+
         /** The user dismissed the prompt (system back / negative area). */
         private val CANCELLED_ERRORS = setOf(
             BiometricPrompt.ERROR_CANCELED,

@@ -78,6 +78,14 @@ internal class BiometricUnlockVault(
      * biometric enrollment change), in which case the stale token + key are
      * cleared so the next unlock can re-establish them.
      */
+    // detekt(TooGenericExceptionCaught): the AndroidKeyStore cipher surface
+    // throws several unrelated checked+unchecked types; every failure means the
+    // prompt's authorization did not produce a usable decryption, which is one
+    // outcome ("not unlocked").
+    // detekt(SwallowedException): failures are logged, then folded into the
+    // boolean the gate consumes — a failed decrypt must never surface an
+    // exception to the UI layer.
+    @Suppress("TooGenericExceptionCaught", "SwallowedException")
     fun finish(spec: UnlockCipherSpec, cipher: Cipher): Boolean { // # pragma: no cover — AndroidKeyStore is unavailable under Robolectric; see BiometricUnlockVaultGuardTest
         return try {
             when (spec) {
@@ -92,9 +100,11 @@ internal class BiometricUnlockVault(
                 }
             }
         } catch (e: KeyPermanentlyInvalidatedException) {
+            android.util.Log.w(TAG, "App-lock key invalidated (biometric enrollment changed); re-establishing", e)
             clear()
             false
         } catch (e: Exception) {
+            android.util.Log.w(TAG, "App-lock unlock could not be cryptographically verified", e)
             false
         }
     }
@@ -137,6 +147,7 @@ internal class BiometricUnlockVault(
     }
 
     companion object {
+        private const val TAG = "BiometricUnlockVault"
         private const val ANDROID_KEYSTORE = "AndroidKeyStore"
         private const val KEY_ALIAS = "mycorrhizal_app_lock_key"
         private const val PREFS_NAME = "app_lock"
