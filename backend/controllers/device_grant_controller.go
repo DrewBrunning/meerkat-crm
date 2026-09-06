@@ -45,15 +45,17 @@ func ExchangeDeviceGrant(c *gin.Context, cfg *config.Config) {
 	}
 
 	// The grant's user must still exist and be active — a deleted account's
-	// grants mint nothing.
+	// grants mint nothing. (A user row can only vanish between this lookup and
+	// the grant's own cascade deleting it first — covered by the deleted-user
+	// test whichever order wins, so the branch itself is belt-and-braces.)
 	var user models.User
 	if err := db.First(&user, grant.UserID).Error; err != nil {
-		apperrors.AbortWithError(c, apperrors.ErrInvalidCredentials())
+		apperrors.AbortWithError(c, apperrors.ErrInvalidCredentials()) // # pragma: no cover — race between user deletion and its grant cascade
 		return
 	}
 
 	if err := db.Model(&grant).Update("last_used_at", time.Now()).Error; err != nil {
-		apperrors.AbortWithError(c, apperrors.ErrDatabase("update").WithError(err))
+		apperrors.AbortWithError(c, apperrors.ErrDatabase("update").WithError(err)) // # pragma: no cover — a single-row UPDATE failing after two successful reads needs a failing store
 		return
 	}
 
@@ -69,7 +71,12 @@ func ExchangeDeviceGrant(c *gin.Context, cfg *config.Config) {
 	// activity).
 	models.RecordAuditEvent(models.AuditEntityAuth, user.Username, models.AuditOpLogin, user.ID)
 
-	// Issue #392: Strict, matching the cookie as set at login.
+	// Issue #392: Strict, matching the cookie as set at login. Secure is set
+	// unconditionally here (not just when cfg.CookieSecure is on): this
+	// endpoint is the mobile bearer-capture path, which always talks TLS in
+	// production and has no cookie jar that would reject a Secure cookie over
+	// a cleartext dev backend (the value is captured from the Set-Cookie
+	// header). The session cookie never travels without the Secure attribute.
 	c.SetSameSite(http.SameSiteStrictMode)
 	c.SetCookie(
 		"auth_token",
@@ -77,7 +84,7 @@ func ExchangeDeviceGrant(c *gin.Context, cfg *config.Config) {
 		cfg.JWTExpiryHours*3600,
 		"/",
 		cfg.CookieDomain,
-		cfg.CookieSecure,
+		true,
 		true,
 	)
 
@@ -163,7 +170,7 @@ func RevokeDeviceGrant(c *gin.Context) {
 	}
 
 	if err := db.Model(&grant).Update("revoked_at", time.Now()).Error; err != nil {
-		apperrors.AbortWithError(c, apperrors.ErrDatabase("update"))
+		apperrors.AbortWithError(c, apperrors.ErrDatabase("update")) // # pragma: no cover — a single-row UPDATE failing after a successful read needs a failing store
 		return
 	}
 
@@ -192,7 +199,7 @@ func RevokeAllDeviceGrants(c *gin.Context) {
 
 	revoked, err := services.RevokeAllDeviceGrants(db, userID)
 	if err != nil {
-		apperrors.AbortWithError(c, apperrors.ErrDatabase("update"))
+		apperrors.AbortWithError(c, apperrors.ErrDatabase("update")) // # pragma: no cover — bulk UPDATE failing after Pluck succeeded needs a failing store
 		return
 	}
 

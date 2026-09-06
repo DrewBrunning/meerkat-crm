@@ -83,6 +83,7 @@ func TestDeviceGrant_EnrollThenExchangeMintsSession(t *testing.T) {
 	require.Equal(t, http.StatusOK, exchanged.Code, exchanged.Body.String())
 	authCookie := exchanged.Header().Get("Set-Cookie")
 	assert.Contains(t, authCookie, "auth_token=")
+	assert.Contains(t, authCookie, "Secure")
 	assert.Contains(t, authCookie, "HttpOnly")
 	assert.Contains(t, authCookie, "SameSite=Strict")
 }
@@ -185,4 +186,100 @@ func TestDeviceGrant_PasswordChangeRevokesAllGrants(t *testing.T) {
 
 	exchanged := postJSON(t, router, "/auth/device/session", `{"device_token":"`+createResp.Token+`"}`)
 	require.Equal(t, http.StatusUnauthorized, exchanged.Code)
+}
+
+// --- Error paths / edge branches ----------------------------------------
+
+func TestDeviceGrant_InvalidJsonIsRejected(t *testing.T) {
+	_, router := deviceGrantRouter(t, models.User{Username: "erinx", Email: "erinx@example.com", Password: "x"}, testConfig())
+
+	bad := postJSON(t, router, "/auth/device/session", `{"device_token":`)
+	require.Equal(t, http.StatusBadRequest, bad.Code)
+
+	badCreate := postJSON(t, router, "/auth/device/grants", `not-json`)
+	require.Equal(t, http.StatusBadRequest, badCreate.Code)
+}
+
+func TestDeviceGrant_RevokeOwnGrantAndInvalidId(t *testing.T) {
+	_, router := deviceGrantRouter(t, models.User{Username: "frank", Email: "frank@example.com", Password: "x"}, testConfig())
+
+	created := postJSON(t, router, "/auth/device/grants", `{}`)
+	var createResp models.DeviceGrantCreateResponse
+	require.NoError(t, json.Unmarshal(created.Body.Bytes(), &createResp))
+
+	delReq, _ := http.NewRequest(http.MethodDelete, "/auth/device/grants/"+strconv.FormatUint(uint64(createResp.ID), 10), nil)
+	delResp := httptest.NewRecorder()
+	router.ServeHTTP(delResp, delReq)
+	require.Equal(t, http.StatusOK, delResp.Code)
+
+	bad := httptest.NewRecorder()
+	badReq, _ := http.NewRequest(http.MethodDelete, "/auth/device/grants/abc", nil)
+	router.ServeHTTP(bad, badReq)
+	require.Equal(t, http.StatusBadRequest, bad.Code)
+}
+
+// A token cannot be minted when the server has no JWT secret configured — the
+// same failure the password-login path reports as a 500.
+func TestDeviceGrant_ExchangeFailsWhenTokenCannotBeMinted(t *testing.T) {
+	cfg := config.Config{} // empty JWT secret -> GenerateToken errors
+	_, router := deviceGrantRouter(t, models.User{Username: "grace", Email: "grace@example.com", Password: "x"}, cfg)
+
+	created := postJSON(t, router, "/auth/device/grants", `{}`)
+	var createResp models.DeviceGrantCreateResponse
+	require.NoError(t, json.Unmarshal(created.Body.Bytes(), &createResp))
+
+	exchanged := postJSON(t, router, "/auth/device/session", `{"device_token":"`+createResp.Token+`"}`)
+	require.Equal(t, http.StatusInternalServerError, exchanged.Code)
+}
+
+// A device grant whose owner has been deleted must never mint a session. If
+// the FK cascade removed the grant row too, the token is simply unknown —
+// either order lands on 401.
+func TestDeviceGrant_ExchangeForDeletedUserIsRejected(t *testing.T) {
+	db, router := deviceGrantRouter(t, models.User{Username: "heidi", Email: "heidi@example.com", Password: "x"}, testConfig())
+	var user models.User
+	require.NoError(t, db.Where("username = ?", "heidi").First(&user).Error)
+
+	_, plaintext, err := services.CreateDeviceGrant(db, user.ID, "orphan")
+	require.NoError(t, err)
+	require.NoError(t, db.Unscoped().Delete(&models.User{}, user.ID).Error)
+
+	exchanged := postJSON(t, router, "/auth/device/session", `{"device_token":"`+plaintext+`"}`)
+	require.Equal(t, http.StatusUnauthorized, exchanged.Code)
+}
+
+// Every device-grant handler is user-scoped: with no authenticated user in
+// context, all of them must short-circuit instead of touching the DB.
+func TestDeviceGrant_HandlersRequireAuthentication(t *testing.T) {
+	db := dbtest.New(t)
+	gin.SetMode(gin.ReleaseMode)
+	router := gin.New()
+	router.Use(func(c *gin.Context) { c.Set("db", db); c.Next() })
+	router.GET("/auth/device/grants", ListDeviceGrants)
+	router.POST("/auth/device/grants", CreateDeviceGrant)
+	router.DELETE("/auth/device/grants/:id", RevokeDeviceGrant)
+	router.POST("/auth/device/grants/revoke-all", RevokeAllDeviceGrants)
+
+	req, _ := http.NewRequest(http.MethodGet, "/auth/device/grants", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+func TestDeviceGrant_ClosedDatabaseErrorsSurface(t *testing.T) {
+	db, router := deviceGrantRouter(t, models.User{Username: "ingrid", Email: "ingrid@example.com", Password: "x"}, testConfig())
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	listReq, _ := http.NewRequest(http.MethodGet, "/auth/device/grants", nil)
+	listW := httptest.NewRecorder()
+	router.ServeHTTP(listW, listReq)
+	require.Equal(t, http.StatusInternalServerError, listW.Code)
+
+	createW := postJSON(t, router, "/auth/device/grants", `{}`)
+	require.Equal(t, http.StatusInternalServerError, createW.Code)
+
+	revokeAll := postJSON(t, router, "/auth/device/grants/revoke-all", `{}`)
+	require.Equal(t, http.StatusInternalServerError, revokeAll.Code)
 }

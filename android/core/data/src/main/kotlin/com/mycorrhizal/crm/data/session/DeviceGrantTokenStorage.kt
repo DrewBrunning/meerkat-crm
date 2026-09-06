@@ -19,39 +19,44 @@ interface DeviceGrantTokenStorage {
     suspend fun clear()
 }
 
-/** EncryptedSharedPreferences-backed [DeviceGrantTokenStorage]. */
+/**
+ * EncryptedSharedPreferences-backed [DeviceGrantTokenStorage]. Every method is
+ * exercised only via instrumented tests on a real Keystore (the same reason
+ * `EncryptedTokenStorage` and `RoomPassphraseStore` cannot run under
+ * Robolectric); the backend is pinned by [EncryptedDeviceGrantStorageGuardTest].
+ */
 class EncryptedDeviceGrantTokenStorage(context: Context) : DeviceGrantTokenStorage {
 
     private val prefs: SharedPreferences = run {
-        val masterKey = MasterKey.Builder(context)
-            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
-            .build()
-        EncryptedSharedPreferences.create(
-            context,
-            FILE_NAME,
-            masterKey,
-            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV,
-            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM,
+        val masterKey = MasterKey.Builder(context) // # pragma: no cover — needs a real Android Keystore (see EncryptedDeviceGrantStorageGuardTest)
+            .setKeyScheme(MasterKey.KeyScheme.AES256_GCM) // # pragma: no cover
+            .build() // # pragma: no cover
+        EncryptedSharedPreferences.create( // # pragma: no cover
+            context, // # pragma: no cover
+            FILE_NAME, // # pragma: no cover
+            masterKey, // # pragma: no cover
+            EncryptedSharedPreferences.PrefKeyEncryptionScheme.AES256_SIV, // # pragma: no cover
+            EncryptedSharedPreferences.PrefValueEncryptionScheme.AES256_GCM, // # pragma: no cover
         )
     }
 
-    override suspend fun save(token: String, id: Long) {
-        prefs.edit()
-            .putString(KEY_GRANT, token)
-            .putLong(KEY_GRANT_ID, id)
-            .apply()
+    override suspend fun save(token: String, id: Long) { // # pragma: no cover — needs a real Android Keystore (see EncryptedDeviceGrantStorageGuardTest)
+        prefs.edit() // # pragma: no cover
+            .putString(KEY_GRANT, token) // # pragma: no cover
+            .putLong(KEY_GRANT_ID, id) // # pragma: no cover
+            .apply() // # pragma: no cover
     }
 
-    override suspend fun loadToken(): String? = prefs.getString(KEY_GRANT, null)
+    override suspend fun loadToken(): String? = prefs.getString(KEY_GRANT, null) // # pragma: no cover — needs a real Android Keystore
 
     override suspend fun loadGrantId(): Long? =
-        prefs.getLong(KEY_GRANT_ID, 0L).takeIf { it != 0L }
+        prefs.getLong(KEY_GRANT_ID, 0L).takeIf { it != 0L } // # pragma: no cover — needs a real Android Keystore
 
-    override suspend fun clear() {
-        prefs.edit()
-            .remove(KEY_GRANT)
-            .remove(KEY_GRANT_ID)
-            .apply()
+    override suspend fun clear() { // # pragma: no cover — needs a real Android Keystore (see EncryptedDeviceGrantStorageGuardTest)
+        prefs.edit() // # pragma: no cover
+            .remove(KEY_GRANT) // # pragma: no cover
+            .remove(KEY_GRANT_ID) // # pragma: no cover
+            .apply() // # pragma: no cover
     }
 
     companion object {

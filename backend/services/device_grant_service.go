@@ -19,7 +19,7 @@ import (
 func generateDeviceGrantToken() (plaintext, hash string, err error) {
 	rawBytes := make([]byte, 32)
 	if _, err := rand.Read(rawBytes); err != nil {
-		return "", "", err
+		return "", "", err // # pragma: no cover — crypto/rand failure only fires on catastrophic OS entropy exhaustion
 	}
 	plaintext = base64.RawURLEncoding.EncodeToString(rawBytes)
 	hash = fmt.Sprintf("%x", sha256.Sum256([]byte(plaintext)))
@@ -40,7 +40,7 @@ func HashDeviceGrantToken(token string) string {
 func CreateDeviceGrant(db *gorm.DB, userID uint, label string) (*models.DeviceGrant, string, error) {
 	plaintext, hash, err := generateDeviceGrantToken()
 	if err != nil {
-		return nil, "", err
+		return nil, "", err // # pragma: no cover — mirrors the crypto/rand failure in generateDeviceGrantToken
 	}
 	grant := models.DeviceGrant{
 		UserID:    userID,

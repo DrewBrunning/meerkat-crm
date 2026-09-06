@@ -172,11 +172,14 @@ the opt-in — an explicit logout does **not** clear the preference). A fresh in
 
 **Authentication surface.** The prompt accepts a Class 3 (`BIOMETRIC_STRONG`) biometric **or** the
 device credential (PIN/pattern/password) as the fallback — never a weak (Class 2) biometric, and no
-in-app PIN is stored (`app/.../applock/AppUnlockPrompter.kt:87-97`; capability gate in
-`core/data/.../AndroidLocalAuthCapabilities.kt:28-35`). On a device with neither a strong biometric nor
-a secure lock screen the toggle is disabled with the reason, so the gate can never be enabled without a
-way to open it. The biometric comparison happens in the OS (Keystore-authenticated); the app stores no
-biometric material and no PIN hash.
+in-app PIN is stored. The prompt is bound to a Keystore **user-authentication-required** AES key via a
+`CryptoObject`, so the authentication result is consumed by a real cryptographic operation
+(`app/.../applock/BiometricUnlockVault.kt`; authenticator set in `app/.../applock/AppUnlockPrompter.kt`;
+capability gate in `core/data/.../AndroidLocalAuthCapabilities.kt`). On a device with neither a strong
+biometric nor a secure lock screen the toggle is disabled with the reason, so the gate can never be
+enabled without a way to open it. The biometric comparison happens in the OS (Keystore-authenticated);
+the app stores no biometric material and no PIN hash, and the auth-bound key is invalidated when
+biometric enrollment changes.
 
 **Server half — revocable device grants.** To make biometric a genuine alternative to the password
 (not just a 96 h resume window), an enrolled install holds a **device grant**: a long-lived, hashed,
