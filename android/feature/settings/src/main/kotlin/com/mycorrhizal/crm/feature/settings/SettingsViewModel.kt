@@ -11,7 +11,6 @@ import com.mycorrhizal.crm.domain.repository.AppSettingsRepository
 import com.mycorrhizal.crm.domain.repository.AuthRepository
 import com.mycorrhizal.crm.domain.repository.AutoLockDelay
 import com.mycorrhizal.crm.domain.repository.BiometricEnrollmentStatus
-import com.mycorrhizal.crm.model.Generated
 import com.mycorrhizal.crm.domain.repository.LocalAuthCapabilities
 import com.mycorrhizal.crm.domain.repository.LocalAuthSettingsRepository
 import com.mycorrhizal.crm.domain.repository.RelationshipEdgeRepository
@@ -176,7 +175,6 @@ class SettingsViewModel @Inject constructor(
      * it behind the encrypted envelope. After this, an expired session on this
      * device resumes with a biometric unlock instead of a password.
      */
-    @Generated("UI-launch wrapper (viewModelScope); the deterministic state machine is covered via performBiometricEnroll")
     fun enrollBiometricSignIn() {
         viewModelScope.launch { performBiometricEnroll() }
     }
@@ -200,7 +198,6 @@ class SettingsViewModel @Inject constructor(
     }
 
     /** Revoke this device's grant and clear the local copy (status drops to OPTED_OUT). */
-    @Generated("UI-launch wrapper (viewModelScope); the deterministic state machine is covered via performBiometricRemove")
     fun removeBiometricSignIn() {
         viewModelScope.launch { performBiometricRemove() }
     }

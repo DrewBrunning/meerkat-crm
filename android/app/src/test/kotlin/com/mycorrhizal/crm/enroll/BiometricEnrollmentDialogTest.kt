@@ -3,6 +3,7 @@ package com.mycorrhizal.crm.enroll
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.assertIsNotEnabled
 import androidx.compose.ui.test.performClick
 import com.mycorrhizal.crm.ui.theme.MycorrhizalTheme
 import org.junit.Assert.assertTrue
@@ -23,6 +24,7 @@ class BiometricEnrollmentDialogTest {
 
     private fun setDialog(
         error: Boolean = false,
+        isBusy: Boolean = false,
         onEnroll: () -> Unit = {},
         onNotNow: () -> Unit = {},
         onNever: () -> Unit = {},
@@ -30,7 +32,7 @@ class BiometricEnrollmentDialogTest {
         composeTestRule.setContent {
             MycorrhizalTheme {
                 BiometricEnrollmentDialog(
-                    isBusy = false,
+                    isBusy = isBusy,
                     error = error,
                     onEnroll = onEnroll,
                     onNotNow = onNotNow,
@@ -66,6 +68,15 @@ class BiometricEnrollmentDialogTest {
 
         composeTestRule.onNodeWithText("Never ask again").performClick()
         assertTrue(never)
+    }
+
+    @Test
+    fun `while an enrollment is in flight the choices are disabled`() {
+        setDialog(isBusy = true)
+
+        composeTestRule.onNodeWithText("Set up").assertIsNotEnabled()
+        composeTestRule.onNodeWithText("Not now").assertIsNotEnabled()
+        composeTestRule.onNodeWithText("Never ask again").assertIsNotEnabled()
     }
 
     @Test

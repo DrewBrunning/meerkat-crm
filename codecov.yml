@@ -119,3 +119,27 @@ ignore:
   # JaCoCo aggregation (the module skips the coverage convention plugin). Keep
   # the diff gate from faulting its lines.
   - "android/macrobenchmark/**"
+  # Issue #722 local auth / fully biometric login. JaCoCo only instruments
+  # `testDebugUnitTest`; these Android files are structurally unexercisable on
+  # the JVM (no AndroidKeyStore, no BiometricPrompt, no Hilt application host,
+  # no live BiometricManager), so their changed lines can never be covered by
+  # a unit test. Each is pinned by source-scan guard tests and/or the
+  # instrumented device suite (issue #238):
+  #  - MycorrhizalApp.kt: the Hilt-rooted root composable (its branch decision
+  #    is factored into the covered rootSurface() pure function + RootSurfaceTest).
+  #  - applock/BiometricUnlockVault.kt + AppUnlockPrompter.kt: Keystore
+  #    auth-bound keys + the OS BiometricPrompt (guarded by
+  #    BiometricUnlockCryptoGuardTest / AppUnlockPrompterGuardTest).
+  #  - applock/AppLockScreen.kt: stateful host of the OS prompt; its stateless
+  #    AppLockContent states are covered by AppLockScreenTest, but the file
+  #    also hosts the device-only prompt path so it is excluded whole.
+  #  - data/session/DeviceGrantTokenStorage.kt: EncryptedSharedPreferences +
+  #    Keystore master key (guarded by EncryptedDeviceGrantStorageGuardTest).
+  #  - data/auth/AndroidLocalAuthCapabilities.kt: BiometricManager device
+  #    posture — Robolectric cannot report a successful authenticator.
+  - "android/app/src/main/kotlin/com/mycorrhizal/crm/MycorrhizalApp.kt"
+  - "android/app/src/main/kotlin/com/mycorrhizal/crm/applock/BiometricUnlockVault.kt"
+  - "android/app/src/main/kotlin/com/mycorrhizal/crm/applock/AppUnlockPrompter.kt"
+  - "android/app/src/main/kotlin/com/mycorrhizal/crm/applock/AppLockScreen.kt"
+  - "android/core/data/src/main/kotlin/com/mycorrhizal/crm/data/session/DeviceGrantTokenStorage.kt"
+  - "android/core/data/src/main/kotlin/com/mycorrhizal/crm/data/auth/AndroidLocalAuthCapabilities.kt"

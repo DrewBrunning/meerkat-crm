@@ -89,7 +89,6 @@ import com.mycorrhizal.crm.applock.AppLockScreen
 import com.mycorrhizal.crm.data.session.AppLockState
 import com.mycorrhizal.crm.enroll.BiometricEnrollmentPromptHost
 import com.mycorrhizal.crm.feature.auth.LoginScreen
-import com.mycorrhizal.crm.model.Generated
 import com.mycorrhizal.crm.feature.auth.RegisterScreen
 import com.mycorrhizal.crm.feature.auth.ForgotPasswordScreen
 import com.mycorrhizal.crm.feature.audit.AuditScreen
@@ -222,7 +221,6 @@ private fun androidx.compose.ui.graphics.Color.toArgbCompat(): Int =
 // compose (same precedent as the MainActivity/*Module JACOCO_EXCLUDES); the
 // security-critical branch decision is factored into the covered
 // rootSurface() pure function.
-@Generated("Hilt-rooted root composable — only instrumented/E2E can compose it; pure branch logic lives in covered rootSurface()")
 @Composable
 fun MycorrhizalApp(
     darkTheme: Boolean,

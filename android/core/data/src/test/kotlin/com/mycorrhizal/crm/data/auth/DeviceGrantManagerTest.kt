@@ -11,6 +11,8 @@ import io.mockk.coEvery
 import io.mockk.coVerify
 import io.mockk.every
 import io.mockk.mockk
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -130,4 +132,37 @@ class DeviceGrantManagerTest {
 
         assertEquals(DeviceGrantCreated(id = 3, label = "Tablet", token = "tok"), created)
     }
+
+    @Test
+    fun `isEnrolled reflects a stored grant`() = runTest {
+        val h = Harness()
+        coEvery { h.storage.loadToken() } returns "grant-token"
+        assertTrue(h.manager.isEnrolled())
+
+        coEvery { h.storage.loadToken() } returns null
+        assertFalse(h.manager.isEnrolled())
+    }
+
+    @Test
+    fun `storedGrantToken and enrollmentStatus delegate to their stores`() = runTest {
+        val h = Harness()
+        coEvery { h.storage.loadToken() } returns "grant-token"
+        assertEquals("grant-token", h.manager.storedGrantToken())
+
+        val statusFlow = MutableStateFlow(BiometricEnrollmentStatus.ENROLLED)
+        coEvery { h.settings.biometricEnrollmentStatus() } returns statusFlow
+        assertEquals(BiometricEnrollmentStatus.ENROLLED, h.manager.enrollmentStatus().first())
+    }
+
+    @Test
+    fun `createDeviceGrant fails when the server returns no token`() = runTest {
+        val h = Harness()
+        coEvery { h.api.createDeviceGrant("Pixel") } returns
+            Result.success(DeviceGrantCreateResponse(id = 1, token = null))
+
+        val result = h.manager.createDeviceGrant("Pixel")
+
+        assertTrue(result.isFailure)
+    }
+
 }

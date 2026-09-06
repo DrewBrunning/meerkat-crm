@@ -7,7 +7,6 @@ import android.security.keystore.KeyPermanentlyInvalidatedException
 import android.security.keystore.KeyProperties
 import android.util.Base64
 import androidx.biometric.BiometricManager
-import com.mycorrhizal.crm.model.Generated
 import java.security.KeyStore
 import javax.crypto.Cipher
 import javax.crypto.KeyGenerator
@@ -47,7 +46,6 @@ internal sealed interface UnlockCipherSpec {
  * biometrics permanently invalidates it and the app re-establishes the token
  * after a fresh unlock.
  */
-@Generated("AndroidKeyStore auth-bound keys + GCM cipher — structurally unexercisable by the JVM unit runner; guarded by BiometricUnlockCryptoGuardTest + the instrumented device suite")
 internal class BiometricUnlockVault(
     context: Context,
 ) {

@@ -6,7 +6,6 @@ import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.FragmentActivity
 import kotlin.coroutines.resume
-import com.mycorrhizal.crm.model.Generated
 import kotlinx.coroutines.suspendCancellableCoroutine
 
 /**
@@ -43,7 +42,6 @@ interface AppUnlockPrompter {
  * all, so the prompt is strong-biometric-only and carries a negative (cancel)
  * button instead — see [platformSupportsDeviceCredential].
  */
-@Generated("BiometricPrompt + AndroidKeyStore — OS/device-only; pure helpers (androidAppLockAuthenticatorsFor, androidAppUnlockPromptInfo) and the auth-bound spec are guarded by unit tests")
 class BiometricAppUnlockPrompter(
     private val activity: FragmentActivity,
 ) : AppUnlockPrompter {
