@@ -184,10 +184,14 @@ test.describe('Service worker upgrade', () => {
 
     const aState = await loadAppShell(page);
     const aEntry = aState.entry;
-    const bEntry = aEntry?.replace('swfa-', 'swfb-') ?? null;
     expect(aEntry).not.toBeNull();
-    expect(bEntry).not.toBeNull();
-    expect(bFiles.has(bEntry!), 'the harness should serve a distinct build-B entry').toBe(true);
+    // The two fixtures are now genuinely distinct builds (issue #475 stamps a
+    // different release version into each), so build B's entry is looked up
+    // from the harness's actual file set rather than derived by relabelling
+    // build A's hash.
+    const bEntry = [...bFiles].find((path) => path.includes('swfb-')) ?? null;
+    expect(bEntry, 'the harness should serve a distinct build-B entry').not.toBeNull();
+    const bEntryPath = bEntry!;
 
     // While B is installed-but-waiting, the still-live build-A document must
     // keep loading only build-A assets -- never a chunk that only B knows.
@@ -195,7 +199,7 @@ test.describe('Service worker upgrade', () => {
     await triggerUpdate(page);
     await waitForWaitingWorker(page);
     let loaded = await loadedAssetPaths(page);
-    expect(loaded).not.toContain(bEntry);
+    expect(loaded).not.toContain(bEntryPath);
     for (const path of loaded) {
       expect(aFiles.has(path), `build-A shell loaded a foreign asset: ${path}`).toBe(true);
     }
@@ -205,7 +209,7 @@ test.describe('Service worker upgrade', () => {
     await activateWaitingWorker(page);
     await reloadExpectingShell(page, 'b');
     loaded = await loadedAssetPaths(page);
-    expect(loaded).toContain(bEntry);
+    expect(loaded).toContain(bEntryPath);
     expect(loaded).not.toContain(aEntry);
     for (const path of loaded) {
       expect(bFiles.has(path), `build-B shell loaded a foreign asset: ${path}`).toBe(true);

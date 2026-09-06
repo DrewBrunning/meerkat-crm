@@ -33,6 +33,17 @@ export const FIXTURE_DIRS = {
   b: path.join(FIXTURES_DIR, 'b'),
 };
 
+// Issue #475 (WEB-01): each fixture also embeds the release version the web
+// client compares against /health. "a" is an older release than "b" so the
+// stale-client spec can stage the scenario that matters — an open tab running
+// "a" while the server has deployed "b" and raised its min_client_version
+// above "a". The value is stamped into the bundle via VITE_APP_VERSION below,
+// the same way docker-publish.yml stamps real release builds.
+export const FIXTURE_VERSIONS = {
+  a: '0.6.8',
+  b: '0.6.10',
+};
+
 const VITE_JS = path.join(FRONTEND_DIR, 'node_modules', 'vite', 'bin', 'vite.js');
 const STAMP_FILE = path.join(FIXTURES_DIR, '.fixture-stamp');
 
@@ -130,7 +141,14 @@ async function buildFixture(label, outDir) {
     [VITE_JS, 'build', '--outDir', outDir, '--emptyOutDir'],
     {
       cwd: FRONTEND_DIR,
-      env: { ...process.env, MYCORRHIZAL_SW_FIXTURE: label },
+      env: {
+        ...process.env,
+        MYCORRHIZAL_SW_FIXTURE: label,
+        // Issue #475: stamp the release version this fixture claims to be, so
+        // the stale-client detector is live in the fixture builds and the
+        // WEB-01 spec can drive a below-floor reload.
+        VITE_APP_VERSION: FIXTURE_VERSIONS[label],
+      },
       stdio: 'inherit',
     },
   );

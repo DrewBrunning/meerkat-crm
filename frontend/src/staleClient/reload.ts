@@ -90,10 +90,10 @@ export async function forceReloadToCurrentBuild(): Promise<void> {
     return;
   }
 
-  // No waiting worker yet — ask the browser to go check the server for a new
-  // one. A real deploy always changes service-worker.js (the workbox precache
-  // manifest is inlined in it), so this finds the new build.
-  if (!registration.waiting) {
+  // No worker installing or waiting yet — ask the browser to go check the
+  // server for a new one. A real deploy always changes service-worker.js (the
+  // workbox precache manifest is inlined in it), so this finds the new build.
+  if (!registration.waiting && !registration.installing) {
     try {
       await registration.update();
     } catch {
@@ -101,6 +101,16 @@ export async function forceReloadToCurrentBuild(): Promise<void> {
       // Fail open — the caller keeps the block visible and retries later.
       return;
     }
+  }
+
+  // update() resolves once the fresh worker has *finished installing*, so it
+  // normally sits in `waiting` by now. But if a worker is still installing
+  // (a concurrent update check started one, or the browser resolved update()
+  // early), swapping now is impossible — the new worker has not finished
+  // precaching. Wait for it to land in `waiting` (or give up after the
+  // fallback window) before taking over.
+  if (!registration.waiting && registration.installing) {
+    await waitForWorkerWaiting(registration);
   }
 
   if (registration.waiting) {
@@ -116,4 +126,29 @@ export async function forceReloadToCurrentBuild(): Promise<void> {
   // update() found no new worker (e.g. a server-only hotfix left the bundle
   // untouched) — the bundle is fine; reload is enough.
   window.location.reload();
+}
+
+/**
+ * Waits for a worker that is still installing to reach the waiting state (the
+ * point at which SKIP_WAITING can hand it control). Resolves early if the
+ * install fails (installing becomes null) and on a timeout so a wedged worker
+ * can never hang the forced reload.
+ */
+function waitForWorkerWaiting(registration: ServiceWorkerRegistration): Promise<void> {
+  return new Promise((resolve) => {
+    const installing = registration.installing;
+    if (!installing || registration.waiting) {
+      resolve();
+      return;
+    }
+    const onChange = () => {
+      if (registration.waiting || !registration.installing) {
+        window.clearTimeout(timer);
+        installing.removeEventListener('statechange', onChange);
+        resolve();
+      }
+    };
+    const timer = window.setTimeout(onChange, RELOAD_SW_FALLBACK_MS);
+    installing.addEventListener('statechange', onChange);
+  });
 }

@@ -23,6 +23,34 @@ That lifecycle (install → waiting → activate → claim), the cache transitio
 convergence and rapid repeated releases are all pinned by the service-worker upgrade suite — see
 "Service-worker upgrade suite" in `docs/development/testing.md`.
 
+## The stale-contract backstop: automatic forced reload
+
+The update prompt above is *offered*; a user who ignores it stays on the old build, which is fine
+while the old build keeps working. It stops being fine when the server deploys a release that this
+tab's build is genuinely incompatible with — its `min_client_version` now sits above this tab's
+build, or the server announces a different `api_contract_version` than the bundle speaks
+(`docs/client-compatibility-policy.md`, issue #475). The app then **forces** the tab onto the build
+the server serves instead of letting it error:
+
+- On load, on an interval, and whenever the tab gains focus (the long-lived-tab-across-a-deploy
+  case), the app polls the unauthenticated `GET /health` and classifies the result
+  (`frontend/src/staleClient/`): compatible / update-available / blocked.
+- **update-available** (server release newer than this bundle) is non-blocking: it kicks
+  `registration.update()` so the ordinary update prompt above can surface — the browser's own
+  ~24 h update check is not enough for a tab that never navigates.
+- **blocked** triggers a forced reload that goes *through the service worker* (fetch the new
+  worker, `SKIP_WAITING`, reload on `controllerchange`) rather than a bare reload, which the old
+  controlling worker would serve from its own stale cache. The reload happens automatically only
+  when no form is dirty; unsaved input routes through a consent dialog instead (every editing
+  surface reports into the shared dirty registry via `useBeforeUnloadGuard`), and a reload that
+  cannot converge surfaces a manual "Reload now" dialog rather than looping forever.
+- **Fail open:** an unreachable or malformed `/health` changes nothing. A network blip must never
+  brick a PWA whose main feature is working offline.
+
+The WEB-01 scenarios are covered by the same suite (its `/health` harness endpoint serves the
+active build's own identity and lets a test raise the floor, flip `api_contract_version`, or fail
+`/health`).
+
 ## The escape hatch: `/_recovery.html`
 
 For the case where the worker itself is broken — it installs and takes over but serves a broken

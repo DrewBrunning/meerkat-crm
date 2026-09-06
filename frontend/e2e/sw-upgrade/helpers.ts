@@ -114,6 +114,26 @@ export async function getHarnessStatus(request: APIRequestContext): Promise<Harn
 }
 
 /**
+ * Issue #475: overrides what the harness's /health advertises (the payload the
+ * stale-client detector polls). `{}` resets to the active build's own release
+ * identity; `{ error: true }` makes /health fail (503). Fields set here replace
+ * the base values: min_client_version, api_contract_version, version.
+ */
+export async function setHealthOverride(
+  request: APIRequestContext,
+  override: Record<string, unknown>,
+): Promise<void> {
+  const response = await request.post('/__swtest/health', { data: override });
+  expect(response.ok(), 'harness should accept a health override').toBeTruthy();
+}
+
+/** Clears any /health override (back to the active build's own identity). */
+export async function resetHealthOverride(request: APIRequestContext): Promise<void> {
+  const response = await request.post('/__swtest/health', { data: { reset: true } });
+  expect(response.ok(), 'harness should accept a health reset').toBeTruthy();
+}
+
+/**
  * Loads the app shell at / and waits until the app's own registration has
  * installed, activated and taken control (clientsClaim). Returns the state.
  */
