@@ -70,7 +70,13 @@ registerRoute(
 
 // This allows the web app to trigger skipWaiting via
 // registration.waiting.postMessage({type: 'SKIP_WAITING'})
+// Only a client of this worker's own origin is trusted to ask -- a message
+// from any other origin must not be able to swap a controlled page onto a new
+// build behind the user's back.
 self.addEventListener('message', (event) => {
+  if (event.origin !== self.location.origin) {
+    return;
+  }
   if (event.data && event.data.type === 'SKIP_WAITING') {
     self.skipWaiting();
   }

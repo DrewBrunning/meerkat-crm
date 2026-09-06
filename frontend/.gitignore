@@ -14,6 +14,16 @@
 # production
 /build
 
+# Issue #476 (WEB-02): the service-worker upgrade suite builds two real
+# production-build fixtures ("a" and "b") and serves them from a local harness.
+# Both are generated artifacts -- never committed.
+/e2e/sw-upgrade/fixtures/
+
+# Issue #476: sw-upgrade suite artifacts, kept out of the main suite's dirs so
+# the two Playwright configs never clobber each other's output.
+/playwright-report-sw/
+/test-results-sw/
+
 # misc
 .DS_Store
 .env.local

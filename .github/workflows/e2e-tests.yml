@@ -335,3 +335,78 @@ jobs:
       - name: Stop services
         if: always()
         run: docker compose -f docker-compose.test.yml -f docker-compose.prod-defaults.yml down -v
+
+  # Issue #476 (WEB-02): the service-worker upgrade suite. It is a SEPARATE
+  # Playwright config (playwright.sw.config.ts) that deliberately does NOT run
+  # against the docker stack: the main stack serves a single fixed build on
+  # 7300, while an upgrade needs an origin that swaps between two builds
+  # mid-test. Its own harness server (frontend/e2e/sw-upgrade/) takes over port
+  # 7300 and stages two real `vite build` fixtures; no backend is involved. It
+  # exercises Chromium AND Firefox (the wrong-MIME /service-worker.js failure
+  # this suite guards was a Firefox report). First run also builds both
+  # fixtures from source inside the Playwright webServer.
+  #
+  # Same path gating as the main e2e job (frontend/deployed-artifact/workflow
+  # changes) plus the nightly full-suite run.
+  e2e-sw-upgrade:
+    permissions:
+      contents: read
+    name: Run E2E Service-Worker Upgrade Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    needs: changes
+    if: github.event_name == 'schedule' || needs.changes.outputs.frontend == 'true' || needs.changes.outputs.infra == 'true' || needs.changes.outputs.workflows == 'true'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # COMPAT-01 (issue #472): floor comes from frontend/package.json's
+          # "engines.node" rather than a hardcoded number here.
+          node-version-file: frontend/package.json
+          cache: 'yarn'
+          cache-dependency-path: frontend/yarn.lock
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: yarn install --frozen-lockfile
+
+      - name: Cache Playwright browsers
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ hashFiles('frontend/yarn.lock') }}
+
+      - name: Install Playwright browsers
+        working-directory: frontend
+        # Both engines: service-worker behaviour genuinely differs (the
+        # wrong-MIME registration failure this ticket exists because of was
+        # Firefox-specific).
+        run: npx playwright install --with-deps chromium firefox
+
+      - name: Run Playwright service-worker upgrade tests
+        working-directory: frontend
+        run: npx playwright test -c playwright.sw.config.ts
+        env:
+          CI: true
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: playwright-report-sw
+          path: frontend/playwright-report-sw/
+          retention-days: 7
+
+      - name: Upload test results
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure()
+        with:
+          name: test-results-sw
+          path: frontend/test-results-sw/
+          retention-days: 7
