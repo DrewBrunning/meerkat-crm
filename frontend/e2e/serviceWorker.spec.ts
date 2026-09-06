@@ -64,4 +64,29 @@ test.describe('Service worker', () => {
     expect(response.status()).toBe(200);
     expect(response.headers()['cache-control']).toContain('no-cache');
   });
+
+  test('serves the /_recovery.* escape hatch fresh from the network', async ({ page }) => {
+    // Issue #476 (WEB-02): /_recovery.html is the way out for a user stranded
+    // on a broken service worker. It must always come from the server (nginx
+    // serves it no-store) so a stale copy can never shadow it, and it must be
+    // loadable even while a broken worker is in control -- the worker is
+    // written to leave /_* navigations to the network. This spec pins the
+    // nginx side of that contract; the sw-upgrade suite
+    // (playwright.sw.config.ts) pins the full broken-worker -> recovery flow.
+    const recovery = await page.request.get('/_recovery.html');
+    expect(recovery.status()).toBe(200);
+    expect(recovery.headers()['content-type']).toContain('text/html');
+    expect(recovery.headers()['cache-control']).toContain('no-store');
+    const html = await recovery.text();
+    expect(html).toContain('Recovering Mycorrhizal CRM');
+    expect(html).toContain('/_recovery.js');
+
+    const script = await page.request.get('/_recovery.js');
+    expect(script.status()).toBe(200);
+    expect(script.headers()['content-type']).toContain('javascript');
+    expect(script.headers()['cache-control']).toContain('no-store');
+    const body = await script.text();
+    expect(body).toContain('getRegistrations');
+    expect(body).toContain('caches');
+  });
 });

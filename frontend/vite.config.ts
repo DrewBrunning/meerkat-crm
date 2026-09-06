@@ -3,6 +3,18 @@ import browserslistToEsbuild from 'browserslist-to-esbuild';
 import { defineConfig } from 'vite';
 import { VitePWA } from 'vite-plugin-pwa';
 
+// Issue #476 (WEB-02) test plumbing. The service-worker upgrade e2e suite
+// (frontend/e2e/sw-upgrade/, playwright.sw.config.ts) stages two REAL
+// production builds -- "build A" then "build B" -- and drives an upgrade
+// between them, which only happens if the two builds emit different files.
+// The fixtures are built from the same source, so only the emitted *names*
+// differ: MYCORRHIZAL_SW_FIXTURE=<label> appends the label to the entry
+// chunk's filename, which changes index.html (it references the entry) and
+// therefore the injected precache manifest and service-worker.js bytes --
+// enough for a browser to detect a genuinely new worker. Unset in every real
+// build, this is a no-op. See vite.config.ts's entryFileNames below.
+const swFixtureLabel = process.env.MYCORRHIZAL_SW_FIXTURE ?? '';
+
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
@@ -31,6 +43,14 @@ export default defineConfig({
       // precache, which would break offline/Web Push.
       injectManifest: {
         maximumFileSizeToCacheInBytes: 4 * 1024 * 1024,
+        // Issue #476 (WEB-02): the /_recovery.* escape-hatch page must NEVER
+        // enter the precache. A broken worker would otherwise serve a cached
+        // (possibly stale) copy of the one page whose whole purpose is to
+        // recover from a broken cache. The page is excluded from the app's
+        // navigation interception by the /_ prefix check in service-worker.ts
+        // and reaches the network directly; excluding it from the manifest
+        // keeps the precache route out of the way as well.
+        globIgnores: ['**/_recovery.html', '**/_recovery.js'],
       },
     }),
   ],
@@ -69,6 +89,23 @@ export default defineConfig({
           }
           return undefined;
         },
+        // Issue #476: only active when MYCORRHIZAL_SW_FIXTURE is set (see the
+        // comment at the top of this file). Labels the SPA entry chunk so two
+        // otherwise-identical fixture builds emit distinct files. Only the
+        // entry is labelled: vendor/lazy chunks keep their content-hashed
+        // names (which stay the same across fixtures, exactly like unchanged
+        // chunks in a real deploy), and the vite-plugin-pwa service-worker
+        // build overrides its own output filename, so this never renames
+        // /service-worker.js.
+        ...(swFixtureLabel
+          ? {
+              entryFileNames(chunk) {
+                return chunk.name === 'index'
+                  ? `assets/${chunk.name}-swf${swFixtureLabel}-[hash].js`
+                  : `assets/${chunk.name}-[hash].js`;
+              },
+            }
+          : {}),
       },
     },
   },

@@ -13,6 +13,11 @@ export default tseslint.config(
       'playwright-report/**',
       'test-results/**',
       'coverage/**',
+      // Issue #476 (WEB-02): the sw-upgrade suite generates real production
+      // builds under e2e/sw-upgrade/fixtures and its own Playwright artifacts.
+      'e2e/sw-upgrade/fixtures/**',
+      'playwright-report-sw/**',
+      'test-results-sw/**',
     ],
   },
   tseslint.configs.recommended,
