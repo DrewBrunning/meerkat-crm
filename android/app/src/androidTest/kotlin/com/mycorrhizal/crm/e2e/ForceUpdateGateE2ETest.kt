@@ -68,7 +68,7 @@ class ForceUpdateGateE2ETest {
     }
 
     @Test
-    fun `configuring a below-floor server shows the force-update gate and blocks the dashboard`() {
+    fun configuringBelowFloorServer_showsForceUpdateGateAndBlocksDashboard() {
         waitForText("Sign in")
         replaceTextInField("Server URL", COMPAT_BACKEND_URL)
         replaceTextInField("Username or email", E2eConfig.SEED_USERNAME)
@@ -91,7 +91,7 @@ class ForceUpdateGateE2ETest {
     }
 
     @Test
-    fun `the pre-login force-update gate returns to the auth flow`() {
+    fun preLoginForceUpdateGate_returnsToTheAuthFlow() {
         waitForText("Sign in")
         replaceTextInField("Server URL", COMPAT_BACKEND_URL)
         replaceTextInField("Username or email", E2eConfig.SEED_USERNAME)
