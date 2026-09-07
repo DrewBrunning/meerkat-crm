@@ -173,3 +173,64 @@ func TestDaysUntilBirthday_LeapYearFeb29CheckedInLeapYear(t *testing.T) {
 
 	assert.Equal(t, 9, got)
 }
+
+// TestDaysUntilBirthday_LeapDayCelebratedTodayOnMarchFirstNonLeap pins the
+// date-only "advance to the next real calendar day" rule from
+// docs/adrs/0015-temporal-semantics.md: a stored 29-Feb birthday in a
+// non-leap now.Year() is celebrated on 1 March, so on 1 March 2025 the count
+// must be 0 ("today"), not ~364.
+func TestDaysUntilBirthday_LeapDayCelebratedTodayOnMarchFirstNonLeap(t *testing.T) {
+	today := time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC) // 2025 is not a leap year
+
+	assert.Equal(t, 0, DaysUntilBirthday("2000-02-29", today))
+	assert.Equal(t, 0, DaysUntilBirthday("--02-29", today))
+}
+
+// TestGetUpcomingBirthdays_LeapDayBirthdayReachableThroughThePreselect covers
+// the digest gap: GetUpcomingBirthdays fetches by the birthday's *stored*
+// month, so a stored 29-Feb birthday (month 02) is fetched during February
+// (announced as "tomorrow" from 28 Feb, since its non-leap celebration is
+// 1 Mar) but its stored month is not in the query window on 1 March itself.
+// The leap-day OR branch in GetUpcomingBirthdays must fetch it on that one
+// date so the digest and birthdays list can report it "today".
+func TestGetUpcomingBirthdays_LeapDayBirthdayReachableThroughThePreselect(t *testing.T) {
+	db, _ := setupRouter()
+
+	user := models.User{Username: "leapdaytester", Password: "password123", Email: "leap@example.com"}
+	require.NoError(t, db.Create(&user).Error)
+
+	for _, bday := range []string{"2000-02-29", "--02-29"} {
+		contact := models.Contact{UserID: user.ID, Firstname: "Leapling", Lastname: bday, Birthday: bday, Archived: false}
+		require.NoError(t, db.Create(&contact).Error)
+	}
+
+	t.Run("March 1 of a non-leap year reports today", func(t *testing.T) {
+		now := time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC)
+		birthdays, err := GetUpcomingBirthdays(db, user.ID, now)
+		require.NoError(t, err)
+		require.Len(t, birthdays, 2, "both leap-day birthdays must be fetched on Mar 1 of a non-leap year")
+		for _, b := range birthdays {
+			assert.Equal(t, 0, DaysUntilBirthday(b.Birthday, now), "leap-day birthday must be 'today' on Mar 1 2025")
+		}
+	})
+
+	t.Run("Feb 28 of a non-leap year reports tomorrow", func(t *testing.T) {
+		now := time.Date(2025, 2, 28, 0, 0, 0, 0, time.UTC)
+		birthdays, err := GetUpcomingBirthdays(db, user.ID, now)
+		require.NoError(t, err)
+		require.Len(t, birthdays, 2, "both leap-day birthdays must be fetched during February")
+		for _, b := range birthdays {
+			assert.Equal(t, 1, DaysUntilBirthday(b.Birthday, now), "leap-day birthday must be 'tomorrow' on Feb 28 2025")
+		}
+	})
+
+	t.Run("March 1 of a leap year does not surface the past occurrence", func(t *testing.T) {
+		// 2024 is a leap year: the 29-Feb occurrence was Feb 29 2024, the day
+		// before; the next one is ~a year out, so the row must NOT be in the
+		// preselect at all (the leap OR is gated on a non-leap year).
+		now := time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)
+		birthdays, err := GetUpcomingBirthdays(db, user.ID, now)
+		require.NoError(t, err)
+		assert.Empty(t, birthdays, "a leap-day birthday the day after its leap-year occurrence is not upcoming")
+	})
+}

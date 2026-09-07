@@ -283,6 +283,17 @@ func main() {
 	}
 	s := gocron.NewScheduler(cfg.GetReminderLocation())
 
+	// The scheduler's location is the configured reminder zone, so every
+	// .At() wall-clock time below is that one server-wide clock (docs/adrs/
+	// 0015-temporal-semantics.md "local wall time"). DST semantics for the
+	// daily job: a fire time in a spring-forward gap fires once, normalized to
+	// the first valid occurrence of the label under the post-transition
+	// offset; a fire time in a fall-back fold fires once, on the earlier pass
+	// — both inherited from gocron + Go time.Date and pinned for DATE-02
+	// (issue #483). A wholly missed fire day is not replayed by the scheduler
+	// itself; each job's paired boot-time Initial trigger below + acquireJobLock
+	// implement ADR 0011's catch-up-with-de-duplication.
+
 	// Every scheduled job runs through runJob / runJobReport (main.go's wrapper),
 	// which times it, recovers a panic, and persists one job_runs row per
 	// invocation (issue #391): job name, trigger, duration, and outcome. The

@@ -525,7 +525,10 @@ func sendReminderEmail(user models.User, reminders []models.Reminder, config con
 }
 
 // addMonths adds the specified number of months to a date, clamping to the last
-// valid day of the target month to handle edge cases like Jan 31 + 1 month -> Feb 28/29
+// valid day of the target month to handle edge cases like Jan 31 + 1 month -> Feb 28/29.
+// This "retreat to the last real day of the target month" rule for a monthly cadence
+// is deliberately distinct from the yearly 29-Feb rule (advance to 1 March, addYears) —
+// both are pinned in docs/adrs/0015-temporal-semantics.md.
 func addMonths(t time.Time, months int) time.Time {
 	// Get the original day of month
 	originalDay := t.Day()
@@ -543,17 +546,15 @@ func addMonths(t time.Time, months int) time.Time {
 	return result
 }
 
-// addYears adds the specified number of years to a date, handling Feb 29 edge case
+// addYears adds the specified number of years to a date. A 29-February date
+// advances to 1 March in a non-leap target year (the "advance to the next real
+// calendar day" rule pinned by docs/adrs/0015-temporal-semantics.md) — Go's
+// time.AddDate already does exactly that by day-overflow, so no clamp is
+// needed here, unlike addMonths' last-day-of-month clamp above. This is the
+// documented 29-Feb rule: birthdays, life events, CalDAV and yearly reminders
+// all land on 1 March in a non-leap year.
 func addYears(t time.Time, years int) time.Time {
-	originalDay := t.Day()
-	result := t.AddDate(years, 0, 0)
-
-	// Handle Feb 29 -> Feb 28 transition for leap year edge case
-	if result.Day() != originalDay {
-		result = result.AddDate(0, 0, -result.Day())
-	}
-
-	return result
+	return t.AddDate(years, 0, 0)
 }
 
 // CalculateNextReminderTime determines the next reminder date based on recurrence settings.

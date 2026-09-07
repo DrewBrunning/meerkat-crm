@@ -735,7 +735,9 @@ func buildAnniversaries(c *Contact) []contactmodel.Anniversary {
 // exactly (^(--|\d{4}-)\d{2}-\d{2}$, "YYYY-MM-DD" or year-less "--MM-DD").
 // models cannot import middleware (middleware already imports models —
 // importing back would be an import cycle), so this is intentionally kept
-// in sync by hand rather than shared.
+// in sync by hand rather than shared. The two accepted shapes are the
+// date-only / partial-date boundary pinned in
+// docs/adrs/0015-temporal-semantics.md.
 //
 // Checking this BEFORE attempting to split-and-parse matters: without it,
 // any legacy/free-form Birthday string that merely happens to contain two

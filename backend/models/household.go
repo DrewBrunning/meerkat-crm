@@ -100,7 +100,8 @@ type HouseholdMember struct {
 
 	// Since/Until are optional partial dates, matching Contact.Birthday's
 	// existing string-date convention (contactmodel.PartialDate-compatible)
-	// rather than a strict time.Time.
+	// rather than a strict time.Time. Date-only / partial — no time, no zone,
+	// never zone-converted (docs/adrs/0015-temporal-semantics.md).
 	Since string `json:"since,omitempty"`
 	Until string `json:"until,omitempty"`
 }
