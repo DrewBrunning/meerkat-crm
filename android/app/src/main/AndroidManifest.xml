@@ -19,7 +19,7 @@
     <!-- Phase 4 quick-capture overlay (§6.5). -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_PHONE_CALL" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- Required for BootReceiver below: without this, Android never delivers
          BOOT_COMPLETED to the app, and the periodic tracking workers are never
          re-registered after a reboot. -->
@@ -85,11 +85,19 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Phase 4 quick-capture overlay foreground service (§6.7). -->
+        <!-- Phase 4 quick-capture overlay foreground service (§6.7). Not a
+             dialer/phoneCall function (that FGS type requires the default-dialer
+             role or MANAGE_OWN_CALLS, which this app neither holds nor wants), so
+             it is declared specialUse: it briefly shows an overlay after a call
+             ends. The subtype property is required for specialUse on API 34+. -->
         <service
             android:name="com.mycorrhizal.crm.feature.tracking.CallDetectionService"
-            android:foregroundServiceType="phoneCall"
-            android:exported="false" />
+            android:foregroundServiceType="specialUse"
+            android:exported="false">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Shows the quick-capture interaction overlay for a short window after a phone call ends when call tracking is enabled" />
+        </service>
 
         <!-- M5 §5a (issue #152): FCM push entry point. Registered in the manifest
              unconditionally; with no google-services.json the Firebase runtime
