@@ -68,7 +68,7 @@ browser → API → database → filesystem → integrations → Android local D
 
 | Hop | Enforced by |
 |---|---|
-| browser → API | TLS at the operator's reverse proxy (`docs/deployment.md:32`); CORS strict origin allowlist, `"*"` refused in release (`backend/main.go:440-458`, `backend/config/config.go:687-698`); CSP/HSTS/`nosniff`/frame-ancestors (`backend/middleware/security_headers.go`) |
+| browser → API | TLS at the operator's reverse proxy (`docs/deployment.md:32`); CORS strict origin allowlist, `"*"` refused in release (`backend/main.go:452-470`, `backend/config/config.go:687-698`); CSP/HSTS/`nosniff`/frame-ancestors (`backend/middleware/security_headers.go`) |
 | API → database | Every query AND-scoped by `user_id`/`VCardUID` (`asvs-l2.md` V4, API1); parameterized SQL only (V5.3.4) |
 | API → filesystem | UUID filenames, traversal guards, 0700/0750 perms (`asvs-l2.md` V12.3–V12.4) |
 | API → integrations | Public-IP-only SSRF dialer with DNS-rebinding pinning, per-service opt-in (`backend/httputil/safedial.go:27-47`, `asvs-l2.md` V5.2.6/API7) |

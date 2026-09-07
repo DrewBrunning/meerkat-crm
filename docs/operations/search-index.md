@@ -25,7 +25,14 @@ application. The index only drifts when a write **bypasses** the triggers:
 - **A restore from backup**, as a precaution — see below.
 - **A change to how content is indexed** (e.g. a tokenizer or normalization
   change): the stored index is now in the old form and every existing row
-  needs re-indexing.
+  needs re-indexing. The Unicode NFC normalization change (I18N-02, issue
+  #485) does **not** require one: its startup backfill
+  (`services.NormalizeContactRecordsToNFC`, `cmd/backfill-unicode-nfc`)
+  rewrites rows *through the Contact model*, so the `contacts_fts` triggers
+  fire on every rewrite and the index stays in lockstep (asserted by
+  `CheckSearchIndexConsistency` in `services/unicode_nfc_backfill_test.go`).
+  Only a raw-SQL rewrite of base content columns — like a hand-edited
+  migration — needs the manual rebuild below.
 
 You do **not** need a rebuild after ordinary create/update/delete/soft-delete
 traffic, or after an archive/unarchive — those go through the triggers.

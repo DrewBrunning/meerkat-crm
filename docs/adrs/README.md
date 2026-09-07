@@ -21,3 +21,4 @@ ticket backlog moved to GitHub Issues.
 | [0013](0013-outbound-retry-safety-and-terminal-failures.md) | Outbound retry safety and permanent-failure terminal state | accepted |
 | [0014](0014-local-app-lock-and-biometric-resume.md) | Local app lock and biometric resume (Android) | accepted |
 | [0015](0015-temporal-semantics.md) | Temporal semantics — instants, calendar dates, partial dates, and the one wall clock | accepted |
+| [0016](0016-unicode-normalization-and-search-semantics.md) | Unicode normalization and search semantics | accepted |

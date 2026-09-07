@@ -263,6 +263,18 @@ func main() {
 		}
 	}
 
+	// I18N-02 Unicode NFC normalization (issue #485): rewrite any stored
+	// contact text still in decomposed (NFD) form — written before the write
+	// boundary started normalizing — to NFC, exactly once per database (see
+	// migration 000052's data_backfills ledger). It reads and rewrites the
+	// canonical records through the Contact model, so it must run after at-rest
+	// encryption is armed (the card columns are encrypted when armed) and
+	// before the audit hash chain recompute below, so the audit rows this
+	// maintenance write appends are covered by the re-linked chain.
+	if _, err := services.NormalizeContactRecordsToNFC(db); err != nil {
+		logger.Fatal().Err(err).Msg("Failed to backfill Unicode NFC normalization")
+	}
+
 	// T18 audit hash chain (issue #381): backfill hash/prev_hash for any rows
 	// written before migration 000034 and re-link after any purge. Idempotent
 	// and write-free once the chain is consistent; failing closed on error

@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/text/unicode/norm"
 	"gorm.io/gorm"
 )
 
@@ -87,12 +88,25 @@ const (
 
 // MaxSearchTermLen bounds a free-text search term (issue #415). Both the
 // /search handler and GET /contacts?search= enforce it: an unbounded term
-// would push an arbitrarily long FTS5 MATCH / LIKE clause (with a %...%
-// wrap for the LIKE paths) at the query planner per request, and a 1MB
-// "term" is not a search, it is a request for CPU. Length in runes, not
-// bytes, so a multibyte term is judged by the number of characters the user
-// actually typed.
+// would push an arbitrarily long FTS5 MATCH / LIKE clause (with a %...% wrap
+// for the LIKE paths) at the query planner per request, and a 1MB "term" is
+// not a search, it is a request for CPU. Length in runes, not bytes, so a
+// multibyte term is judged by the number of characters the user actually
+// typed.
 const MaxSearchTermLen = 256
+
+// NormalizeSearchTerm canonicalizes a query term to the same Unicode NFC
+// form every stored contact name is written in (contactmodel.NormalizeRecord,
+// issue #485 / I18N-02) before it reaches any comparison arm. Stored data is
+// NFC, so an NFC query term makes the LIKE-only arms (byte comparisons), the
+// 1-rune searches below the FTS gate, and the FTS5 tokenizer all see
+// comparable bytes no matter which encoding the client sent. The FTS tokenizer
+// would itself fold NFD/NFC, but the LIKE arms would not — this is the query
+// half of the "normalize at the same boundary as the write" rule. It is an
+// identity on the common (already-NFC) term.
+func NormalizeSearchTerm(term string) string {
+	return norm.NFC.String(term)
+}
 
 // ResolveSearchSynonym reports whether the whole search term resolves to a
 // relation token through the type registry ("mom"/"mother" → parent_of,
@@ -192,6 +206,13 @@ func Search(db *gorm.DB, userID uint, term string, limit int, householdID *strin
 		Activities: []SearchActivityHit{},
 	}
 	term = strings.TrimSpace(term)
+	// I18N-02: fold the query to NFC (the storage form) before the rune gate,
+	// the synonym lookup, and every FTS/LIKE arm below, so a query typed in a
+	// different encoding than the stored name still compares byte-equal in the
+	// arms that need it. The echo keeps the folded form so clients never see
+	// the term differ from what was matched.
+	term = NormalizeSearchTerm(term)
+	result.Query = term
 	if term == "" || len([]rune(term)) < 2 {
 		return result, nil
 	}

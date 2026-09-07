@@ -382,6 +382,12 @@ func GetContacts(c *gin.Context) {
 	// FTS5 MATCH, so an unbounded term is a per-request cost an attacker can
 	// drive, not a search.
 	if searchTerm := c.Query("search"); searchTerm != "" {
+		// I18N-02: fold to NFC (the storage form) before the rune-length gate
+		// and applyContactSearch, so the LIKE arms — byte comparisons — see a
+		// term comparable with every stored name regardless of the encoding
+		// the client sent. Folding cannot lengthen a term (NFC composes
+		// combining sequences), so the length check stays conservative.
+		searchTerm = services.NormalizeSearchTerm(searchTerm)
 		if len([]rune(searchTerm)) > services.MaxSearchTermLen {
 			apperrors.AbortWithError(c, apperrors.ErrInvalidInput("search", fmt.Sprintf("search must be at most %d characters", services.MaxSearchTermLen)))
 			return
