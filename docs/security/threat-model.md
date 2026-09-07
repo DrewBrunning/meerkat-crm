@@ -134,7 +134,7 @@ owns the disk), not left unprotected relative to some higher bar.
 ### 2. JWT key management (ASVS V6.4.1)
 
 **Keep — env var + boot-time validation + revocation, not a vault.** `JWT_SECRET_KEY` is validated at
-boot for length (≥ 32 bytes), placeholder rejection, and minimum entropy (`backend/config/config.go:547-578`).
+boot for length (≥ 32 bytes), placeholder rejection, and minimum entropy (`backend/config/config.go:434-501`).
 There is no key-vault/KMS (`asvs-l2.md` V1.6.2 — not-applicable, self-hosted single process). Rotation
 works via `TokenVersion`: bumping it invalidates every existing session immediately
 (`backend/middleware/auth.go:141-154`); rotating the key itself is a restart with a new env var, at the

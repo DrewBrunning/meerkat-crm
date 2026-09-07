@@ -10,16 +10,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// The /health compatibility contract (issue #528, #475,
+// The /health compatibility contract (issue #528,
 // docs/client-compatibility-policy.md): the server advertises the API
 // contract generation it speaks and — only when a floor has actually been
 // raised — the oldest client version it still supports. Absent means no floor
 // has ever been declared, which is the policy's default and must stay the
-// default for every unconfigured server. Both web (#475) and Android (#528)
-// clients read these same two fields; a client must be able to distinguish
-// "api_contract_version is v1" from "this server predates the field", which is
-// why api_contract_version is never omitted while min_client_version is.
-
+// default for every unconfigured server.
 func TestHealthCheck_AdvertisesAPIContractVersionAlways(t *testing.T) {
 	_, _, r := migratedHealthRouter(t)
 
@@ -54,8 +50,7 @@ func TestHealthCheck_ReportsConfiguredMinClientVersion(t *testing.T) {
 }
 
 // The compatibility fields must be part of the typed response too (not just
-// the raw JSON map), so a server-side consumer deserializing into the Go
-// struct sees them.
+// the raw map), so a client deserializing into the Go struct sees them.
 func TestHealthCheck_CompatibilityFieldsSurviveTypedDecode(t *testing.T) {
 	_, cfg, r := migratedHealthRouter(t)
 	cfg.MinClientVersion = "0.7.0"

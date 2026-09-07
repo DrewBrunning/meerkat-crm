@@ -438,6 +438,14 @@
     <string name="app_lock_unlock">Entsperren</string>
     <string name="app_lock_auth_failed">Entsperren fehlgeschlagen. Bitte versuche es erneut.</string>
     <string name="app_lock_unsupported">Fingerabdruck-, Gesichts- oder Geräte-PIN-Entsperrung ist auf diesem Gerät nicht verfügbar. Melde dich ab, um dich mit deinem Passwort anzumelden.</string>
+    <!-- Kompatibilität zwischen App und Server (issue #528) -->
+    <string name="force_update_heading">Update erforderlich</string>
+    <string name="force_update_message">Dieser Server benötigt Mycorrhizal-Version %1$s oder neuer. Du verwendest Version %2$s, die dieser Server nicht mehr unterstützt.</string>
+    <string name="force_update_server">Server: %1$s</string>
+    <string name="force_update_instructions">Aktualisiere die Mycorrhizal-App, um diesen Server weiter nutzen zu können. Falls du die App über einen Download-Link oder einen Update-Kanal installiert hast, installiere die neueste dort angebotene Version.</string>
+    <string name="server_outdated_notice_message">Dieser Server läuft mit Version %1$s, die älter ist als diese App (Version %2$s). Einige Funktionen funktionieren möglicherweise erst, wenn der Server aktualisiert wurde.</string>
+    <string name="server_outdated_notice_dismiss">Verwerfen</string>
+
     <!-- Biometrische Anmeldung (issue #722) -->
     <string name="biometric_enroll_dialog_title">Mit Biometrie anmelden?</string>
     <string name="biometric_enroll_dialog_body">Verwende beim nächsten Mal deinen Fingerabdruck, dein Gesicht oder deine Geräte-PIN, um diese App zu entsperren, statt dein Passwort einzutippen.</string>
@@ -1154,6 +1162,45 @@
     <string name="bulk_confirm_body">Aktion auf %1$d ausgewählte Kontakte ausführen?</string>
     <string name="bulk_result">Fertig: %1$d erfolgreich, %2$d fehlgeschlagen.</string>
     <string name="action_confirm">Bestätigen</string>
+
+    <!-- T93 duplicate review (issue #710, web parity) -->
+    <string name="duplicates_title">Doppelte prüfen</string>
+    <string name="duplicates_empty">Keine doppelten Kontakte gefunden.</string>
+    <string name="duplicates_count">%1$d mögliches Duplikatpaar/e</string>
+    <string name="duplicates_vs">gegenüber</string>
+    <string name="duplicates_reason_email">Gleiche E-Mail</string>
+    <string name="duplicates_reason_name">Gleicher Name</string>
+    <string name="duplicates_reason_phone">Gleiche Telefonnummer</string>
+    <string name="duplicates_confidence">%1$d%% Übereinstimmung</string>
+    <string name="duplicates_merge">Zusammenführen</string>
+    <string name="duplicates_not_duplicate">Kein Duplikat</string>
+    <string name="duplicates_dismiss_title">Als kein Duplikat markieren?</string>
+    <string name="duplicates_dismiss_body">Dieses Paar wird nie wieder als Duplikat vorgeschlagen. Das kann nicht rückgängig gemacht werden.</string>
+    <string name="duplicates_merge_title">Welcher Kontakt soll erhalten bleiben?</string>
+    <string name="duplicates_kept_hint">Der erhaltene Kontakt bleibt bestehen; die Daten des anderen werden hinein zusammengeführt.</string>
+    <string name="contact_archived">Archiviert</string>
+
+    <!-- N7 contact attachments (issue #710, web parity) -->
+    <string name="contact_attachments">Anhänge</string>
+    <string name="attachments_upload">Anhang hinzufügen</string>
+    <string name="attachments_empty">Noch keine Anhänge.</string>
+    <string name="attachments_open">Anhang öffnen</string>
+    <string name="attachments_size">%1$s</string>
+    <string name="attachments_delete">Löschen</string>
+    <string name="attachments_delete_title">Anhang löschen?</string>
+    <string name="attachments_delete_body">%1$s löschen? Das kann nicht rückgängig gemacht werden.</string>
+    <string name="attachments_size_too_large">Der Anhang überschreitet das Limit von 25 MB.</string>
+
+    <!-- Dataset export (issue #710, web parity) -->
+    <string name="data_export_section">Export</string>
+    <string name="data_export_description">Laden Sie eine Kopie Ihrer Daten herunter. Private/geheime Felder werden standardmäßig ausgeschlossen.</string>
+    <string name="data_export_csv">CSV-Sicherung exportieren</string>
+    <string name="data_export_vcard4">vCard 4.0 exportieren</string>
+    <string name="data_export_vcard3">vCard 3.0 exportieren</string>
+    <string name="data_export_jscontact">JSContact exportieren</string>
+    <string name="data_export_audit">Auditprotokoll exportieren</string>
+    <string name="data_export_share_title">Export teilen</string>
+
 
 
     <!-- Import -->

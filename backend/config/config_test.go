@@ -769,6 +769,7 @@ func TestValidate_MinClientVersion(t *testing.T) {
 	}
 
 	invalidFloors := []string{
+		"",
 		"banana",
 		"0.6.0/../../etc",
 		"latest",
@@ -778,6 +779,10 @@ func TestValidate_MinClientVersion(t *testing.T) {
 		"0.6.",
 	}
 	for _, floor := range invalidFloors {
+		if floor == "" {
+			// Empty is the "no floor declared" default and IS valid.
+			continue
+		}
 		t.Run("invalid floor "+floor, func(t *testing.T) {
 			cfg := validConfig()
 			cfg.MinClientVersion = floor

@@ -438,6 +438,14 @@
     <string name="app_lock_unlock">Desbloquear</string>
     <string name="app_lock_auth_failed">No se pudo desbloquear. Inténtalo de nuevo.</string>
     <string name="app_lock_unsupported">El desbloqueo con huella, rostro o PIN no está disponible en este dispositivo. Cierra la sesión para iniciarla con tu contraseña.</string>
+    <!-- Compatibilidad entre app y servidor (issue #528) -->
+    <string name="force_update_heading">Actualización necesaria</string>
+    <string name="force_update_message">Este servidor requiere Mycorrhizal %1$s o superior. Estás usando la versión %2$s, que este servidor ya no admite.</string>
+    <string name="force_update_server">Servidor: %1$s</string>
+    <string name="force_update_instructions">Actualiza la app de Mycorrhizal para seguir usando este servidor. Si instalaste la app desde un enlace de descarga o un canal de actualizaciones, instala la versión más reciente que ofrezca.</string>
+    <string name="server_outdated_notice_message">Este servidor ejecuta la versión %1$s, más antigua que esta app (versión %2$s). Es posible que algunas funciones no funcionen hasta que se actualice el servidor.</string>
+    <string name="server_outdated_notice_dismiss">Descartar</string>
+
     <!-- Inicio de sesión biométrico (issue #722) -->
     <string name="biometric_enroll_dialog_title">¿Iniciar sesión con biometría?</string>
     <string name="biometric_enroll_dialog_body">Usa tu huella, rostro o PIN del dispositivo para desbloquear esta app en lugar de escribir tu contraseña la próxima vez.</string>
@@ -1154,6 +1162,45 @@
     <string name="bulk_confirm_body">¿Ejecutar la acción en %1$d contactos seleccionados?</string>
     <string name="bulk_result">Hecho: %1$d correctos, %2$d fallidos.</string>
     <string name="action_confirm">Confirmar</string>
+
+    <!-- T93 duplicate review (issue #710, web parity) -->
+    <string name="duplicates_title">Revisar duplicados</string>
+    <string name="duplicates_empty">No se han encontrado contactos duplicados.</string>
+    <string name="duplicates_count">%1$d posibles pares duplicados</string>
+    <string name="duplicates_vs">frente a</string>
+    <string name="duplicates_reason_email">Mismo correo</string>
+    <string name="duplicates_reason_name">Mismo nombre</string>
+    <string name="duplicates_reason_phone">Mismo teléfono</string>
+    <string name="duplicates_confidence">Coincidencia del %1$d%%</string>
+    <string name="duplicates_merge">Combinar</string>
+    <string name="duplicates_not_duplicate">No es un duplicado</string>
+    <string name="duplicates_dismiss_title">¿Marcar como no duplicado?</string>
+    <string name="duplicates_dismiss_body">Este par no volverá a ofrecerse como duplicado. Esta acción no se puede deshacer.</string>
+    <string name="duplicates_merge_title">¿Qué contacto debe conservarse?</string>
+    <string name="duplicates_kept_hint">Se conserva el contacto elegido; los datos del otro se combinan en él.</string>
+    <string name="contact_archived">Archivado</string>
+
+    <!-- N7 contact attachments (issue #710, web parity) -->
+    <string name="contact_attachments">Adjuntos</string>
+    <string name="attachments_upload">Añadir adjunto</string>
+    <string name="attachments_empty">Aún no hay adjuntos.</string>
+    <string name="attachments_open">Abrir adjunto</string>
+    <string name="attachments_size">%1$s</string>
+    <string name="attachments_delete">Eliminar</string>
+    <string name="attachments_delete_title">¿Eliminar adjunto?</string>
+    <string name="attachments_delete_body">¿Eliminar %1$s? Esta acción no se puede deshacer.</string>
+    <string name="attachments_size_too_large">El adjunto supera el límite de 25 MB.</string>
+
+    <!-- Dataset export (issue #710, web parity) -->
+    <string name="data_export_section">Exportar</string>
+    <string name="data_export_description">Descargue una copia de sus datos. Los campos confidenciales (privados/secretos) se excluyen por defecto.</string>
+    <string name="data_export_csv">Exportar copia de seguridad CSV</string>
+    <string name="data_export_vcard4">Exportar vCard 4.0</string>
+    <string name="data_export_vcard3">Exportar vCard 3.0</string>
+    <string name="data_export_jscontact">Exportar JSContact</string>
+    <string name="data_export_audit">Exportar registro de auditoría</string>
+    <string name="data_export_share_title">Compartir exportación</string>
+
 
 
     <!-- Import -->

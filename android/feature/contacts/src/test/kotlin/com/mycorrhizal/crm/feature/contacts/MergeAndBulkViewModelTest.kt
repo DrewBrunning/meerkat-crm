@@ -148,6 +148,23 @@ class MergeAndBulkViewModelTest {
         assertEquals(5, vm.uiState.value.searchResults.first().id)
     }
 
+    @Test
+    fun `a preselected pair loads the preview without the search hop`() = runTest(mainDispatcherRule.testDispatcher) {
+        // T93: duplicate review navigates to merge with BOTH contacts known;
+        // setPair + loadPreview must fire the preview immediately.
+        coEvery { mergeRepository.preview(any()) } returns Result.success(
+            ContactMergePreviewResponse(keepId = 1, mergeId = 2, resolution = ContactMergeResolution()),
+        )
+
+        val vm = viewModel()
+        vm.setPair(1, 2)
+        vm.loadPreview()
+        advanceUntilIdle()
+
+        assertEquals(2L, vm.uiState.value.preview?.mergeId)
+        coVerify { mergeRepository.preview(match { it.keepId == 1L && it.mergeId == 2L }) }
+    }
+
     // T112: web T101 parity — the server search is deliberately broad (name +
     // email + phone + address + FTS), so a page can contain a contact matched
     // only on an unrelated field. The merge picker must not offer it, and must

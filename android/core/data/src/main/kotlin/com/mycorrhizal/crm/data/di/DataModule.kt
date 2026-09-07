@@ -26,6 +26,9 @@ import com.mycorrhizal.crm.data.local.RoomPassphraseStore
 import com.mycorrhizal.crm.data.repository.ActivityRepositoryImpl
 import com.mycorrhizal.crm.data.repository.AuditRepositoryImpl
 import com.mycorrhizal.crm.data.repository.AuthRepositoryImpl
+import com.mycorrhizal.crm.data.repository.AttachmentRepositoryImpl
+import com.mycorrhizal.crm.data.repository.DuplicateRepositoryImpl
+import com.mycorrhizal.crm.data.repository.ExportRepositoryImpl
 import com.mycorrhizal.crm.data.repository.SystemEventRepositoryImpl
 import com.mycorrhizal.crm.data.repository.CadencePolicyRepositoryImpl
 import com.mycorrhizal.crm.data.repository.CircleRepositoryImpl
@@ -35,6 +38,7 @@ import com.mycorrhizal.crm.data.repository.ImmichRepositoryImpl
 import com.mycorrhizal.crm.data.repository.NextcloudRepositoryImpl
 import com.mycorrhizal.crm.data.repository.PaperlessRepositoryImpl
 import com.mycorrhizal.crm.data.repository.SeafileRepositoryImpl
+import com.mycorrhizal.crm.data.repository.ServerCompatibilityRepositoryImpl
 import com.mycorrhizal.crm.data.repository.ContactRepositoryImpl
 import com.mycorrhizal.crm.data.repository.ContactShareRepositoryImpl
 import com.mycorrhizal.crm.data.repository.ConversationAgendaRepositoryImpl
@@ -68,6 +72,9 @@ import com.mycorrhizal.crm.data.session.TokenStorage
 import com.mycorrhizal.crm.domain.repository.ActivityRepository
 import com.mycorrhizal.crm.domain.repository.AuditRepository
 import com.mycorrhizal.crm.domain.repository.AuthRepository
+import com.mycorrhizal.crm.domain.repository.AttachmentRepository
+import com.mycorrhizal.crm.domain.repository.DuplicateRepository
+import com.mycorrhizal.crm.domain.repository.ExportRepository
 import com.mycorrhizal.crm.domain.repository.SystemEventRepository
 import com.mycorrhizal.crm.domain.repository.BulkOperationRepository
 import com.mycorrhizal.crm.domain.repository.CadencePolicyRepository
@@ -78,6 +85,7 @@ import com.mycorrhizal.crm.domain.repository.ImmichRepository
 import com.mycorrhizal.crm.domain.repository.NextcloudRepository
 import com.mycorrhizal.crm.domain.repository.PaperlessRepository
 import com.mycorrhizal.crm.domain.repository.SeafileRepository
+import com.mycorrhizal.crm.domain.repository.ServerCompatibilityRepository
 import com.mycorrhizal.crm.domain.repository.ContactRepository
 import com.mycorrhizal.crm.domain.repository.ContactShareRepository
 import com.mycorrhizal.crm.domain.repository.ConversationAgendaRepository
@@ -415,6 +423,18 @@ abstract class DataBindsModule {
 
     @Binds
     @Singleton
+    abstract fun bindDuplicateRepository(impl: DuplicateRepositoryImpl): DuplicateRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAttachmentRepository(impl: AttachmentRepositoryImpl): AttachmentRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindExportRepository(impl: ExportRepositoryImpl): ExportRepository
+
+    @Binds
+    @Singleton
     abstract fun bindPendingInteractionRepository(impl: PendingInteractionRepositoryImpl): PendingInteractionRepository
 
     @Binds
@@ -440,6 +460,12 @@ abstract class DataBindsModule {
     @Binds
     @Singleton
     abstract fun bindNextcloudRepository(impl: NextcloudRepositoryImpl): NextcloudRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindServerCompatibilityRepository(
+        impl: ServerCompatibilityRepositoryImpl,
+    ): ServerCompatibilityRepository
 
     @Binds
     @Singleton
