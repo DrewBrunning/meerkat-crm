@@ -438,6 +438,14 @@
     <string name="app_lock_unlock">Déverrouiller</string>
     <string name="app_lock_auth_failed">Impossible de déverrouiller. Veuillez réessayer.</string>
     <string name="app_lock_unsupported">Le déverrouillage par empreinte, visage ou code PIN n\'est pas disponible sur cet appareil. Déconnectez-vous pour vous connecter avec votre mot de passe.</string>
+    <!-- Compatibilité app/serveur (issue #528) -->
+    <string name="force_update_heading">Mise à jour requise</string>
+    <string name="force_update_message">Ce serveur exige Mycorrhizal %1$s ou plus récent. Vous utilisez la version %2$s, que ce serveur ne prend plus en charge.</string>
+    <string name="force_update_server">Serveur : %1$s</string>
+    <string name="force_update_instructions">Mettez à jour l\'application Mycorrhizal pour continuer à utiliser ce serveur. Si vous avez installé l\'application depuis un lien de téléchargement ou un canal de mises à jour, installez la version la plus récente qu\'il propose.</string>
+    <string name="server_outdated_notice_message">Ce serveur exécute la version %1$s, plus ancienne que cette application (version %2$s). Certaines fonctions peuvent ne pas fonctionner tant que le serveur n\'est pas mis à jour.</string>
+    <string name="server_outdated_notice_dismiss">Ignorer</string>
+
     <!-- Connexion biométrique (issue #722) -->
     <string name="biometric_enroll_dialog_title">Se connecter avec la biométrie ?</string>
     <string name="biometric_enroll_dialog_body">Utilisez votre empreinte, votre visage ou votre code PIN pour déverrouiller cette app au lieu de saisir votre mot de passe la prochaine fois.</string>

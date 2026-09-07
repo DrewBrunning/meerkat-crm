@@ -1,0 +1,51 @@
+# Mycorrhizal CRM Docker Compose - client/server compatibility E2E backend
+#
+# Issue #528: a second all-in-one backend, on port 7301, that advertises a
+# client floor ABOVE the debug APK's versionName (0.1.0). The instrumented
+# suite's main backend (docker-compose.test.yml, port 7300) reports no floor,
+# which is the policy's default posture; ForceUpdateGateE2ETest drives the real
+# app against THIS instance to pin the blocking force-update screen.
+#
+# Reuses the same `mycorrhizal-crm-test:latest` image the E2E job already
+# builds — no second image build. It is a separate compose project so it does
+# not collide with the main test backend's container/volume names.
+#
+# USAGE (CI):
+#   docker compose -p mycorrhizal-compat -f docker-compose.compat-test.yml up -d
+#   adb reverse tcp:7301 tcp:7301
+#   docker compose -p mycorrhizal-compat -f docker-compose.compat-test.yml down -v
+
+services:
+  mycorrhizal-compat:
+    image: mycorrhizal-crm-test:latest
+    container_name: mycorrhizal-compat-test
+    environment:
+      - SQLITE_DB_PATH=/app/data/compat.db
+      - JWT_SECRET_KEY=test-secret-key-for-e2e-testing-minimum-32-chars
+      - PROFILE_PHOTO_DIR=/app/static/photos
+      - ATTACHMENTS_DIR=/app/static/attachments
+      - FRONTEND_URL=http://localhost:7301
+      - DISABLE_REGISTRATION=false
+      # The load-bearing difference from docker-compose.test.yml: declare a
+      # client floor above the debug APK's versionName (0.1.0).
+      - MIN_CLIENT_VERSION=0.9.0
+      - API_RATE_LIMIT_INTERVAL_MS=1
+      - API_RATE_LIMIT_BURST=100000
+      - DB_RESTORE_DRILL_ENABLED=false
+    volumes:
+      - compat-test-data:/app/data
+      - compat-test-photos:/app/static/photos
+      - compat-test-attachments:/app/static/attachments
+    ports:
+      - "7301:8080"
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:8080/health/live"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+      start_period: 5s
+
+volumes:
+  compat-test-data:
+  compat-test-photos:
+  compat-test-attachments:

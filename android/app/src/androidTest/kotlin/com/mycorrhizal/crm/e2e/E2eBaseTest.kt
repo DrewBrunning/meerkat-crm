@@ -153,13 +153,16 @@ abstract class E2eBaseTest {
         waitForText("Sign in")
     }
 
-    /** Drives the real login screen. */
+    /** Drives the real login screen. [serverUrl] defaults to the suite's
+     *  configured backend; a targeted test (e.g. the issue #528 force-update
+     *  suite) can point a login at a different backend instance. */
     protected fun loginViaUi(
+        serverUrl: String = E2eConfig.serverUrl,
         username: String = E2eConfig.SEED_USERNAME,
         password: String = E2eConfig.SEED_PASSWORD,
     ) {
         waitForText("Sign in")
-        replaceTextInField("Server URL", E2eConfig.serverUrl)
+        replaceTextInField("Server URL", serverUrl)
         replaceTextInField("Username or email", username)
         // "Password" also labels the mode-segmented button, so the editable
         // field needs the SetText disambiguation (LoginScreenTest's idiom).

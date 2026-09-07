@@ -456,6 +456,14 @@
     <string name="app_lock_unlock">Unlock</string>
     <string name="app_lock_auth_failed">Couldn\'t unlock. Please try again.</string>
     <string name="app_lock_unsupported">Fingerprint, face or device PIN unlock is not available on this device. Log out to sign in with your password.</string>
+    <!-- Client/server compatibility (issue #528) -->
+    <string name="force_update_heading">Update required</string>
+    <string name="force_update_message">This server requires Mycorrhizal version %1$s or newer. You are running version %2$s, which this server no longer supports.</string>
+    <string name="force_update_server">Server: %1$s</string>
+    <string name="force_update_instructions">Update the Mycorrhizal app to keep using this server. If you installed this app from a download link or an app-update channel, install the newest version it offers.</string>
+    <string name="server_outdated_notice_message">This server is running version %1$s, which is older than this app (version %2$s). Some features may not work until the server is upgraded.</string>
+    <string name="server_outdated_notice_dismiss">Dismiss</string>
+
 
     <!-- Biometric sign-in enrollment (issue #722) -->
     <string name="biometric_enroll_dialog_title">Sign in with biometrics?</string>

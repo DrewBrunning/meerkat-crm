@@ -38,13 +38,28 @@ import (
 // fields are retained for backward compatibility with the pre-split endpoint;
 // the per-facet breakdown is under checks.
 type HealthResponse struct {
-	Status    string              `json:"status"` // healthy | degraded | unhealthy
-	Timestamp string              `json:"timestamp"`
-	Database  DatabaseHealth      `json:"database"`
-	Version   string              `json:"version"`
-	Commit    string              `json:"commit,omitempty"`
-	BuildDate string              `json:"build_date,omitempty"`
-	Checks    services.DeepHealth `json:"checks"`
+	Status    string         `json:"status"` // healthy | degraded | unhealthy
+	Timestamp string         `json:"timestamp"`
+	Database  DatabaseHealth `json:"database"`
+	Version   string         `json:"version"`
+	Commit    string         `json:"commit,omitempty"`
+	BuildDate string         `json:"build_date,omitempty"`
+	// MinClientVersion is the oldest client versionName this server still
+	// supports, declared via the MIN_CLIENT_VERSION env knob. Absent (the
+	// default) means no floor has ever been raised — every released client
+	// stays compatible (docs/client-compatibility-policy.md, issue #528).
+	// It is a MAINT-02 breaking-change surface: a floor moves only when a
+	// genuinely breaking API change strands older clients.
+	MinClientVersion string `json:"min_client_version,omitempty"`
+	// APIContractVersion is the API contract generation this server speaks.
+	// "v1" while the API is on /api/v1; it exists so a future "v2" can be
+	// announced here before any client is required to react to it
+	// (docs/client-compatibility-policy.md §The API versioning promise).
+	// Deliberately not omitempty: it is part of the compatibility contract
+	// and must always be present so a client can distinguish "v1" from a
+	// server that predates the field entirely.
+	APIContractVersion string              `json:"api_contract_version"`
+	Checks             services.DeepHealth `json:"checks"`
 }
 
 // DatabaseHealth represents the database health status
@@ -163,6 +178,13 @@ func readinessFilesystem(c *gin.Context) ReadinessCheckDetail {
 	return ReadinessCheckDetail{Status: "ok"}
 }
 
+// apiContractVersion is the API contract generation the current route table
+// speaks (routes.go registers the whole surface under /api/v1). Kept as a
+// single documented constant next to the response field it populates:
+// changing it announces a new contract generation on GET /health before any
+// client is required to react to it (docs/client-compatibility-policy.md).
+const apiContractVersion = "v1"
+
 // HealthCheck handles the deep health check endpoint, GET /health.
 func HealthCheck(c *gin.Context) {
 	db, _ := dbFromContext(c)
@@ -185,13 +207,15 @@ func HealthCheck(c *gin.Context) {
 
 	build := buildinfo.Get()
 	c.JSON(httpStatus, HealthResponse{
-		Status:    deep.Status,
-		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Database:  dbHealth,
-		Version:   build.Version,
-		Commit:    build.Commit,
-		BuildDate: build.BuildDate,
-		Checks:    deep,
+		Status:             deep.Status,
+		Timestamp:          time.Now().UTC().Format(time.RFC3339),
+		Database:           dbHealth,
+		Version:            build.Version,
+		Commit:             build.Commit,
+		BuildDate:          build.BuildDate,
+		MinClientVersion:   cfg.MinClientVersion,
+		APIContractVersion: apiContractVersion,
+		Checks:             deep,
 	})
 }
 

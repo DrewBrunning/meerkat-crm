@@ -438,6 +438,14 @@
     <string name="app_lock_unlock">Desbloquear</string>
     <string name="app_lock_auth_failed">No se pudo desbloquear. Inténtalo de nuevo.</string>
     <string name="app_lock_unsupported">El desbloqueo con huella, rostro o PIN no está disponible en este dispositivo. Cierra la sesión para iniciarla con tu contraseña.</string>
+    <!-- Compatibilidad entre app y servidor (issue #528) -->
+    <string name="force_update_heading">Actualización necesaria</string>
+    <string name="force_update_message">Este servidor requiere Mycorrhizal %1$s o superior. Estás usando la versión %2$s, que este servidor ya no admite.</string>
+    <string name="force_update_server">Servidor: %1$s</string>
+    <string name="force_update_instructions">Actualiza la app de Mycorrhizal para seguir usando este servidor. Si instalaste la app desde un enlace de descarga o un canal de actualizaciones, instala la versión más reciente que ofrezca.</string>
+    <string name="server_outdated_notice_message">Este servidor ejecuta la versión %1$s, más antigua que esta app (versión %2$s). Es posible que algunas funciones no funcionen hasta que se actualice el servidor.</string>
+    <string name="server_outdated_notice_dismiss">Descartar</string>
+
     <!-- Inicio de sesión biométrico (issue #722) -->
     <string name="biometric_enroll_dialog_title">¿Iniciar sesión con biometría?</string>
     <string name="biometric_enroll_dialog_body">Usa tu huella, rostro o PIN del dispositivo para desbloquear esta app en lugar de escribir tu contraseña la próxima vez.</string>

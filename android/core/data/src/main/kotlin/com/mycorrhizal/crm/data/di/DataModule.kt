@@ -35,6 +35,7 @@ import com.mycorrhizal.crm.data.repository.ImmichRepositoryImpl
 import com.mycorrhizal.crm.data.repository.NextcloudRepositoryImpl
 import com.mycorrhizal.crm.data.repository.PaperlessRepositoryImpl
 import com.mycorrhizal.crm.data.repository.SeafileRepositoryImpl
+import com.mycorrhizal.crm.data.repository.ServerCompatibilityRepositoryImpl
 import com.mycorrhizal.crm.data.repository.ContactRepositoryImpl
 import com.mycorrhizal.crm.data.repository.ContactShareRepositoryImpl
 import com.mycorrhizal.crm.data.repository.ConversationAgendaRepositoryImpl
@@ -78,6 +79,7 @@ import com.mycorrhizal.crm.domain.repository.ImmichRepository
 import com.mycorrhizal.crm.domain.repository.NextcloudRepository
 import com.mycorrhizal.crm.domain.repository.PaperlessRepository
 import com.mycorrhizal.crm.domain.repository.SeafileRepository
+import com.mycorrhizal.crm.domain.repository.ServerCompatibilityRepository
 import com.mycorrhizal.crm.domain.repository.ContactRepository
 import com.mycorrhizal.crm.domain.repository.ContactShareRepository
 import com.mycorrhizal.crm.domain.repository.ConversationAgendaRepository
@@ -440,6 +442,12 @@ abstract class DataBindsModule {
     @Binds
     @Singleton
     abstract fun bindNextcloudRepository(impl: NextcloudRepositoryImpl): NextcloudRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindServerCompatibilityRepository(
+        impl: ServerCompatibilityRepositoryImpl,
+    ): ServerCompatibilityRepository
 
     @Binds
     @Singleton

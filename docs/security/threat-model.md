@@ -68,7 +68,7 @@ browser → API → database → filesystem → integrations → Android local D
 
 | Hop | Enforced by |
 |---|---|
-| browser → API | TLS at the operator's reverse proxy (`docs/deployment.md:32`); CORS strict origin allowlist, `"*"` refused in release (`backend/main.go:429-447`, `backend/config/config.go:649-660`); CSP/HSTS/`nosniff`/frame-ancestors (`backend/middleware/security_headers.go`) |
+| browser → API | TLS at the operator's reverse proxy (`docs/deployment.md:32`); CORS strict origin allowlist, `"*"` refused in release (`backend/main.go:429-447`, `backend/config/config.go:681-692`); CSP/HSTS/`nosniff`/frame-ancestors (`backend/middleware/security_headers.go`) |
 | API → database | Every query AND-scoped by `user_id`/`VCardUID` (`asvs-l2.md` V4, API1); parameterized SQL only (V5.3.4) |
 | API → filesystem | UUID filenames, traversal guards, 0700/0750 perms (`asvs-l2.md` V12.3–V12.4) |
 | API → integrations | Public-IP-only SSRF dialer with DNS-rebinding pinning, per-service opt-in (`backend/httputil/safedial.go:27-47`, `asvs-l2.md` V5.2.6/API7) |
@@ -134,7 +134,7 @@ owns the disk), not left unprotected relative to some higher bar.
 ### 2. JWT key management (ASVS V6.4.1)
 
 **Keep — env var + boot-time validation + revocation, not a vault.** `JWT_SECRET_KEY` is validated at
-boot for length (≥ 32 bytes), placeholder rejection, and minimum entropy (`backend/config/config.go:399-427`).
+boot for length (≥ 32 bytes), placeholder rejection, and minimum entropy (`backend/config/config.go:434-501`).
 There is no key-vault/KMS (`asvs-l2.md` V1.6.2 — not-applicable, self-hosted single process). Rotation
 works via `TokenVersion`: bumping it invalidates every existing session immediately
 (`backend/middleware/auth.go:141-154`); rotating the key itself is a restart with a new env var, at the

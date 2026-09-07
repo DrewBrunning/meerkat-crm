@@ -438,6 +438,14 @@
     <string name="app_lock_unlock">Entsperren</string>
     <string name="app_lock_auth_failed">Entsperren fehlgeschlagen. Bitte versuche es erneut.</string>
     <string name="app_lock_unsupported">Fingerabdruck-, Gesichts- oder Geräte-PIN-Entsperrung ist auf diesem Gerät nicht verfügbar. Melde dich ab, um dich mit deinem Passwort anzumelden.</string>
+    <!-- Kompatibilität zwischen App und Server (issue #528) -->
+    <string name="force_update_heading">Update erforderlich</string>
+    <string name="force_update_message">Dieser Server benötigt Mycorrhizal-Version %1$s oder neuer. Du verwendest Version %2$s, die dieser Server nicht mehr unterstützt.</string>
+    <string name="force_update_server">Server: %1$s</string>
+    <string name="force_update_instructions">Aktualisiere die Mycorrhizal-App, um diesen Server weiter nutzen zu können. Falls du die App über einen Download-Link oder einen Update-Kanal installiert hast, installiere die neueste dort angebotene Version.</string>
+    <string name="server_outdated_notice_message">Dieser Server läuft mit Version %1$s, die älter ist als diese App (Version %2$s). Einige Funktionen funktionieren möglicherweise erst, wenn der Server aktualisiert wurde.</string>
+    <string name="server_outdated_notice_dismiss">Verwerfen</string>
+
     <!-- Biometrische Anmeldung (issue #722) -->
     <string name="biometric_enroll_dialog_title">Mit Biometrie anmelden?</string>
     <string name="biometric_enroll_dialog_body">Verwende beim nächsten Mal deinen Fingerabdruck, dein Gesicht oder deine Geräte-PIN, um diese App zu entsperren, statt dein Passwort einzutippen.</string>

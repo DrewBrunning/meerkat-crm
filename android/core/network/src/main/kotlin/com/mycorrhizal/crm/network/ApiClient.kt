@@ -156,6 +156,7 @@ import com.mycorrhizal.crm.model.network.RelationshipEdgesPage
 import com.mycorrhizal.crm.model.network.Reminder
 import com.mycorrhizal.crm.model.network.ReminderCompleteResponse
 import com.mycorrhizal.crm.model.network.SearchResult
+import com.mycorrhizal.crm.model.network.ServerHealth
 import com.mycorrhizal.crm.model.network.Tag
 import com.mycorrhizal.crm.model.network.TagDetailResponse
 import com.mycorrhizal.crm.model.network.TagInput
@@ -329,6 +330,19 @@ class ApiClient(
     suspend fun getAuthConfig(): Result<AuthConfig> =
         executeGet("$PLACEHOLDER_ORIGIN$AUTH_CONFIG_PATH") { _, body ->
             moshi.adapter(AuthConfig::class.java).fromJson(body)
+        }
+
+    /**
+     * GET /health — public, unauthenticated, unversioned. The single source of
+     * truth for the server version on this client (issue #528): the body
+     * carries the server's own build version plus the compatibility contract
+     * fields (`min_client_version` / `api_contract_version`). Fetched once per
+     * session; any failure fails open to "compatible" (the policy's fail-open
+     * rule), so callers must not treat this as a hard dependency.
+     */
+    suspend fun getHealth(): Result<ServerHealth> =
+        executeGet("$PLACEHOLDER_ORIGIN$HEALTH_PATH") { _, body ->
+            moshi.adapter(ServerHealth::class.java).fromJson(body)
         }
 
     // M26: account creation + password reset. All public and rate-limited
@@ -2098,6 +2112,8 @@ class ApiClient(
         private const val LOGIN_2FA_PATH = "$API_V1/login/2fa"
         private const val TWO_FACTOR_PATH = "$API_V1/users/2fa"
         private const val AUTH_CONFIG_PATH = "$API_V1/auth/oidc/config"
+        /** Unversioned public health surface (issue #528) — /health is NOT under /api/v1. */
+        private const val HEALTH_PATH = "/health"
         private const val ME_PATH = "$API_V1/users/me"
         private const val REGISTER_PATH = "$API_V1/register"
         private const val CHECK_PASSWORD_STRENGTH_PATH = "$API_V1/check-password-strength"
