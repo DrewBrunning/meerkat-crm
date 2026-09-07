@@ -3,4 +3,7 @@
      via FileProvider; this grants the share-target a scoped read on exactly those files. -->
 <paths>
     <cache-path name="exports" path="exports/" />
+    <!-- N7: downloaded contact attachments are written to the app's cache
+         (attachments/ subdir) and opened via FileProvider with a scoped read. -->
+    <cache-path name="attachments" path="attachments/" />
 </paths>

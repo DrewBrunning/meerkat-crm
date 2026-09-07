@@ -26,6 +26,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.outlined.Add
 import androidx.compose.material.icons.outlined.Checklist
 import androidx.compose.material.icons.outlined.Close
+import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.ExpandLess
 import androidx.compose.material.icons.outlined.ExpandMore
 import androidx.compose.material.icons.outlined.Menu
@@ -103,6 +104,9 @@ fun ContactListScreen(
     // replaces the drawer), which hides the hamburger.
     onMenuClick: (() -> Unit)? = {},
     onImportContacts: () -> Unit = {},
+    // T93 (issue #710): opens the duplicate-review surface (web's "Review
+    // duplicates" button on the contacts page).
+    onReviewDuplicates: () -> Unit = {},
     viewModel: ContactListViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -145,6 +149,7 @@ fun ContactListScreen(
         onCreateContact = onCreateContact,
         onMenuClick = onMenuClick,
         onImportContacts = onImportContacts,
+        onReviewDuplicates = onReviewDuplicates,
         onErrorShown = viewModel::onErrorShown,
         onLoadMore = viewModel::loadNextPage,
     )
@@ -173,6 +178,7 @@ fun ContactListScreenContent(
     // Issue #150: see ContactListScreen — null hides the hamburger (no drawer).
     onMenuClick: (() -> Unit)? = {},
     onImportContacts: () -> Unit = {},
+    onReviewDuplicates: () -> Unit = {},
     onErrorShown: () -> Unit = {},
     onLoadMore: () -> Unit = {},
 ) {
@@ -252,6 +258,18 @@ fun ContactListScreenContent(
                             )
                         }
                     } else {
+                        // T93: duplicate review (web's "Review duplicates"
+                        // button) — only meaningful outside selection mode.
+                        AccessibleIconButton(
+                            onClick = onReviewDuplicates,
+                            modifier = Modifier.testTag("review-duplicates"),
+                        ) {
+                            Icon(
+                                Icons.Outlined.ContentCopy,
+                                contentDescription = stringResource(R.string.duplicates_title),
+                                tint = MaterialTheme.colorScheme.onPrimary,
+                            )
+                        }
                         AccessibleIconButton(
                             onClick = { selectMode = true },
                             modifier = Modifier.testTag("enter-select-mode"),

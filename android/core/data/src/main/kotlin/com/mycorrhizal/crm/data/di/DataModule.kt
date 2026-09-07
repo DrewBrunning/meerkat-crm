@@ -26,6 +26,9 @@ import com.mycorrhizal.crm.data.local.RoomPassphraseStore
 import com.mycorrhizal.crm.data.repository.ActivityRepositoryImpl
 import com.mycorrhizal.crm.data.repository.AuditRepositoryImpl
 import com.mycorrhizal.crm.data.repository.AuthRepositoryImpl
+import com.mycorrhizal.crm.data.repository.AttachmentRepositoryImpl
+import com.mycorrhizal.crm.data.repository.DuplicateRepositoryImpl
+import com.mycorrhizal.crm.data.repository.ExportRepositoryImpl
 import com.mycorrhizal.crm.data.repository.SystemEventRepositoryImpl
 import com.mycorrhizal.crm.data.repository.CadencePolicyRepositoryImpl
 import com.mycorrhizal.crm.data.repository.CircleRepositoryImpl
@@ -69,6 +72,9 @@ import com.mycorrhizal.crm.data.session.TokenStorage
 import com.mycorrhizal.crm.domain.repository.ActivityRepository
 import com.mycorrhizal.crm.domain.repository.AuditRepository
 import com.mycorrhizal.crm.domain.repository.AuthRepository
+import com.mycorrhizal.crm.domain.repository.AttachmentRepository
+import com.mycorrhizal.crm.domain.repository.DuplicateRepository
+import com.mycorrhizal.crm.domain.repository.ExportRepository
 import com.mycorrhizal.crm.domain.repository.SystemEventRepository
 import com.mycorrhizal.crm.domain.repository.BulkOperationRepository
 import com.mycorrhizal.crm.domain.repository.CadencePolicyRepository
@@ -414,6 +420,18 @@ abstract class DataBindsModule {
     @Binds
     @Singleton
     abstract fun bindBulkOperationRepository(impl: BulkOperationRepositoryImpl): BulkOperationRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindDuplicateRepository(impl: DuplicateRepositoryImpl): DuplicateRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindAttachmentRepository(impl: AttachmentRepositoryImpl): AttachmentRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindExportRepository(impl: ExportRepositoryImpl): ExportRepository
 
     @Binds
     @Singleton

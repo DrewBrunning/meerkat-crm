@@ -4162,4 +4162,187 @@ class ApiClientTest {
         assertTrue(error is ApiError.Client)
         assertEquals(403, (error as ApiError.Client).code)
     }
+
+    // --- T93 duplicate scan (issue #710, web parity) ---
+
+    @Test
+    fun `listDuplicatePairs sends the page query and parses pairs`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """
+                {
+                  "pairs": [
+                    {
+                      "a": {"id": 1, "uid": "uid-a", "firstname": "Dana", "lastname": "White"},
+                      "b": {"id": 2, "uid": "uid-b", "firstname": "Dan", "lastname": "White"},
+                      "reasons": ["email", "name"],
+                      "confidence": 0.85
+                    }
+                  ],
+                  "total": 1, "page": 1, "limit": 100
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val result = client.listDuplicatePairs(page = 1, limit = 100)
+
+        assertTrue(result.isSuccess)
+        val response = result.getOrThrow()
+        assertEquals(1, response.pairs.size)
+        assertEquals("uid-a", response.pairs[0].a.uid)
+        assertEquals(listOf("email", "name"), response.pairs[0].reasons)
+        assertEquals(0.85, response.pairs[0].confidence, 0.0001)
+        assertEquals(1, response.total)
+
+        val request = server.takeRequest()
+        assertEquals("GET", request.method)
+        assertEquals("/api/v1/contacts/duplicates?page=1&limit=100", request.path)
+    }
+
+    @Test
+    fun `dismissDuplicatePair posts the ordered uid pair`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"message":"Pair dismissed"}"""))
+
+        val result = client.dismissDuplicatePair("uid-a", "uid-b")
+
+        assertTrue(result.isSuccess)
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/api/v1/contacts/duplicates/dismiss", request.path)
+        val body = request.body.readUtf8()
+        assertTrue(body.contains("\"uid_a\":\"uid-a\""))
+        assertTrue(body.contains("\"uid_b\":\"uid-b\""))
+    }
+
+    @Test
+    fun `listDuplicatePairs failure maps to the backend error`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(401).setBody(
+                """{"error":{"code":"unauthorized","message":"Not authenticated"}}""",
+            ),
+        )
+
+        val result = client.listDuplicatePairs()
+
+        assertTrue(result.isFailure)
+        val error = result.exceptionOrNull() as ApiError
+        assertTrue(error is ApiError.Client)
+        assertEquals(401, (error as ApiError.Client).code)
+    }
+
+    // --- N7 contact attachments (issue #710, web parity) ---
+
+    @Test
+    fun `listContactAttachments parses the attachment list`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """
+                {
+                  "attachments": [
+                    {"id": 7, "contact_vcard_uid": "uid-a", "original_name": "scan.pdf",
+                     "content_type": "application/pdf", "size_bytes": 2048}
+                  ],
+                  "total": 1
+                }
+                """.trimIndent(),
+            ),
+        )
+
+        val result = client.listContactAttachments(5)
+
+        assertTrue(result.isSuccess)
+        val response = result.getOrThrow()
+        assertEquals(1, response.total)
+        assertEquals("scan.pdf", response.attachments[0].originalName)
+        assertEquals(2048L, response.attachments[0].sizeBytes)
+
+        val request = server.takeRequest()
+        assertEquals("GET", request.method)
+        assertEquals("/api/v1/contacts/5/attachments", request.path)
+    }
+
+    @Test
+    fun `uploadContactAttachment posts multipart with the file field`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(201).setBody("""{"attachment":{"id":8}}"""))
+
+        val result = client.uploadContactAttachment(5, "notes.txt", "text/plain", "hello".toByteArray())
+
+        assertTrue(result.isSuccess)
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/api/v1/contacts/5/attachments", request.path)
+        assertTrue(request.getHeader("Content-Type").orEmpty().startsWith("multipart/form-data"))
+    }
+
+    @Test
+    fun `downloadAttachment returns the raw bytes`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody("file-bytes-here"),
+        )
+
+        val result = client.downloadAttachment(7)
+
+        assertTrue(result.isSuccess)
+        assertEquals("file-bytes-here", result.getOrThrow().decodeToString())
+
+        val request = server.takeRequest()
+        assertEquals("GET", request.method)
+        assertEquals("/api/v1/attachments/7/download", request.path)
+    }
+
+    @Test
+    fun `deleteAttachment sends a DELETE to the attachment route`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"message":"deleted"}"""))
+
+        val result = client.deleteAttachment(7)
+
+        assertTrue(result.isSuccess)
+        val request = server.takeRequest()
+        assertEquals("DELETE", request.method)
+        assertEquals("/api/v1/attachments/7", request.path)
+    }
+
+    // --- Full-dataset export (issue #710, web parity) ---
+
+    @Test
+    fun `exportDataCsv returns the CSV bytes`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("CONTACTS\nalice;..." ))
+
+        val result = client.exportDataCsv()
+
+        assertTrue(result.isSuccess)
+        assertTrue(result.getOrThrow().decodeToString().startsWith("CONTACTS"))
+        val request = server.takeRequest()
+        assertEquals("/api/v1/export", request.path)
+    }
+
+    @Test
+    fun `exportAllContactsVcf hits the vcf route without vcard_uid and version 3 adds the param`() =
+        runBlocking {
+            server.enqueue(MockResponse().setResponseCode(200).setBody("BEGIN:VCARD"))
+            server.enqueue(MockResponse().setResponseCode(200).setBody("BEGIN:VCARD"))
+
+            val v4 = client.exportAllContactsVcf()
+            assertTrue(v4.isSuccess)
+            assertEquals("/api/v1/export/vcf", server.takeRequest().path)
+
+            val v3 = client.exportAllContactsVcf(version = 3)
+            assertTrue(v3.isSuccess)
+            assertEquals("/api/v1/export/vcf?version=3", server.takeRequest().path)
+        }
+
+    @Test
+    fun `exportAllContactsJsContact and exportAuditLogCsv hit their routes`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("[]"))
+        server.enqueue(MockResponse().setResponseCode(200).setBody("a,b"))
+
+        val jscontact = client.exportAllContactsJsContact()
+        assertTrue(jscontact.isSuccess)
+        assertEquals("/api/v1/export/jscontact", server.takeRequest().path)
+
+        val audit = client.exportAuditLogCsv()
+        assertTrue(audit.isSuccess)
+        assertEquals("/api/v1/audit/export", server.takeRequest().path)
+    }
 }

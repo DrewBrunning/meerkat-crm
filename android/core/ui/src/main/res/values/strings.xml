@@ -1167,6 +1167,44 @@
     <string name="bulk_result">Done: %1$d succeeded, %2$d failed.</string>
     <string name="action_confirm">Confirm</string>
 
+    <!-- T93 duplicate review (issue #710, web parity) -->
+    <string name="duplicates_title">Review duplicates</string>
+    <string name="duplicates_empty">No duplicate contacts found.</string>
+    <string name="duplicates_count">%1$d potential duplicate pair(s)</string>
+    <string name="duplicates_vs">vs</string>
+    <string name="duplicates_reason_email">Same email</string>
+    <string name="duplicates_reason_name">Same name</string>
+    <string name="duplicates_reason_phone">Same phone</string>
+    <string name="duplicates_confidence">%1$d%% match</string>
+    <string name="duplicates_merge">Merge</string>
+    <string name="duplicates_not_duplicate">Not a duplicate</string>
+    <string name="duplicates_dismiss_title">Mark as not a duplicate?</string>
+    <string name="duplicates_dismiss_body">This pair will never be offered as a duplicate again. This cannot be undone.</string>
+    <string name="duplicates_merge_title">Which contact should be kept?</string>
+    <string name="duplicates_kept_hint">The kept contact survives; the other one\'s data is merged into it.</string>
+    <string name="contact_archived">Archived</string>
+
+    <!-- N7 contact attachments (issue #710, web parity) -->
+    <string name="contact_attachments">Attachments</string>
+    <string name="attachments_upload">Add attachment</string>
+    <string name="attachments_empty">No attachments yet.</string>
+    <string name="attachments_open">Open attachment</string>
+    <string name="attachments_size">%1$s</string>
+    <string name="attachments_delete">Delete</string>
+    <string name="attachments_delete_title">Delete attachment?</string>
+    <string name="attachments_delete_body">Delete %1$s? This cannot be undone.</string>
+    <string name="attachments_size_too_large">Attachment exceeds the 25 MB limit.</string>
+
+    <!-- Dataset export (issue #710, web parity) -->
+    <string name="data_export_section">Export</string>
+    <string name="data_export_description">Download a copy of your data. Sensitive (private/secret) fields are excluded by default.</string>
+    <string name="data_export_csv">Export CSV backup</string>
+    <string name="data_export_vcard4">Export vCard 4.0</string>
+    <string name="data_export_vcard3">Export vCard 3.0</string>
+    <string name="data_export_jscontact">Export JSContact</string>
+    <string name="data_export_audit">Export audit log</string>
+    <string name="data_export_share_title">Share export</string>
+
     <!-- Import (T57) -->
     <string name="import_title">Import contacts</string>
     <string name="import_empty">No device contacts to import.</string>
