@@ -192,4 +192,22 @@ class MergeContactsScreenTest {
         assertEquals("nickname", resolvedField)
         assertEquals("Drew", resolvedValue)
     }
+
+    @Test
+    fun `a preselected duplicate-review merge echoes the other party name`() {
+        // T93: the duplicate review navigates here with BOTH contacts already
+        // chosen, so the context line names the merge target even though the
+        // search picker has nothing picked yet.
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                MergeContactsScreenContent(
+                    uiState = MergeUiState(keepId = 1, mergeId = 2),
+                    onBack = {},
+                    otherName = "Dan White",
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Will merge Dan White into the kept contact.").assertIsDisplayed()
+    }
 }

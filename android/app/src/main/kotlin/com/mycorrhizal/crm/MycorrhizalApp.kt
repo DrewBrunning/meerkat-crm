@@ -86,6 +86,8 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import com.mycorrhizal.crm.applock.AppLockScreen
+import com.mycorrhizal.crm.compat.ForceUpdateScreen
+import com.mycorrhizal.crm.compat.ServerOutdatedNotice
 import com.mycorrhizal.crm.data.session.AppLockState
 import com.mycorrhizal.crm.enroll.BiometricEnrollmentPromptHost
 import com.mycorrhizal.crm.feature.auth.LoginScreen
@@ -97,9 +99,11 @@ import com.mycorrhizal.crm.feature.cadence.CadenceScreen
 import com.mycorrhizal.crm.feature.circles.CircleDetailScreen
 import com.mycorrhizal.crm.feature.circles.CirclesScreen
 import com.mycorrhizal.crm.feature.contacts.ContactDetailScreen
+import com.mycorrhizal.crm.feature.contacts.AttachmentsScreen
 import com.mycorrhizal.crm.feature.contacts.ContactFormScreen
 import com.mycorrhizal.crm.feature.contacts.ContactListScreen
 import com.mycorrhizal.crm.feature.contacts.DashboardScreen
+import com.mycorrhizal.crm.feature.contacts.DuplicatePairsScreen
 import com.mycorrhizal.crm.feature.contacts.PrepViewScreen
 import com.mycorrhizal.crm.feature.contacts.MergeContactsScreen
 import com.mycorrhizal.crm.feature.circles.TriageScreen
@@ -240,6 +244,12 @@ fun MycorrhizalApp(
     // app-lock state is collected here so the main tree is only composed once
     // the gate has cleared (rootSurface never returns Main while Resolving).
     val appLockState by mainViewModel.appLockState.collectAsStateWithLifecycle()
+    // Issue #528: the client/server compatibility gate. When it resolves to a
+    // required force-update, the root swaps to the blocking screen; the
+    // server-outdated notice (a separate, non-blocking signal) rides on top of
+    // the main tree and is dismissed in the ViewModel.
+    val compatibilityGate by mainViewModel.compatibilityGate.collectAsStateWithLifecycle()
+    val serverOutdatedNoticeVersion by mainViewModel.serverOutdatedNoticeVersion.collectAsStateWithLifecycle()
 
     // Issue #722: the one-shot biometric-enrollment prompt fires right after
     // an interactive login (password / API token / 2FA / register auto-login),
@@ -282,7 +292,7 @@ fun MycorrhizalApp(
     // local-auth flow. While the app-lock controller is still deciding
     // (GateResolving) nothing is rendered — never a frame of the session's
     // data in front of the gate it may be about to require.
-    when (rootSurface(session.isLoggedIn, appLockState)) {
+    when (rootSurface(session.isLoggedIn, compatibilityGate, appLockState)) {
         RootSurface.Auth -> {
             // M26: the unauthenticated tree is a tiny router over the auth
             // screens — login, register, forgot-password — since they are not
@@ -336,14 +346,39 @@ fun MycorrhizalApp(
         RootSurface.AppLock -> {
             AppLockScreen()
         }
-        RootSurface.Main -> {
-            MainScaffold(
-                darkTheme = darkTheme,
-                drawerState = drawerState,
-                serverUrl = session.serverUrl.orEmpty(),
-                deepLinks = deepLinks,
-                onDeepLinkHandled = onDeepLinkHandled,
+        // Issue #528: the server declared this client version unsupported. The
+        // force-update screen is deliberately above the app-lock gate in the
+        // root ordering — it shows no session data, so there is nothing for the
+        // device's local gate to protect on it.
+        RootSurface.ForceUpdate -> {
+            val gate = compatibilityGate as? CompatibilityGate.ForceUpdate
+            ForceUpdateScreen(
+                requiredVersion = gate?.requiredVersion.orEmpty(),
+                currentVersion = BuildConfig.VERSION_NAME,
+                serverUrl = session.serverUrl,
+                onLogout = mainViewModel::logout,
             )
+        }
+        RootSurface.Main -> {
+            Column(Modifier.fillMaxSize()) {
+                val outdatedVersion = serverOutdatedNoticeVersion
+                if (outdatedVersion != null) {
+                    ServerOutdatedNotice(
+                        serverVersion = outdatedVersion,
+                        currentVersion = BuildConfig.VERSION_NAME,
+                        onDismiss = mainViewModel::onServerOutdatedNoticeDismissed,
+                    )
+                }
+                Box(Modifier.weight(1f)) {
+                    MainScaffold(
+                        darkTheme = darkTheme,
+                        drawerState = drawerState,
+                        serverUrl = session.serverUrl.orEmpty(),
+                        deepLinks = deepLinks,
+                        onDeepLinkHandled = onDeepLinkHandled,
+                    )
+                }
+            }
         }
     }
 
@@ -359,11 +394,22 @@ fun MycorrhizalApp(
  * Issue #722: where the root should go for a (session, app-lock) pair. Pure so
  * the security-critical "never render the main tree before the gate" rule is
  * unit-tested without a composable host.
+ *
+ * Issue #528: the compatibility gate is threaded through the same decision.
+ * It is checked BEFORE the app-lock state: a required force-update supersedes
+ * the local gate (the force-update screen renders no session data, so there is
+ * nothing for the device's local gate to protect). A logged-out session always
+ * shows the auth flow regardless of every other input.
  */
-internal enum class RootSurface { Auth, GateResolving, AppLock, Main }
+internal enum class RootSurface { Auth, GateResolving, AppLock, ForceUpdate, Main }
 
-internal fun rootSurface(isLoggedIn: Boolean, appLockState: AppLockState): RootSurface = when {
+internal fun rootSurface(
+    isLoggedIn: Boolean,
+    compatibilityGate: CompatibilityGate,
+    appLockState: AppLockState,
+): RootSurface = when {
     !isLoggedIn -> RootSurface.Auth
+    compatibilityGate is CompatibilityGate.ForceUpdate -> RootSurface.ForceUpdate
     appLockState == AppLockState.Resolving -> RootSurface.GateResolving
     appLockState == AppLockState.Locked -> RootSurface.AppLock
     else -> RootSurface.Main
@@ -481,6 +527,7 @@ private fun MainScaffold(
                         onContactClick = { id -> navController.navigate("contacts/$id") },
                         onCreateContact = { navController.navigate("contacts/new") },
                         onImportContacts = { navController.navigate("import") },
+                        onReviewDuplicates = { navController.navigate("duplicates") },
                         onMenuClick = null,
                     )
                 },
@@ -761,6 +808,7 @@ private fun AppNavGraph(
                     onCreateContact = { navController.navigate("contacts/new") },
                     onMenuClick = menu,
                     onImportContacts = { navController.navigate("import") },
+                    onReviewDuplicates = { navController.navigate("duplicates") },
                 )
             }
         }
@@ -783,9 +831,26 @@ private fun AppNavGraph(
             arguments = listOf(navArgument("keepId") { type = NavType.LongType }),
         ) { entry ->
             val keepId = entry.arguments?.getLong("keepId") ?: 0L
+            val mergeId = entry.arguments?.getString("mergeId")?.toLongOrNull() ?: 0L
+            val mergeName = entry.arguments?.getString("mergeName")?.let { Uri.decode(it) }
             MergeContactsScreen(
                 onBack = { navController.popBackStack() },
                 keepId = keepId,
+                mergeId = mergeId,
+                otherName = mergeName,
+            )
+        }
+        // T93 (issue #710): the duplicate-review surface, reachable from the
+        // contacts list (web's "Review duplicates"). A Merge on a pair opens
+        // the existing merge flow with both contacts preselected.
+        composable("duplicates") {
+            DuplicatePairsScreen(
+                onBack = { navController.popBackStack() },
+                onMerge = { keepId, mergeId, mergeName ->
+                    navController.navigate(
+                        "merge/$keepId?mergeId=$mergeId&mergeName=${Uri.encode(mergeName)}",
+                    )
+                },
             )
         }
         composable(
@@ -811,6 +876,7 @@ private fun AppNavGraph(
                 onViewActivities = { id -> navController.navigate("contacts/$id/activities") },
                 onViewNotes = { id -> navController.navigate("contacts/$id/notes") },
                 onViewReminders = { id -> navController.navigate("contacts/$id/reminders") },
+                onViewAttachments = { id -> navController.navigate("contacts/$id/attachments") },
                 onViewRelationships = { id -> navController.navigate("contacts/$id/relationships") },
                 onViewCadence = { id -> navController.navigate("contacts/$id/cadence") },
                 onOpenInContacts = { lookupKey ->
@@ -930,6 +996,17 @@ private fun AppNavGraph(
                 onEditReminder = { reminderId ->
                     navController.navigate("contacts/$contactId/reminders/$reminderId/edit")
                 },
+            )
+        }
+        // N7: the contact-attachments sub-screen (issue #710, web parity).
+        composable(
+            route = "contacts/{contactId}/attachments",
+            arguments = listOf(navArgument("contactId") { type = NavType.IntType }),
+        ) { entry ->
+            val contactId = entry.arguments?.getInt("contactId") ?: 0
+            AttachmentsScreen(
+                onBack = { navController.popBackStack() },
+                contactId = contactId,
             )
         }
         composable(

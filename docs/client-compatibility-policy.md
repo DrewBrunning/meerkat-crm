@@ -141,6 +141,14 @@ differently: Android renders a blocking force-update screen when its
 client prompts a reload, or forces one on contract mismatch (issue #475). Both
 read the same two fields; neither invents a parallel signal.
 
+On the server these two fields are wired in as of the v0.6.10 mechanism:
+`api_contract_version` is emitted by every `/health` as the constant `"v1"`
+while the route table is on `/api/v1`, and `min_client_version` is read from
+the `MIN_CLIENT_VERSION` environment variable — unset (the default) means the
+field is absent entirely and no floor is declared. Setting it is the MAINT-02
+event "Moving the floor" above describes, and a malformed value refuses to
+boot rather than silently failing open on clients.
+
 Both mechanisms must **fail open** on a network error or a malformed
 response: an unreachable `/health` is a routine event (the server restarting,
 a flaky connection) and must never itself brick a client into a permanent

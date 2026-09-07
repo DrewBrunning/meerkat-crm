@@ -128,6 +128,16 @@ class MergeContactsViewModel @Inject constructor(
         }
     }
 
+    /**
+     * T93: a duplicate-review merge arrives with both sides preselected. Loads
+     * the preview immediately, without the search-picker hop. Public alias of
+     * [preview] so the caller expresses intent (state is set first by
+     * [setPair]).
+     */
+    fun loadPreview() {
+        preview()
+    }
+
     fun resolve(field: String, value: String) {
         _uiState.update { it.copy(resolutions = it.resolutions + (field to value)) }
     }

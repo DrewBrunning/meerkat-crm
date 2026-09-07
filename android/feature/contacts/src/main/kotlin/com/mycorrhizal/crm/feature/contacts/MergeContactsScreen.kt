@@ -46,16 +46,25 @@ import com.mycorrhizal.crm.ui.R
 fun MergeContactsScreen(
     onBack: () -> Unit,
     keepId: Long,
+    mergeId: Long = 0,
+    otherName: String? = null,
     viewModel: MergeContactsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
 
-    LaunchedEffect(keepId) {
-        if (keepId != 0L) viewModel.setPair(keepId, 0L)
+    // T93: a duplicate-review merge arrives with BOTH contacts preselected
+    // (mergeId != 0); the detail-page entry point only supplies the keeper and
+    // leaves the target to the search picker. loadPreview() reads the state
+    // setPair() just wrote, so the two calls are order-dependent — keep them
+    // in one LaunchedEffect body.
+    LaunchedEffect(keepId, mergeId) {
+        viewModel.setPair(keepId, mergeId)
+        if (mergeId != 0L) viewModel.loadPreview()
     }
 
     MergeContactsScreenContent(
         uiState = state,
+        otherName = otherName,
         onBack = onBack,
         onSearchQueryChange = viewModel::onSearchQueryChange,
         onPick = viewModel::selectOther,
@@ -74,6 +83,7 @@ fun MergeContactsScreen(
 fun MergeContactsScreenContent(
     uiState: MergeUiState,
     onBack: () -> Unit,
+    otherName: String? = null,
     onSearchQueryChange: (String) -> Unit = {},
     onPick: (ContactSummary) -> Unit = {},
     onResolve: (String, String) -> Unit = { _, _ -> },
@@ -134,6 +144,15 @@ fun MergeContactsScreenContent(
             state.pickedOther?.let { other ->
                 Text(
                     text = stringResource(R.string.merge_picked_other, other.displayName),
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(bottom = 8.dp),
+                )
+            } ?: otherName?.let { name ->
+                // T93: the merge arrived from duplicate review with both sides
+                // preselected, so the search picker has nothing picked yet —
+                // echo the other party's name so the preview has context.
+                Text(
+                    text = stringResource(R.string.merge_picked_other, name),
                     style = MaterialTheme.typography.bodyMedium,
                     modifier = Modifier.padding(bottom = 8.dp),
                 )
