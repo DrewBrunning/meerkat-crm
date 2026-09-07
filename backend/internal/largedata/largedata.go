@@ -35,14 +35,17 @@ import (
 )
 
 // MinContacts is the smallest target ContactCount Scale accepts. Scale rounds
-// up to a whole block (15 contacts each), so anything >= MinContacts yields
+// up to a whole block (27 contacts each), so anything >= MinContacts yields
 // at least one full manifest block.
 const MinContacts = 1
 
 // BlocksOfManifest is how many contact shapes the canonical manifest carries;
 // it is the unit Scale replicates in. Kept as a constant so the round-up rule
 // (and the tests asserting it) cannot drift from the manifest itself.
-const BlocksOfManifest = 15
+//
+// 15 legacy trap/TEST-07 records + 12 I18N-01 international records (issue
+// #484) = 27; keep in lockstep with testdata/canonical-fixture/manifest.json.
+const BlocksOfManifest = 27
 
 // Scale returns a copy of m block-replicated until it has at least
 // targetContacts contacts. The copy is machine-generated: per-block comments
@@ -193,7 +196,7 @@ func appendBlock(out, m *canonicalfixture.Manifest, b int, salt string) {
 	for _, c := range m.Contacts {
 		cp := c
 		cp.Name = rw.name(c.Name)
-		cp.Comment = "" // per-block trap comments would repeat 6,667 times; they explain the hand-authored row, not the copy
+		cp.Comment = "" // per-block trap comments would repeat thousands of times; they explain the hand-authored row, not the copy
 		if cp.RecreatesVCardUIDOf != "" {
 			cp.RecreatesVCardUIDOf = rw.name(cp.RecreatesVCardUIDOf)
 		}

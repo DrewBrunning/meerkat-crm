@@ -10,14 +10,14 @@
       "expected_memory_growth": "constant",
       "profiles": {
         "smoke": {
-          "rows_touched": 140,
-          "row_scale": 300,
+          "rows_touched": 156,
+          "row_scale": 324,
           "probe_stalled_out": false,
           "output_present": true
         },
         "typical": {
-          "rows_touched": 840,
-          "row_scale": 900,
+          "rows_touched": 884,
+          "row_scale": 918,
           "probe_stalled_out": false,
           "output_present": true
         }
@@ -28,14 +28,14 @@
       "expected_memory_growth": "constant",
       "profiles": {
         "smoke": {
-          "rows_touched": 16,
-          "row_scale": 300,
+          "rows_touched": 13,
+          "row_scale": 324,
           "probe_stalled_out": false,
           "output_present": false
         },
         "typical": {
-          "rows_touched": 34,
-          "row_scale": 900,
+          "rows_touched": 35,
+          "row_scale": 918,
           "probe_stalled_out": false,
           "output_present": false
         }
@@ -46,14 +46,14 @@
       "expected_memory_growth": "superlinear",
       "profiles": {
         "smoke": {
-          "rows_touched": 370,
-          "row_scale": 300,
+          "rows_touched": 306,
+          "row_scale": 324,
           "probe_stalled_out": false,
           "output_present": false
         },
         "typical": {
-          "rows_touched": 14220,
-          "row_scale": 900,
+          "rows_touched": 11254,
+          "row_scale": 918,
           "probe_stalled_out": false,
           "output_present": false
         }
@@ -64,14 +64,14 @@
       "expected_memory_growth": "linear",
       "profiles": {
         "smoke": {
-          "rows_touched": 140,
-          "row_scale": 300,
+          "rows_touched": 156,
+          "row_scale": 324,
           "probe_stalled_out": false,
           "output_present": true
         },
         "typical": {
-          "rows_touched": 840,
-          "row_scale": 900,
+          "rows_touched": 884,
+          "row_scale": 918,
           "probe_stalled_out": false,
           "output_present": true
         }
@@ -82,14 +82,14 @@
       "expected_memory_growth": "linear",
       "profiles": {
         "smoke": {
-          "rows_touched": 140,
-          "row_scale": 300,
+          "rows_touched": 156,
+          "row_scale": 324,
           "probe_stalled_out": false,
           "output_present": true
         },
         "typical": {
-          "rows_touched": 840,
-          "row_scale": 900,
+          "rows_touched": 884,
+          "row_scale": 918,
           "probe_stalled_out": false,
           "output_present": true
         }
@@ -100,14 +100,14 @@
       "expected_memory_growth": "linear",
       "profiles": {
         "smoke": {
-          "rows_touched": 140,
-          "row_scale": 300,
+          "rows_touched": 156,
+          "row_scale": 324,
           "probe_stalled_out": false,
           "output_present": true
         },
         "typical": {
-          "rows_touched": 840,
-          "row_scale": 900,
+          "rows_touched": 884,
+          "row_scale": 918,
           "probe_stalled_out": false,
           "output_present": true
         }
@@ -118,14 +118,14 @@
       "expected_memory_growth": "constant",
       "profiles": {
         "smoke": {
-          "rows_touched": 420,
-          "row_scale": 300,
+          "rows_touched": 396,
+          "row_scale": 324,
           "probe_stalled_out": false,
           "output_present": false
         },
         "typical": {
-          "rows_touched": 1260,
-          "row_scale": 900,
+          "rows_touched": 1122,
+          "row_scale": 918,
           "probe_stalled_out": false,
           "output_present": false
         }
@@ -136,14 +136,14 @@
       "expected_memory_growth": "superlinear",
       "profiles": {
         "smoke": {
-          "rows_touched": 150,
-          "row_scale": 300,
+          "rows_touched": 162,
+          "row_scale": 324,
           "probe_stalled_out": false,
           "output_present": true
         },
         "typical": {
-          "rows_touched": 900,
-          "row_scale": 900,
+          "rows_touched": 918,
+          "row_scale": 918,
           "probe_stalled_out": false,
           "output_present": true
         }
@@ -154,14 +154,14 @@
       "expected_memory_growth": "constant",
       "profiles": {
         "smoke": {
-          "rows_touched": 300,
-          "row_scale": 300,
+          "rows_touched": 324,
+          "row_scale": 324,
           "probe_stalled_out": false,
           "output_present": true
         },
         "typical": {
-          "rows_touched": 900,
-          "row_scale": 900,
+          "rows_touched": 918,
+          "row_scale": 918,
           "probe_stalled_out": false,
           "output_present": true
         }

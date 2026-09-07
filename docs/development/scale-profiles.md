@@ -32,18 +32,22 @@ by intent.
 
 | Profile | Contacts / user | Users | Total contacts | Hub contacts | Hub fan-out | Chain depth | Rationale |
 |---|--:|--:|--:|--:|--:|--:|---|
-| `smoke`   |     150 |  2 |       300 |  2 |   8 |  6 | Tiny — exercises the graph shape, multi-user split and every pathological record fast enough to run in the default `go test` suite on every PR. Not a resource-sizing profile. |
-| `typical` |     900 |  1 |       900 |  5 |  25 | 12 | A real personal-CRM user after a few years: a few hundred contacts, one account, a handful of well-connected people. |
-| `large`   |  15,000 |  3 |    45,000 | 25 | 150 | 40 | A heavy user, or someone who imported an entire address-book history, on a small shared instance. |
-| `stress`  | 100,000 | 10 | 1,000,000 | 60 | 400 | 80 | Beyond the intended MVP scale. Its job is to find the cliff, not to promise support. |
+| `smoke`   |     162 |  2 |       324 |  2 |   8 |  6 | Tiny — exercises the graph shape, multi-user split and every pathological record fast enough to run in the default `go test` suite on every PR. Not a resource-sizing profile. |
+| `typical` |     918 |  1 |       918 |  5 |  25 | 12 | A real personal-CRM user after a few years: a few hundred contacts, one account, a handful of well-connected people. |
+| `large`   |  15,012 |  3 |    45,036 | 25 | 150 | 40 | A heavy user, or someone who imported an entire address-book history, on a small shared instance. |
+| `stress`  | 100,008 | 10 | 1,000,080 | 60 | 400 | 80 | Beyond the intended MVP scale. Its job is to find the cliff, not to promise support. |
 
 **Scaling unit.** The per-user contact count rounds up to a whole number of
-15-contact manifest blocks, so the pathological records are present at every
-scale rather than trimmed off by an off-by-one. Every block is a faithful copy
-of the whole manifest with names, card UIDs and cross-references re-keyed.
+27-contact manifest blocks (the canonical manifest carries 27 records since the
+I18N-01 international records landed, issue #484), so the pathological records
+are present at every scale rather than trimmed off by an off-by-one. Every
+block is a faithful copy of the whole manifest with names, card UIDs and
+cross-references re-keyed. The target counts above are deliberately whole
+blocks, so the round-up is exact and the populated contact count equals
+`Contacts × Users`.
 
 **The graph is not uniform.** Block replication alone yields a disconnected
-forest of identical 15-contact islands; traversal cost, though, lives in the
+forest of identical 27-contact islands; traversal cost, though, lives in the
 tails. Each profile adds, on top of the per-block edges:
 
 - **one deep chain** — the lead contact of block *i* is `parent_of` the lead
@@ -75,40 +79,41 @@ Populated counts, measured. Per-block ratios are the canonical manifest's own,
 minus the two relationship edges per block that each block's soft-deleted
 `gina` hard-deletes on cascade (exactly as `DeleteContact` does).
 
-| Entity | per block | `typical` (60 blk) | `large` (3×1,000 blk) | `stress` (10×6,667 blk) |
+| Entity | per block | `typical` (34 blk) | `large` (3×556 blk) | `stress` (10×3,704 blk) |
 |---|--:|--:|--:|--:|
-| contacts               | 15 |   900 | 45,000 | 1,000,050 |
-| relationship edges†    |  ~8 + graph |   617 | 35,370 | ~774,000 |
-| notes                  |  6 |   360 | 18,000 |   400,020 |
-| life events            |  9 |   540 | 27,000 |   600,030 |
-| gifts                  |  5 |   300 | 15,000 |   333,350 |
-| activities             |  4 |   240 | 12,000 |   266,680 |
-| attachments (metadata) |  4 |   240 | 12,000 |   266,680 |
-| preferences            |  5 |   300 | 15,000 |   333,350 |
-| external identities    |  3 |   180 |  9,000 |   200,010 |
-| custom-field values    |  7 |   420 | 21,000 |   466,690 |
-| households / circles / tags | 2 / 2 / 2 | 120 each | 6,000 each | 133,340 each |
-| **soft-deleted contacts** | 1 |  60 |  3,000 |    66,670 |
-| **vcard-uid-recreating contacts** | 1 | 60 | 3,000 | 66,670 |
-| **~1,700-char notes** | 1 |  60 |  3,000 |    66,670 |
+| contacts               | 27 |   918 | 45,036 | 1,000,080 |
+| relationship edges†    |  ~8 + graph |   409 | 24,714 | ~537,000 |
+| notes                  |  6 |   204 | 10,008 |   222,240 |
+| life events            |  9 |   306 | 15,012 |   333,360 |
+| gifts                  |  5 |   170 |  8,340 |   185,200 |
+| activities             |  4 |   136 |  6,672 |   148,160 |
+| attachments (metadata) |  4 |   136 |  6,672 |   148,160 |
+| preferences            |  5 |   170 |  8,340 |   185,200 |
+| external identities    |  3 |   102 |  5,004 |   111,120 |
+| custom-field values    |  7 |   238 | 11,676 |   259,280 |
+| households / circles / tags | 2 / 2 / 2 | 68 each | 3,336 each | 74,080 each |
+| **soft-deleted contacts** | 1 |  34 |  1,668 |    37,040 |
+| **vcard-uid-recreating contacts** | 1 | 34 | 1,668 | 37,040 |
+| **~1,700-char notes** | 1 |  34 |  1,668 |    37,040 |
 
 † `large`/`stress` edge totals include the deep chain (`ChainDepth` edges/user)
 and the hubs (`Hubs × HubFanout` edges/user). `stress` is projected from the
 per-block ratio and the graph formula, not measured — a `stress` populate is
-~1M contacts × 10 users and is not run in CI.
+~1M contacts × 10 users and is not run in CI. `typical`'s numbers are measured
+by the gated `TestProfilePopulatesAtScale`.
 
 ## Storage
 
 The fixture stores **attachment metadata only** — no file bytes have a home in
-a reviewable dataset. The `size_bytes` a manifest block declares total ~749 KB
+a reviewable dataset. The `size_bytes` a manifest block declares total ~767 KB
 across 4 rows (a 240 KB PDF, a 500 KB JPEG, an 8 KB PDF, a 1 KB text file), so
 the *declared* attachment volume is:
 
 | Profile | Attachment rows | Declared bytes | Note-text corpus |
 |---|--:|--:|--:|
-| `typical` |     240 |  ~46 MB  | ~116 KB |
-| `large`   |  12,000 |  ~2.3 GB | ~5.9 MB |
-| `stress`  | 266,680 | ~51 GB   | ~132 MB |
+| `typical` |     136 |  ~26 MB   | ~71 KB |
+| `large`   |   6,672 |  ~1.3 GB  | ~3.5 MB |
+| `stress`  | 148,160 |  ~28 GB   | ~77 MB |
 
 `#470` (backup/restore) and `#453` (restore at scale) need real bytes on disk:
 they write placeholder files sized to each row's `size_bytes` into
@@ -124,10 +129,10 @@ release note; the generation contract below is the reproducibility guarantee.
 
 | Profile | Total contacts | Generate (populate) | Final `.db` size | Notes |
 |---|--:|--:|--:|---|
-| `smoke`   |       300 | <1 s   | ~2 MB   | Per-PR suite. |
-| `typical` |       900 | ~2 s (~10 s under `-race`) | ~5.2 MB | Gated `TestProfilePopulatesAtScale`. |
-| `large`   |    45,000 | ~2 min | ~210 MB | Nightly / main. Cached as a CI artifact. |
-| `stress`  | 1,000,000 | projected ~45 min | projected ~5 GB | Not run in CI. |
+| `smoke`   |       324 | <1 s   | ~2 MB   | Per-PR suite. |
+| `typical` |       918 | ~1 s (~5 s under `-race`) | ~1.2 MB | Gated `TestProfilePopulatesAtScale`. |
+| `large`   |    45,036 | ~2 min | ~210 MB | Nightly / main. Cached as a CI artifact. |
+| `stress`  | 1,000,080 | projected ~45 min | projected ~5 GB | Not run in CI. |
 
 **Operator sizing.** A deployment should size its disk for
 `final .db size + peak additional disk during the heaviest operation`, not the

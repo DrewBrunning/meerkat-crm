@@ -21,28 +21,29 @@ and the traversal graph added on top.
 ## What "large" means (written number, not an adjective)
 
 The large migration profile is derived from the intended MVP scale and stated
-as a shape, not a size. It is **100,000 contacts**, generated as 6,667 replicas
-of the canonical TEST-02 pathological manifest (issue #430), so every data
-shape — including the pathological ones — exists at scale. The exact row counts
-are
-the canonical manifest's own ratios times 6,667 blocks:
+as a shape, not a size. It is **~100,000 contacts**, generated as 3,704 replicas
+of the canonical TEST-02 pathological manifest (issue #430; the manifest carries
+27 records since the I18N-01 international records landed, issue #484), so
+every data shape — including the pathological ones — exists at scale. The exact
+row counts are the canonical manifest's own ratios times 3,704 blocks
+(3,704 × 27 = 100,008 contacts):
 
-| Entity | Per block | At 100,000 contacts (6,667 blocks) |
+| Entity | Per block | At ~100,000 contacts (3,704 blocks) |
 |---|---|---|
-| contacts | 15 | **100,005** |
-| relationship edges | 10 | 66,670 (minus 13,334 hard-deleted with the 6,667 tombstoned contacts' cascades) |
-| notes | 6 | 40,002 |
-| life events | 9 | 60,003 |
-| gifts | 5 | 33,335 |
-| activities | 4 | 26,668 |
-| preferences | 5 | 33,335 |
-| external identities | 4 | 26,668 |
-| attachments (metadata) | 4 | 26,668 |
-| households / circles / tags | 2 / 2 / 2 | 13,334 each |
-| custom-field values | ~20 | ~133,340 |
-| **soft-deleted contacts** | 1 | **6,667** |
-| **vcard-uid-recreating contacts** | 1 | **6,667** |
-| **very-long (~1700-char) notes** | 1 | **6,667** |
+| contacts | 27 | **100,008** |
+| relationship edges | 10 → 8 | 29,632 (10 per block minus the 2 per block hard-deleted with each tombstoned contact's cascade) |
+| notes | 6 | 22,224 |
+| life events | 9 | 33,336 |
+| gifts | 5 | 18,520 |
+| activities | 4 | 14,816 |
+| preferences | 5 | 18,520 |
+| external identities | 3 | 11,112 |
+| attachments (metadata) | 4 | 14,816 |
+| households / circles / tags | 2 / 2 / 2 | 7,408 each |
+| custom-field values | 7 | 25,928 |
+| **soft-deleted contacts** | 1 | **3,704** |
+| **vcard-uid-recreating contacts** | 1 | **3,704** |
+| **very-long (~1700-char) notes** | 1 | **3,704** |
 
 The pathological records are present at scale, not just plain ones: each block
 carries the soft-deleted `gina` + `julie`-recreates-her-uid pair (the partial
@@ -50,7 +51,7 @@ unique index `idx_contacts_vcard_uid_user`), the very-long note, the Unicode
 data, the duplicate-detection pair, and the sensitive records. A migration or
 exporter that mishandles any trap at canonical size does the same at 100k.
 
-The scaling unit is the **manifest block** (15 contacts + their derived
+The scaling unit is the **manifest block** (27 contacts + their derived
 content). `internal/largedata.Scale(manifest, N)` rounds `N` up to a whole
 number of blocks, so the scaled dataset is always an exact integer multiple of
 the pathological manifest — never a trimmed copy that accidentally drops the
@@ -128,6 +129,13 @@ methodology above is the reproducibility contract.
 | v0.6.0 → current | 20,010 | ~1.2 s | ~32 MB | ~33 MB | ~91 MB |
 | v0.6.0 → current | 100,005 | ~6.5 s | ~35 MB | **~184 MB** | ~450 MB |
 
+> These figures were recorded against the pre-I18N-01 manifest (15-record
+> blocks, issue #484). The canonical manifest now carries 27 records, so the
+> `--contacts` targets round to different actual row counts (2,000 → 2,025,
+> 100,000 → 100,008) and every row-touching migration touches a different row
+> distribution. Re-run `migratebench measure` below and update the table before
+> quoting any number from it.
+
 Seed and checkpoint cost at the same sizes (build-time, one-off): 2,010
 contacts ≈ 2.4 s seed / 0.25 s checkpoint; 10,005 ≈ 18 s / 1.1 s; 20,010 ≈
 55 s / 2.2 s; 100,005 ≈ **17.6 min seed** / 12 s checkpoint. The seed at full
@@ -188,7 +196,7 @@ memory cap; the assertion to hold is the same: non-zero exit, then
 
 - **In-process** (`internal/schemafixture`'s
   `TestLargeDatasetInterruptedMigrationFailsClosed`): an armed fault at the
-  migration statement seam fails the first pending migration on a 2,010-contact
+  migration statement seam fails the first pending migration on a 2,025-contact
   floor database, and the test asserts the full MIG-04 dance — dirty at the
   interrupted version, integrity ok, restart refuses with the typed
   `ErrDirtyMigration` naming restore-from-backup, and the operator-only
@@ -227,7 +235,7 @@ distinguishable from a working one (`database/migrate.go`,
 ## Where the tests run
 
 The heavy scale tests are gated behind `MYCORRHIZAL_LARGE_TESTS=1` and
-**skipped** in the default Go suite: at 2,010 contacts each they take minutes
+**skipped** in the default Go suite: at 2,025 contacts each they take minutes
 under `-race`, which every PR would pay. The named migration-tests
 `large-dataset` job sets the variable and runs them on a main merge and
 nightly with a 60-minute timeout. The fast pieces (the generator's pure-manifest
@@ -236,7 +244,7 @@ tests, the migration-progress test) run in the normal suite on every PR.
 | Test | Location | CI |
 |---|---|---|
 | Generator units (scaling, validation, pathological-at-scale) | `internal/largedata` | rest leg (every PR) |
-| Generator populate at 2,010 contacts | `internal/largedata` `TestScalePopulatesLargeDataset` | migration-tests `large-dataset` job (main merge + nightly, `MYCORRHIZAL_LARGE_TESTS=1`) |
+| Generator populate at 2,000 contacts (2,025 after block round-up) | `internal/largedata` `TestScalePopulatesLargeDataset` | migration-tests `large-dataset` job (main merge + nightly, `MYCORRHIZAL_LARGE_TESTS=1`) |
 | Upgrade every supported release at scale (row counts + integrity) | `internal/schemafixture/large_mig_test.go` | migration-tests `large-dataset` job (main merge + nightly) |
 | Interrupted migration fails closed at scale | `internal/schemafixture` | migration-tests `large-dataset` job (main merge + nightly) |
 | Backup restores at scale | `internal/schemafixture` | migration-tests `large-dataset` job (main merge + nightly) |
