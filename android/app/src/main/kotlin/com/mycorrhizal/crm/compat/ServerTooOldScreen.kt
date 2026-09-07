@@ -25,24 +25,19 @@ import androidx.compose.ui.unit.dp
 import com.mycorrhizal.crm.ui.R
 
 /**
- * Issue #528/#692: the blocking force-update gate shown when the configured
- * server's `min_client_version` is above this client's version. It names the
- * server URL and the current/required versions so the user can act.
+ * Issue #692: the blocking gate shown when the configured server reports a
+ * version older than this app's baseline (0.6.0) — the whole authenticated
+ * surface expects that API contract, so instead of letting every screen fail,
+ * the app refuses to show UI and asks the operator to upgrade the server. It
+ * names the server URL and the versions so the operator can act.
  *
- * The escape hatch depends on session state:
- *  - [loggedIn] — "Log out" ends the session (the auth screen lets a different
- *    server be entered).
- *  - not logged in (issue #692: the gate now raises pre-login, because the
- *    server would refuse authentication anyway) — "Back to sign in" dismisses
- *    the gate so a different server URL can be entered.
- *
- * Stateless: the parent collects the gate + session state and renders this — no
- * session data beyond the server URL is composed.
+ * Escape hatch mirrors [ForceUpdateScreen]: "Log out" when a session exists,
+ * "Back to sign in" when the gate raised pre-login. Stateless.
  */
 @Composable
-fun ForceUpdateScreen(
+fun ServerTooOldScreen(
+    serverVersion: String,
     requiredVersion: String,
-    currentVersion: String,
     serverUrl: String?,
     loggedIn: Boolean = true,
     onLogout: () -> Unit,
@@ -53,7 +48,7 @@ fun ForceUpdateScreen(
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(24.dp)
-            .testTag("force-update-screen"),
+            .testTag("server-too-old-screen"),
         contentAlignment = Alignment.Center,
     ) {
         Column(
@@ -67,26 +62,21 @@ fun ForceUpdateScreen(
                 modifier = Modifier.size(96.dp),
             )
             Text(
-                text = stringResource(R.string.force_update_heading),
+                text = stringResource(R.string.server_too_old_heading),
                 style = MaterialTheme.typography.titleLarge,
                 modifier = Modifier.semantics { heading() },
             )
             Text(
-                text = stringResource(R.string.force_update_message, requiredVersion, currentVersion),
+                text = stringResource(R.string.server_too_old_message, requiredVersion, serverVersion),
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             serverUrl?.takeIf { it.isNotBlank() }?.let { url ->
                 Text(
-                    text = stringResource(R.string.force_update_server, url),
+                    text = stringResource(R.string.server_too_old_server, url),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
-            Text(
-                text = stringResource(R.string.force_update_instructions),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
             if (loggedIn || onBackToLogin == null) {
                 Button(
                     onClick = onLogout,

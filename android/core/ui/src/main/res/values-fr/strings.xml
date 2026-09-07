@@ -445,6 +445,11 @@
     <string name="force_update_instructions">Mettez à jour l\'application Mycorrhizal pour continuer à utiliser ce serveur. Si vous avez installé l\'application depuis un lien de téléchargement ou un canal de mises à jour, installez la version la plus récente qu\'il propose.</string>
     <string name="server_outdated_notice_message">Ce serveur exécute la version %1$s, plus ancienne que cette application (version %2$s). Certaines fonctions peuvent ne pas fonctionner tant que le serveur n\'est pas mis à jour.</string>
     <string name="server_outdated_notice_dismiss">Ignorer</string>
+    <!-- Issue #692: the pre-login "server too old" gate + force-update escape -->
+    <string name="force_update_back_to_login">Revenir à la connexion</string>
+    <string name="server_too_old_heading">Le serveur doit être mis à jour</string>
+    <string name="server_too_old_message">Ce serveur exécute la version %2$s. Cette application nécessite un serveur en version %1$s ou plus récente. Mettez à jour le serveur pour continuer à utiliser l\'application avec lui.</string>
+    <string name="server_too_old_server">Serveur : %1$s</string>
 
     <!-- Connexion biométrique (issue #722) -->
     <string name="biometric_enroll_dialog_title">Se connecter avec la biométrie ?</string>

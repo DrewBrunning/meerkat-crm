@@ -213,6 +213,8 @@ paths:
       summary: Register a new user account
       operationId: registerUser
       security: []
+      parameters:
+        - $ref: "#/components/parameters/ClientVersion"
       requestBody:
         required: true
         content:
@@ -233,7 +235,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: Registration is disabled (REGISTRATION_ENABLED=false).
+          description: Registration is disabled (REGISTRATION_ENABLED=false), or the client is below the configured MIN_CLIENT_VERSION floor (CLIENT_NOT_SUPPORTED).
         "409":
           description: Email or username already in use.
           content:
@@ -245,6 +247,8 @@ paths:
       summary: Log in with username or email
       operationId: login
       security: []
+      parameters:
+        - $ref: "#/components/parameters/ClientVersion"
       description: >
         Sets the httpOnly auth_token cookie on success; the token is never in
         the response body. Accepts either `identifier` (username or email) or
@@ -280,6 +284,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          description: The client is below the configured MIN_CLIENT_VERSION floor (CLIENT_NOT_SUPPORTED).
         "429":
           description: Account temporarily locked after repeated failures.
   /login/2fa:
@@ -287,6 +293,8 @@ paths:
       summary: Complete login with a TOTP or recovery code
       operationId: login2FA
       security: []
+      parameters:
+        - $ref: "#/components/parameters/ClientVersion"
       description: >
         Step 2 of interactive login for accounts with 2FA enabled. Requires the
         short-lived 2fa_pending cookie set by POST /login and a valid TOTP code
@@ -321,6 +329,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          description: The client is below the configured MIN_CLIENT_VERSION floor (CLIENT_NOT_SUPPORTED).
         "429":
           description: Account temporarily locked after repeated failed codes.
   /logout:
@@ -351,6 +361,8 @@ paths:
         minted exactly like a password login (auth_token cookie). Revoked,
         unknown, or deleted-account grants are rejected like bad credentials.
         Rate-limited like /login.
+      parameters:
+        - $ref: "#/components/parameters/ClientVersion"
       requestBody:
         required: true
         content:
@@ -379,6 +391,8 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "403":
+          description: The client is below the configured MIN_CLIENT_VERSION floor (CLIENT_NOT_SUPPORTED).
         "429":
           description: Rate limited.
   /check-password-strength:
@@ -9958,6 +9972,24 @@ components:
         type: string
         maxLength: 255
         example: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+    ClientVersion:
+      name: X-Client-Version
+      in: header
+      required: false
+      description: >
+        The native client's own versionName (issue #692). Sent by the Android
+        app on every request to the API host. On the session-minting endpoints
+        (register, login, the 2FA step, the device-grant exchange) the server
+        enforces its configured `MIN_CLIENT_VERSION` floor against it BEFORE
+        any user-authentication work: a client that is absent, not a strict
+        `major.minor.patch`, or below the floor is refused with
+        `403 CLIENT_NOT_SUPPORTED`. With no floor configured the header is
+        advisory (logged) and never rejects. Optional: pre-#692 clients simply
+        omit it and are only ever refused when an operator has actually raised
+        the floor.
+      schema:
+        type: string
+        example: "0.6.10"
   schemas:
     # --- Common ---
     Error:
