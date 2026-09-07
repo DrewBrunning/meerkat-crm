@@ -1,10 +1,10 @@
 package com.mycorrhizal.crm.feature.settings
 
 import androidx.annotation.StringRes
-import androidx.compose.runtime.Composable
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.mycorrhizal.crm.domain.repository.ContactRepository
+import com.mycorrhizal.crm.domain.repository.ExportRepository
 import com.mycorrhizal.crm.domain.repository.RelationshipEdgeRepository
 import com.mycorrhizal.crm.model.network.ApplyContactAddressSuggestionInput
 import com.mycorrhizal.crm.model.network.ContactAddressSuggestion
@@ -23,6 +23,10 @@ import javax.inject.Inject
  * graph-inferred relationship suggestions and relationship/household-derived
  * address suggestions — plus the address-suggestion review list with explicit
  * Apply. Nothing is applied automatically; the user confirms each suggestion.
+ *
+ * Also owns the full-dataset export actions (issue #710, web parity): each
+ * format is fetched as raw bytes and handed to the UI once ([DataUiState.
+ * exported]) for the share sheet.
  */
 data class DataUiState(
     val addressSuggestions: List<ContactAddressSuggestion> = emptyList(),
@@ -35,13 +39,40 @@ data class DataUiState(
     val suggestedRelationshipCount: Int? = null,
     @StringRes val infoRes: Int? = null,
     val infoCount: Int? = null,
+    /** True while a dataset export is being fetched. */
+    val isExporting: Boolean = false,
+    /** One-shot: the finished export, cleared by [DataViewModel.onExportHandled]. */
+    val exported: DataExport? = null,
     val error: String? = null,
 )
+
+/** One completed dataset export: the bytes plus the format's filename/mime for the share sheet. */
+data class DataExport(
+    val kind: DataExportKind,
+    val bytes: ByteArray,
+) {
+    val fileName: String = kind.fileName
+    val mimeType: String = kind.mimeType
+}
+
+/**
+ * The exportable formats on the Settings → Data screen. Each maps to one
+ * backend endpoint (see ExportRepository) and to the share-sheet filename and
+ * MIME type the Android client uses (the server streams the file directly).
+ */
+enum class DataExportKind(val fileName: String, val mimeType: String) {
+    CSV("mycorrhizal-export.csv", "text/csv"),
+    VCF3("mycorrhizal-contacts-v3.vcf", "text/vcard"),
+    VCF4("mycorrhizal-contacts.vcf", "text/vcard"),
+    JSCONTACT("mycorrhizal-contacts.jscontact.json", "application/json"),
+    AUDIT_CSV("mycorrhizal-audit.csv", "text/csv"),
+}
 
 @HiltViewModel
 class DataViewModel @Inject constructor(
     private val contactRepository: ContactRepository,
     private val relationshipEdgeRepository: RelationshipEdgeRepository,
+    private val exportRepository: ExportRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(DataUiState())
@@ -125,6 +156,38 @@ class DataViewModel @Inject constructor(
 
     fun onErrorShown() {
         _uiState.update { it.copy(error = null) }
+    }
+
+    /**
+     * Fetches one full-dataset export as bytes and exposes it as a one-shot
+     * [DataUiState.exported] for the screen to write out and share. Which
+     * repository call runs is a pure function of [kind]; re-entrancy is
+     * guarded by [DataUiState.isExporting].
+     */
+    fun export(kind: DataExportKind) {
+        if (_uiState.value.isExporting) return
+        _uiState.update { it.copy(isExporting = true, error = null) }
+        val fetch: suspend () -> Result<ByteArray> = when (kind) {
+            DataExportKind.CSV -> exportRepository::exportDataCsv
+            DataExportKind.VCF3 -> { { exportRepository.exportContactsVcf(3) } }
+            DataExportKind.VCF4 -> { { exportRepository.exportContactsVcf(null) } }
+            DataExportKind.JSCONTACT -> exportRepository::exportContactsJsContact
+            DataExportKind.AUDIT_CSV -> exportRepository::exportAuditLogCsv
+        }
+        viewModelScope.launch {
+            fetch().foldApiError(
+                onSuccess = { bytes ->
+                    _uiState.update { it.copy(isExporting = false, exported = DataExport(kind, bytes)) }
+                },
+                onError = { error ->
+                    _uiState.update { it.copy(isExporting = false, error = error.displayMessage) }
+                },
+            )
+        }
+    }
+
+    fun onExportHandled() {
+        _uiState.update { it.copy(exported = null) }
     }
 
     fun onInfoShown() {

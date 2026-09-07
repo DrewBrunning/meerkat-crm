@@ -1155,6 +1155,45 @@
     <string name="bulk_result">Hecho: %1$d correctos, %2$d fallidos.</string>
     <string name="action_confirm">Confirmar</string>
 
+    <!-- T93 duplicate review (issue #710, web parity) -->
+    <string name="duplicates_title">Revisar duplicados</string>
+    <string name="duplicates_empty">No se han encontrado contactos duplicados.</string>
+    <string name="duplicates_count">%1$d posibles pares duplicados</string>
+    <string name="duplicates_vs">frente a</string>
+    <string name="duplicates_reason_email">Mismo correo</string>
+    <string name="duplicates_reason_name">Mismo nombre</string>
+    <string name="duplicates_reason_phone">Mismo teléfono</string>
+    <string name="duplicates_confidence">Coincidencia del %1$d%%</string>
+    <string name="duplicates_merge">Combinar</string>
+    <string name="duplicates_not_duplicate">No es un duplicado</string>
+    <string name="duplicates_dismiss_title">¿Marcar como no duplicado?</string>
+    <string name="duplicates_dismiss_body">Este par no volverá a ofrecerse como duplicado. Esta acción no se puede deshacer.</string>
+    <string name="duplicates_merge_title">¿Qué contacto debe conservarse?</string>
+    <string name="duplicates_kept_hint">Se conserva el contacto elegido; los datos del otro se combinan en él.</string>
+    <string name="contact_archived">Archivado</string>
+
+    <!-- N7 contact attachments (issue #710, web parity) -->
+    <string name="contact_attachments">Adjuntos</string>
+    <string name="attachments_upload">Añadir adjunto</string>
+    <string name="attachments_empty">Aún no hay adjuntos.</string>
+    <string name="attachments_open">Abrir adjunto</string>
+    <string name="attachments_size">%1$s</string>
+    <string name="attachments_delete">Eliminar</string>
+    <string name="attachments_delete_title">¿Eliminar adjunto?</string>
+    <string name="attachments_delete_body">¿Eliminar %1$s? Esta acción no se puede deshacer.</string>
+    <string name="attachments_size_too_large">El adjunto supera el límite de 25 MB.</string>
+
+    <!-- Dataset export (issue #710, web parity) -->
+    <string name="data_export_section">Exportar</string>
+    <string name="data_export_description">Descargue una copia de sus datos. Los campos confidenciales (privados/secretos) se excluyen por defecto.</string>
+    <string name="data_export_csv">Exportar copia de seguridad CSV</string>
+    <string name="data_export_vcard4">Exportar vCard 4.0</string>
+    <string name="data_export_vcard3">Exportar vCard 3.0</string>
+    <string name="data_export_jscontact">Exportar JSContact</string>
+    <string name="data_export_audit">Exportar registro de auditoría</string>
+    <string name="data_export_share_title">Compartir exportación</string>
+
+
 
     <!-- Import -->
     <string name="import_title">Importar contactos</string>

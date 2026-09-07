@@ -97,9 +97,11 @@ import com.mycorrhizal.crm.feature.cadence.CadenceScreen
 import com.mycorrhizal.crm.feature.circles.CircleDetailScreen
 import com.mycorrhizal.crm.feature.circles.CirclesScreen
 import com.mycorrhizal.crm.feature.contacts.ContactDetailScreen
+import com.mycorrhizal.crm.feature.contacts.AttachmentsScreen
 import com.mycorrhizal.crm.feature.contacts.ContactFormScreen
 import com.mycorrhizal.crm.feature.contacts.ContactListScreen
 import com.mycorrhizal.crm.feature.contacts.DashboardScreen
+import com.mycorrhizal.crm.feature.contacts.DuplicatePairsScreen
 import com.mycorrhizal.crm.feature.contacts.PrepViewScreen
 import com.mycorrhizal.crm.feature.contacts.MergeContactsScreen
 import com.mycorrhizal.crm.feature.circles.TriageScreen
@@ -481,6 +483,7 @@ private fun MainScaffold(
                         onContactClick = { id -> navController.navigate("contacts/$id") },
                         onCreateContact = { navController.navigate("contacts/new") },
                         onImportContacts = { navController.navigate("import") },
+                        onReviewDuplicates = { navController.navigate("duplicates") },
                         onMenuClick = null,
                     )
                 },
@@ -761,6 +764,7 @@ private fun AppNavGraph(
                     onCreateContact = { navController.navigate("contacts/new") },
                     onMenuClick = menu,
                     onImportContacts = { navController.navigate("import") },
+                    onReviewDuplicates = { navController.navigate("duplicates") },
                 )
             }
         }
@@ -783,9 +787,26 @@ private fun AppNavGraph(
             arguments = listOf(navArgument("keepId") { type = NavType.LongType }),
         ) { entry ->
             val keepId = entry.arguments?.getLong("keepId") ?: 0L
+            val mergeId = entry.arguments?.getString("mergeId")?.toLongOrNull() ?: 0L
+            val mergeName = entry.arguments?.getString("mergeName")?.let { Uri.decode(it) }
             MergeContactsScreen(
                 onBack = { navController.popBackStack() },
                 keepId = keepId,
+                mergeId = mergeId,
+                otherName = mergeName,
+            )
+        }
+        // T93 (issue #710): the duplicate-review surface, reachable from the
+        // contacts list (web's "Review duplicates"). A Merge on a pair opens
+        // the existing merge flow with both contacts preselected.
+        composable("duplicates") {
+            DuplicatePairsScreen(
+                onBack = { navController.popBackStack() },
+                onMerge = { keepId, mergeId, mergeName ->
+                    navController.navigate(
+                        "merge/$keepId?mergeId=$mergeId&mergeName=${Uri.encode(mergeName)}",
+                    )
+                },
             )
         }
         composable(
@@ -811,6 +832,7 @@ private fun AppNavGraph(
                 onViewActivities = { id -> navController.navigate("contacts/$id/activities") },
                 onViewNotes = { id -> navController.navigate("contacts/$id/notes") },
                 onViewReminders = { id -> navController.navigate("contacts/$id/reminders") },
+                onViewAttachments = { id -> navController.navigate("contacts/$id/attachments") },
                 onViewRelationships = { id -> navController.navigate("contacts/$id/relationships") },
                 onViewCadence = { id -> navController.navigate("contacts/$id/cadence") },
                 onOpenInContacts = { lookupKey ->
@@ -930,6 +952,17 @@ private fun AppNavGraph(
                 onEditReminder = { reminderId ->
                     navController.navigate("contacts/$contactId/reminders/$reminderId/edit")
                 },
+            )
+        }
+        // N7: the contact-attachments sub-screen (issue #710, web parity).
+        composable(
+            route = "contacts/{contactId}/attachments",
+            arguments = listOf(navArgument("contactId") { type = NavType.IntType }),
+        ) { entry ->
+            val contactId = entry.arguments?.getInt("contactId") ?: 0
+            AttachmentsScreen(
+                onBack = { navController.popBackStack() },
+                contactId = contactId,
             )
         }
         composable(

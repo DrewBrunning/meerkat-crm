@@ -1155,6 +1155,45 @@
     <string name="bulk_result">Fertig: %1$d erfolgreich, %2$d fehlgeschlagen.</string>
     <string name="action_confirm">Bestätigen</string>
 
+    <!-- T93 duplicate review (issue #710, web parity) -->
+    <string name="duplicates_title">Doppelte prüfen</string>
+    <string name="duplicates_empty">Keine doppelten Kontakte gefunden.</string>
+    <string name="duplicates_count">%1$d mögliches Duplikatpaar/e</string>
+    <string name="duplicates_vs">gegenüber</string>
+    <string name="duplicates_reason_email">Gleiche E-Mail</string>
+    <string name="duplicates_reason_name">Gleicher Name</string>
+    <string name="duplicates_reason_phone">Gleiche Telefonnummer</string>
+    <string name="duplicates_confidence">%1$d%% Übereinstimmung</string>
+    <string name="duplicates_merge">Zusammenführen</string>
+    <string name="duplicates_not_duplicate">Kein Duplikat</string>
+    <string name="duplicates_dismiss_title">Als kein Duplikat markieren?</string>
+    <string name="duplicates_dismiss_body">Dieses Paar wird nie wieder als Duplikat vorgeschlagen. Das kann nicht rückgängig gemacht werden.</string>
+    <string name="duplicates_merge_title">Welcher Kontakt soll erhalten bleiben?</string>
+    <string name="duplicates_kept_hint">Der erhaltene Kontakt bleibt bestehen; die Daten des anderen werden hinein zusammengeführt.</string>
+    <string name="contact_archived">Archiviert</string>
+
+    <!-- N7 contact attachments (issue #710, web parity) -->
+    <string name="contact_attachments">Anhänge</string>
+    <string name="attachments_upload">Anhang hinzufügen</string>
+    <string name="attachments_empty">Noch keine Anhänge.</string>
+    <string name="attachments_open">Anhang öffnen</string>
+    <string name="attachments_size">%1$s</string>
+    <string name="attachments_delete">Löschen</string>
+    <string name="attachments_delete_title">Anhang löschen?</string>
+    <string name="attachments_delete_body">%1$s löschen? Das kann nicht rückgängig gemacht werden.</string>
+    <string name="attachments_size_too_large">Der Anhang überschreitet das Limit von 25 MB.</string>
+
+    <!-- Dataset export (issue #710, web parity) -->
+    <string name="data_export_section">Export</string>
+    <string name="data_export_description">Laden Sie eine Kopie Ihrer Daten herunter. Private/geheime Felder werden standardmäßig ausgeschlossen.</string>
+    <string name="data_export_csv">CSV-Sicherung exportieren</string>
+    <string name="data_export_vcard4">vCard 4.0 exportieren</string>
+    <string name="data_export_vcard3">vCard 3.0 exportieren</string>
+    <string name="data_export_jscontact">JSContact exportieren</string>
+    <string name="data_export_audit">Auditprotokoll exportieren</string>
+    <string name="data_export_share_title">Export teilen</string>
+
+
 
     <!-- Import -->
     <string name="import_title">Kontakte importieren</string>

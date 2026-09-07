@@ -1155,6 +1155,45 @@
     <string name="bulk_result">Terminé : %1$d réussis, %2$d échoués.</string>
     <string name="action_confirm">Confirmer</string>
 
+    <!-- T93 duplicate review (issue #710, web parity) -->
+    <string name="duplicates_title">Examiner les doublons</string>
+    <string name="duplicates_empty">Aucun contact en double trouvé.</string>
+    <string name="duplicates_count">%1$d paire(s) de doublons potentiels</string>
+    <string name="duplicates_vs">contre</string>
+    <string name="duplicates_reason_email">Même e-mail</string>
+    <string name="duplicates_reason_name">Même nom</string>
+    <string name="duplicates_reason_phone">Même téléphone</string>
+    <string name="duplicates_confidence">Correspondance à %1$d %%</string>
+    <string name="duplicates_merge">Fusionner</string>
+    <string name="duplicates_not_duplicate">Pas un doublon</string>
+    <string name="duplicates_dismiss_title">Marquer comme non-doublon ?</string>
+    <string name="duplicates_dismiss_body">Cette paire ne sera plus jamais proposée comme doublon. Cette action est irréversible.</string>
+    <string name="duplicates_merge_title">Quel contact doit être conservé ?</string>
+    <string name="duplicates_kept_hint">Le contact conservé survit ; les données de l\'autre y sont fusionnées.</string>
+    <string name="contact_archived">Archivé</string>
+
+    <!-- N7 contact attachments (issue #710, web parity) -->
+    <string name="contact_attachments">Pièces jointes</string>
+    <string name="attachments_upload">Ajouter une pièce jointe</string>
+    <string name="attachments_empty">Aucune pièce jointe.</string>
+    <string name="attachments_open">Ouvrir la pièce jointe</string>
+    <string name="attachments_size">%1$s</string>
+    <string name="attachments_delete">Supprimer</string>
+    <string name="attachments_delete_title">Supprimer la pièce jointe ?</string>
+    <string name="attachments_delete_body">Supprimer %1$s ? Cette action est irréversible.</string>
+    <string name="attachments_size_too_large">La pièce jointe dépasse la limite de 25 Mo.</string>
+
+    <!-- Dataset export (issue #710, web parity) -->
+    <string name="data_export_section">Exporter</string>
+    <string name="data_export_description">Téléchargez une copie de vos données. Les champs sensibles (privés/secret) sont exclus par défaut.</string>
+    <string name="data_export_csv">Exporter la sauvegarde CSV</string>
+    <string name="data_export_vcard4">Exporter en vCard 4.0</string>
+    <string name="data_export_vcard3">Exporter en vCard 3.0</string>
+    <string name="data_export_jscontact">Exporter en JSContact</string>
+    <string name="data_export_audit">Exporter le journal d\'audit</string>
+    <string name="data_export_share_title">Partager l\'exportation</string>
+
+
 
     <!-- Import -->
     <string name="import_title">Importer des contacts</string>

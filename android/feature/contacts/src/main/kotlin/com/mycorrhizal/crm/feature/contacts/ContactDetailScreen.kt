@@ -169,6 +169,8 @@ fun ContactDetailScreen(
     onViewActivities: (Int) -> Unit = {},
     onViewNotes: (Int) -> Unit = {},
     onViewReminders: (Int) -> Unit = {},
+    // N7: the contact-attachments sub-screen (issue #710, web parity).
+    onViewAttachments: (Int) -> Unit = {},
     onViewRelationships: (Int) -> Unit = {},
     onViewCadence: (Int) -> Unit = {},
     onOpenInContacts: (String) -> Unit = {},
@@ -584,6 +586,7 @@ fun ContactDetailScreen(
                     onViewActivities = onViewActivities,
                     onViewNotes = onViewNotes,
                     onViewReminders = onViewReminders,
+                    onViewAttachments = onViewAttachments,
                     onViewRelationships = onViewRelationships,
                     onViewCadence = onViewCadence,
                     onMerge = onMerge,
@@ -930,6 +933,8 @@ fun ContactDetailContent(
     onViewActivities: (Int) -> Unit = {},
     onViewNotes: (Int) -> Unit = {},
     onViewReminders: (Int) -> Unit = {},
+    // N7: the contact-attachments sub-screen (issue #710, web parity).
+    onViewAttachments: (Int) -> Unit = {},
     onViewRelationships: (Int) -> Unit = {},
     onViewCadence: (Int) -> Unit = {},
     onMerge: (Int) -> Unit = {},
@@ -1264,6 +1269,16 @@ fun ContactDetailContent(
                     )
                 },
                 modifier = Modifier.fillMaxWidth().clickable { onViewReminders(contact.id) },
+            )
+            androidx.compose.material3.ListItem(
+                headlineContent = { Text(stringResource(R.string.contact_attachments), style = MaterialTheme.typography.bodyLarge) },
+                trailingContent = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Outlined.ArrowForward,
+                        contentDescription = null,
+                    )
+                },
+                modifier = Modifier.fillMaxWidth().clickable { onViewAttachments(contact.id) },
             )
             androidx.compose.material3.ListItem(
                 headlineContent = { Text(stringResource(R.string.contact_relationships), style = MaterialTheme.typography.bodyLarge) },
