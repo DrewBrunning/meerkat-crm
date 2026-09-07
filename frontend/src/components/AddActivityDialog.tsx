@@ -79,7 +79,28 @@ export default function AddActivityDialog({
     { title, description, location, date },
     open && isDirty,
   );
-  const { guardedClose, confirmDialogProps } = useDiscardGuard(isDirty);
+  // Clears the draft too -- reached after a successful save and after a
+  // confirmed discard (a Cancel/Escape close or a blocked in-app navigation),
+  // and in every case the draft is no longer wanted.
+  const handleClose = useCallback(() => {
+    clearDraft();
+    setTitle('');
+    setDescription('');
+    setLocation('');
+    setDate(new Date().toISOString().split('T')[0]);
+    setSelectedContacts([]);
+    setSearchInput('');
+    setContacts([]);
+    setError('');
+    onClose();
+  }, [clearDraft, onClose]);
+  // Issue #557 + #805: one discard guard covers every way of leaving a dirty
+  // activity -- Cancel/Escape (guardedClose), tab close/reload/external nav
+  // (beforeunload), and in-app route navigation (the data-router blocker,
+  // which discards through handleClose before letting the navigation go).
+  const { guardedClose, confirmDialogProps, navigationGuardElement } = useDiscardGuard(isDirty, {
+    onNavigationDiscard: handleClose,
+  });
 
   const loadContacts = useCallback(async (search: string = '') => {
     setLoading(true);
@@ -146,21 +167,6 @@ export default function AddActivityDialog({
     } finally {
       setSaving(false);
     }
-  };
-
-  // Clears the draft too -- reached after a successful save and after a
-  // confirmed discard, and in both cases the draft is no longer wanted.
-  const handleClose = () => {
-    clearDraft();
-    setTitle('');
-    setDescription('');
-    setLocation('');
-    setDate(new Date().toISOString().split('T')[0]);
-    setSelectedContacts([]);
-    setSearchInput('');
-    setContacts([]);
-    setError('');
-    onClose();
   };
 
   // Issue #557: Cancel and Escape (AppDialog already blocks a backdrop
@@ -275,6 +281,7 @@ export default function AddActivityDialog({
           {t('activityDialog.save')}
         </Button>
       </DialogActions>
+      {navigationGuardElement}
       <ConfirmDiscardDialog {...confirmDialogProps} />
     </AppDialog>
   );

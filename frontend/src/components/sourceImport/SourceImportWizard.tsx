@@ -72,7 +72,16 @@ export default function SourceImportWizard({
   // 'connect' has no session yet (beginFetch is what creates one) and
   // 'result' has nothing left to lose, so neither needs it.
   const hasLiveSession = step === 'fetching' || step === 'review';
-  const { guardedClose, confirmDialogProps } = useDiscardGuard(hasLiveSession);
+  // Issue #557 + #805: the guard now also covers *in-app route navigation*
+  // away from a live session -- the data-router blocker discards through the
+  // same handleCancel the Cancel button uses (cancel the backend session,
+  // reset the wizard), then lets the navigation go.
+  const { guardedClose, confirmDialogProps, navigationGuardElement } = useDiscardGuard(
+    hasLiveSession,
+    {
+      onNavigationDiscard: handleCancel,
+    },
+  );
 
   const handleCancelClick = () => {
     if (hasLiveSession) {
@@ -162,6 +171,7 @@ export default function SourceImportWizard({
           </>
         )}
       </DialogActions>
+      {navigationGuardElement}
       <ConfirmDiscardDialog {...confirmDialogProps} />
     </AppDialog>
   );

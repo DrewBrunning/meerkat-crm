@@ -3,16 +3,16 @@
   "tolerancePct": 0.05,
   "absoluteSlackBytes": 2048,
   "newChunkGzipLimit": 51200,
-  "totalGzipBaseline": 1389064,
+  "totalGzipBaseline": 1409527,
   "chunks": {
     "graph-vendor": 63471,
     "i18n-vendor": 17873,
-    "index": 288935,
+    "index": 292605,
     "index.css": 1327,
     "mdi": 804333,
     "mui-core": 132269,
-    "mui-icons": 9078,
-    "react-vendor": 68779,
+    "mui-icons": 9081,
+    "react-vendor": 85569,
     "rolldown-runtime": 428,
     "web-vitals": 2571
   }

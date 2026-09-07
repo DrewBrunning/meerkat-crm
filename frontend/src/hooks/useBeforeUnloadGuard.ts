@@ -3,13 +3,13 @@ import { nextDirtyKey, reportDirty } from '../staleClient/dirty';
 
 // Issue #557: warns before a tab close, reload, or external navigation
 // discards unsaved work. `beforeunload` is the only guard that can catch
-// those three cases at all -- react-router's useBlocker only covers
-// in-app navigation, and this app's router (`<BrowserRouter>` + `<Routes>`,
-// not a data router) doesn't provide the router context useBlocker needs
-// regardless. In-app navigation away from a dirty *dialog* is instead
-// guarded at the dialog's own close handlers (see useDiscardGuard) -- every
-// editing surface in this app is a MUI Dialog, not a routed page, so that
-// covers the cases useBlocker exists for here without the router migration.
+// those three cases at all -- the browser owns them and never lets a web
+// page intercept them. In-app route navigation (a drawer link, a
+// programmatic navigate, browser Back/Forward) is a separate case that
+// `beforeunload` cannot see and react-router's useBlocker exists for; since
+// issue #805 migrated the app to a data router, useDiscardGuard arms that
+// blocker via useNavigationGuard. Each guard covers the surfaces the other
+// physically cannot, and useDiscardGuard wires both.
 //
 // The browser controls the confirmation's wording; the `returnValue` string
 // itself is ignored by every modern browser (it shows a fixed built-in
