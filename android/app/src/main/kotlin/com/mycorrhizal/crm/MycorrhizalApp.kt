@@ -88,8 +88,12 @@ import androidx.navigation.compose.rememberNavController
 import com.mycorrhizal.crm.applock.AppLockScreen
 import com.mycorrhizal.crm.compat.ForceUpdateScreen
 import com.mycorrhizal.crm.compat.ServerOutdatedNotice
+import com.mycorrhizal.crm.compat.ServerTooOldScreen
 import com.mycorrhizal.crm.data.session.AppLockState
+import com.mycorrhizal.crm.domain.compat.ServerCapabilities
+import com.mycorrhizal.crm.domain.compat.ServerFeature
 import com.mycorrhizal.crm.enroll.BiometricEnrollmentPromptHost
+import com.mycorrhizal.crm.model.AppVersion
 import com.mycorrhizal.crm.feature.auth.LoginScreen
 import com.mycorrhizal.crm.feature.auth.RegisterScreen
 import com.mycorrhizal.crm.feature.auth.ForgotPasswordScreen
@@ -144,6 +148,7 @@ import com.mycorrhizal.crm.ui.R
 import com.mycorrhizal.crm.ui.LocalDarkTheme
 import com.mycorrhizal.crm.ui.LocalDrawerOpen
 import com.mycorrhizal.crm.ui.LocalServerUrl
+import com.mycorrhizal.crm.ui.LocalServerVersion
 import com.mycorrhizal.crm.ui.components.EmptyState
 import kotlinx.coroutines.flow.filterNotNull
 
@@ -250,6 +255,10 @@ fun MycorrhizalApp(
     // the main tree and is dismissed in the ViewModel.
     val compatibilityGate by mainViewModel.compatibilityGate.collectAsStateWithLifecycle()
     val serverOutdatedNoticeVersion by mainViewModel.serverOutdatedNoticeVersion.collectAsStateWithLifecycle()
+    // Issue #692: the resolved server version feeds the per-feature capability
+    // gates (provided to the main tree via LocalServerVersion) and the
+    // device-grant enrollment offer. Null until the per-session check resolves.
+    val serverVersion by mainViewModel.serverVersion.collectAsStateWithLifecycle()
 
     // Issue #722: the one-shot biometric-enrollment prompt fires right after
     // an interactive login (password / API token / 2FA / register auto-login),
@@ -346,17 +355,37 @@ fun MycorrhizalApp(
         RootSurface.AppLock -> {
             AppLockScreen()
         }
-        // Issue #528: the server declared this client version unsupported. The
-        // force-update screen is deliberately above the app-lock gate in the
-        // root ordering — it shows no session data, so there is nothing for the
-        // device's local gate to protect on it.
+        // Issue #528/#692: the server declared this client version unsupported,
+        // or (ServerTooOld) reports an older-than-baseline version. Both are
+        // deliberately above the app-lock gate in the root ordering and above
+        // the logged-out auth tree — they render no session data, so there is
+        // nothing for the device's local gate to protect on them, and the auth
+        // screen is not worth showing against a server that will refuse this
+        // build or that this app cannot work with.
         RootSurface.ForceUpdate -> {
             val gate = compatibilityGate as? CompatibilityGate.ForceUpdate
+            val loggedIn = session.isLoggedIn
             ForceUpdateScreen(
                 requiredVersion = gate?.requiredVersion.orEmpty(),
                 currentVersion = BuildConfig.VERSION_NAME,
                 serverUrl = session.serverUrl,
+                loggedIn = loggedIn,
                 onLogout = mainViewModel::logout,
+                onBackToLogin = if (loggedIn) null else mainViewModel::dismissPreLoginGate,
+            )
+        }
+        RootSurface.ServerTooOld -> {
+            val loggedIn = session.isLoggedIn
+            ServerTooOldScreen(
+                // The gate only resolves when a server version was parsed, so
+                // serverVersion is non-null here; the fallback keeps the
+                // composable total for tests.
+                serverVersion = serverVersion?.toString().orEmpty(),
+                requiredVersion = ServerCapabilities.MIN_SUPPORTED_SERVER_VERSION.toString(),
+                serverUrl = session.serverUrl,
+                loggedIn = loggedIn,
+                onLogout = mainViewModel::logout,
+                onBackToLogin = if (loggedIn) null else mainViewModel::dismissPreLoginGate,
             )
         }
         RootSurface.Main -> {
@@ -374,6 +403,7 @@ fun MycorrhizalApp(
                         darkTheme = darkTheme,
                         drawerState = drawerState,
                         serverUrl = session.serverUrl.orEmpty(),
+                        serverVersion = serverVersion,
                         deepLinks = deepLinks,
                         onDeepLinkHandled = onDeepLinkHandled,
                     )
@@ -385,7 +415,13 @@ fun MycorrhizalApp(
     // Issue #722: the one-shot biometric-enrollment prompt after an
     // interactive login. Its dialog renders in its own window, so mounting it
     // here (above every surface) needs no layout container.
-    if (showEnrollmentPrompt) {
+    // Issue #692: enrollment mints a server device grant (v0.6.10+), so the
+    // prompt is suppressed once the session's server is known to be older —
+    // offering it there would fail with a 404 mid-flow. A still-unknown server
+    // version fails open to showing the prompt (the policy's default posture).
+    if (showEnrollmentPrompt &&
+        ServerCapabilities.isSupported(serverVersion, ServerFeature.DEVICE_GRANT_SIGNIN)
+    ) {
         BiometricEnrollmentPromptHost(onDone = { showEnrollmentPrompt = false })
     }
 }
@@ -395,21 +431,24 @@ fun MycorrhizalApp(
  * the security-critical "never render the main tree before the gate" rule is
  * unit-tested without a composable host.
  *
- * Issue #528: the compatibility gate is threaded through the same decision.
- * It is checked BEFORE the app-lock state: a required force-update supersedes
- * the local gate (the force-update screen renders no session data, so there is
- * nothing for the device's local gate to protect). A logged-out session always
- * shows the auth flow regardless of every other input.
+ * Issue #528/#692: the compatibility gates are threaded through the same
+ * decision. They are checked BEFORE everything else, including the logged-out
+ * auth tree: a required force-update (this build below the server's floor) and
+ * a server-too-old (server below this app's 0.6.0 baseline) are blocking
+ * surfaces that render no session data, so there is nothing for the device's
+ * local gate to protect on them — and the auth screen is not worth showing
+ * against a server that will refuse it.
  */
-internal enum class RootSurface { Auth, GateResolving, AppLock, ForceUpdate, Main }
+internal enum class RootSurface { Auth, ForceUpdate, ServerTooOld, GateResolving, AppLock, Main }
 
 internal fun rootSurface(
     isLoggedIn: Boolean,
     compatibilityGate: CompatibilityGate,
     appLockState: AppLockState,
 ): RootSurface = when {
-    !isLoggedIn -> RootSurface.Auth
     compatibilityGate is CompatibilityGate.ForceUpdate -> RootSurface.ForceUpdate
+    compatibilityGate is CompatibilityGate.ServerTooOld -> RootSurface.ServerTooOld
+    !isLoggedIn -> RootSurface.Auth
     appLockState == AppLockState.Resolving -> RootSurface.GateResolving
     appLockState == AppLockState.Locked -> RootSurface.AppLock
     else -> RootSurface.Main
@@ -423,6 +462,7 @@ private fun MainScaffold(
     darkTheme: Boolean,
     drawerState: DrawerState,
     serverUrl: String,
+    serverVersion: AppVersion? = null,
     deepLinks: kotlinx.coroutines.flow.Flow<android.net.Uri?> = kotlinx.coroutines.flow.flowOf(null),
     onDeepLinkHandled: () -> Unit = {},
 ) {
@@ -491,11 +531,14 @@ private fun MainScaffold(
 
     // M5 §3.1: the server origin reaches every avatar so relative photo paths
     // resolve to per-server absolute URLs (which are also Coil's disk-cache
-    // keys — see LocalServerUrl).
+    // keys — see LocalServerUrl). Issue #692: the resolved server version
+    // reaches every capability-gated screen the same way; null (unknown) fails
+    // open to everything being available.
     CompositionLocalProvider(
         LocalDrawerOpen provides drawerState.isOpen,
         LocalDarkTheme provides darkTheme,
         LocalServerUrl provides serverUrl,
+        LocalServerVersion provides serverVersion,
     ) {
         MainNavScaffold(
             currentRoute = currentRoute,
