@@ -15,7 +15,12 @@ Reminders can reach you through four channels. Email is configured on the server
 | Gotify | Per user, in the app | Your Gotify server URL and an application token |
 | Browser push | Per user, in the app | Nothing — but the app must be served over HTTPS |
 
-All enabled channels deliver in the same daily run, at `REMINDER_TIME` in `REMINDER_TIMEZONE`. Those two settings are server-wide, not per user.
+All enabled channels deliver in the same daily run, at `REMINDER_TIME` in `REMINDER_TIMEZONE`. Those two settings are **server-wide and there is exactly one such clock**: every user on the deployment is scheduled against the operator's zone, and there is no per-user timezone (per-user zones would be a new feature, not a current option). A deployment serving people in several timezones should expect all of them to be woken on the operator's clock.
+
+Two consequences are worth knowing up front:
+
+- **DST** — the daily run fires once per local wall-clock time in `REMINDER_TIMEZONE`. If `REMINDER_TIME` lands in a spring-forward skipped hour it still runs once (normalized to the first valid time after the transition); if it lands in a fall-back repeated hour it runs once, on the earlier pass. It is never skipped and never doubled; a run the server was down for is recovered at next start (see ADR 0011). These rules are pinned in [ADR 0015](adrs/0015-temporal-semantics.md).
+- **"Today" follows that same zone.** A birthday or a due reminder is "today" when the calendar day in `REMINDER_TIMEZONE` says so — including a 29-Feb birthday, which is celebrated on **1 March** in a non-leap year (a real decision, not a bug: see [ADR 0015](adrs/0015-temporal-semantics.md)).
 
 ## Email
 
