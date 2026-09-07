@@ -63,10 +63,13 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.hilt.navigation.compose.hiltViewModel
+import com.mycorrhizal.crm.domain.compat.ServerCapabilities
+import com.mycorrhizal.crm.domain.compat.ServerFeature
 import com.mycorrhizal.crm.domain.repository.AppSettingsRepository
 import com.mycorrhizal.crm.domain.repository.AutoLockDelay
 import com.mycorrhizal.crm.domain.repository.BiometricEnrollmentStatus
 import com.mycorrhizal.crm.feature.tracking.TrackingPermissions
+import com.mycorrhizal.crm.ui.LocalServerVersion
 import com.mycorrhizal.crm.ui.R
 
 /** The OS permissions a [TrackingPermissionRequest] needs (issue #721). */
@@ -280,6 +283,13 @@ fun SettingsContent(
     var newPassword by remember { mutableStateOf("") }
     var confirmPassword by remember { mutableStateOf("") }
 
+    // Issue #692: capabilities the connected server is too old to provide are
+    // hidden. Null server version (unknown / fail open) leaves everything
+    // visible.
+    val serverVersion = LocalServerVersion.current
+    val systemEventsSupported = ServerCapabilities.isSupported(serverVersion, ServerFeature.SYSTEM_EVENTS)
+    val deviceGrantSignInSupported = ServerCapabilities.isSupported(serverVersion, ServerFeature.DEVICE_GRANT_SIGNIN)
+
     Column(
         modifier = modifier
             .fillMaxSize()
@@ -476,7 +486,10 @@ fun SettingsContent(
                 }
                 Text(stringResource(R.string.settings_biometric_signin_remove))
             }
-        } else if (state.localAuthSupported) {
+        } else if (state.localAuthSupported && deviceGrantSignInSupported) {
+            // Issue #692: enrolling needs the server's device-grant endpoints
+            // (v0.6.10+), so the offer is hidden on older servers rather than
+            // failing with a 404 mid-flow.
             OutlinedButton(
                 onClick = onEnrollBiometricSignIn,
                 enabled = !state.isBiometricBusy,
@@ -546,7 +559,11 @@ fun SettingsContent(
         // non-admins, so this gate is a navigation affordance, not a guard).
         if (state.session.isAdmin) {
             NavigationRow(stringResource(R.string.users_title), onClick = onManageUsers)
-            NavigationRow(stringResource(R.string.sysevents_title), onClick = onSystemEvents)
+            // Issue #692: the system-events surface needs the v0.6.2 admin
+            // endpoints; an older server has none of them.
+            if (systemEventsSupported) {
+                NavigationRow(stringResource(R.string.sysevents_title), onClick = onSystemEvents)
+            }
         }
 
         HorizontalDivider()
