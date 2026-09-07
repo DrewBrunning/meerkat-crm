@@ -15,13 +15,10 @@
 // /health unreachable or malformed changes nothing and never blocks the app.
 // An automatic reload only ever happens when the tab is clean; a dirty form
 // routes through the gate's explicit consent dialog instead of losing input.
-import { getHealth } from '../api/health';
-import { isAnythingDirty, onDirtyChange } from './dirty';
+import { getHealth, type HealthResponse } from '../api/health';
 import { assessServerContract, type BlockedReason } from './contract';
-import {
-  forceReloadToCurrentBuild,
-  hasRecentlyForcedReload,
-} from './reload';
+import { isAnythingDirty, onDirtyChange } from './dirty';
+import { forceReloadToCurrentBuild, hasRecentlyForcedReload } from './reload';
 import { isClientVersionStamped } from './version';
 
 export const CHECK_INTERVAL_MS = 60_000;
@@ -118,7 +115,7 @@ export async function checkNow(): Promise<void> {
   }
   checking = true;
   try {
-    let health;
+    let health: HealthResponse;
     try {
       health = await getHealth();
     } catch {
@@ -178,7 +175,11 @@ export function startStaleClientDetector(): boolean {
   // reload can now proceed safely.
   dirtyUnsubscribe = onDirtyChange(() => {
     if (currentNotice.kind === 'blocked' && currentNotice.dirty && !isAnythingDirty()) {
-      if (Date.now() >= suppressBlockedUntil && !autoReloadAttempted && !hasRecentlyForcedReload()) {
+      if (
+        Date.now() >= suppressBlockedUntil &&
+        !autoReloadAttempted &&
+        !hasRecentlyForcedReload()
+      ) {
         autoReloadAttempted = true;
         emit({ ...currentNotice, dirty: false, autoReloading: true });
         void forceReloadToCurrentBuild();

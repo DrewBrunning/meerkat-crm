@@ -1,11 +1,18 @@
-import { Button, DialogActions, DialogContent, DialogTitle, Stack, Typography } from '@mui/material';
+import {
+  Button,
+  DialogActions,
+  DialogContent,
+  DialogTitle,
+  Stack,
+  Typography,
+} from '@mui/material';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  type BlockNotice,
   dismissBlockedNotice,
   onStaleClientNotice,
   reloadBlockedClient,
-  type BlockNotice,
 } from '../staleClient/detector';
 import AppDialog from './AppDialog';
 
@@ -68,9 +75,7 @@ export default function StaleClientGate() {
         </Stack>
       </DialogContent>
       <DialogActions>
-        {dirty && (
-          <Button onClick={dismissBlockedNotice}>{t('app.incompatible.later')}</Button>
-        )}
+        {dirty && <Button onClick={dismissBlockedNotice}>{t('app.incompatible.later')}</Button>}
         <Button variant="contained" onClick={reloadBlockedClient}>
           {t('app.incompatible.reload')}
         </Button>

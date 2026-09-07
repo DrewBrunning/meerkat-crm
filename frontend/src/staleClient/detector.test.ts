@@ -1,8 +1,8 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { HealthResponse } from '../api/health';
 import { getHealth } from '../api/health';
-import { reportDirty, resetDirtyTrackerForTest, nextDirtyKey } from './dirty';
 import {
+  type BlockNotice,
   checkNow,
   dismissBlockedNotice,
   onStaleClientNotice,
@@ -10,13 +10,10 @@ import {
   resetStaleClientDetectorForTest,
   startStaleClientDetector,
   stopStaleClientDetector,
-  type BlockNotice,
 } from './detector';
+import { nextDirtyKey, reportDirty, resetDirtyTrackerForTest } from './dirty';
 import { forceReloadToCurrentBuild, hasRecentlyForcedReload } from './reload';
-import {
-  resetClientBuildIdentityForTest,
-  setClientBuildIdentityForTest,
-} from './version';
+import { resetClientBuildIdentityForTest, setClientBuildIdentityForTest } from './version';
 
 vi.mock('../api/health', () => ({ getHealth: vi.fn() }));
 vi.mock('./reload', async (importOriginal) => {

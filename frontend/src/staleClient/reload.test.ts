@@ -30,7 +30,10 @@ function fakeWorker(state: string): FakeWorker {
     postMessage: vi.fn(),
     listeners,
     addEventListener(type, fn) {
-      (listeners[type] ??= []).push(fn);
+      if (!listeners[type]) {
+        listeners[type] = [];
+      }
+      listeners[type].push(fn);
     },
     removeEventListener(type, fn) {
       listeners[type] = (listeners[type] ?? []).filter((f) => f !== fn);

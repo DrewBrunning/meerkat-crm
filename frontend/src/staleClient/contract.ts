@@ -30,11 +30,7 @@ export type StalenessSeverity = 'compatible' | 'update-available' | 'blocked';
 
 export type BlockedReason = 'contract-mismatch' | 'below-floor';
 
-export type AssessmentReason =
-  | 'inert'
-  | 'compatible'
-  | 'server-newer'
-  | BlockedReason;
+export type AssessmentReason = 'inert' | 'compatible' | 'server-newer' | BlockedReason;
 
 export interface ContractAssessment {
   severity: StalenessSeverity;

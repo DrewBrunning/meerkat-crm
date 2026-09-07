@@ -80,9 +80,10 @@ describe('assessServerContract', () => {
 
   test('an unparseable floor fails open rather than blocking', () => {
     setClientBuildIdentityForTest('0.6.8');
-    expect(
-      assessServerContract(health({ min_client_version: 'not-a-version' })),
-    ).not.toEqual({ severity: 'blocked', reason: 'below-floor' });
+    expect(assessServerContract(health({ min_client_version: 'not-a-version' }))).not.toEqual({
+      severity: 'blocked',
+      reason: 'below-floor',
+    });
   });
 
   test('a newer server build is update-available when no floor blocks it', () => {
@@ -112,9 +113,7 @@ describe('assessServerContract', () => {
   test('blocked wins over update-available when the server is both newer and above the floor', () => {
     setClientBuildIdentityForTest('0.6.8');
     expect(
-      assessServerContract(
-        health({ version: '0.6.10', min_client_version: '0.6.10' }),
-      ),
+      assessServerContract(health({ version: '0.6.10', min_client_version: '0.6.10' })),
     ).toEqual({ severity: 'blocked', reason: 'below-floor' });
   });
 });

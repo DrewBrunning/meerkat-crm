@@ -61,13 +61,14 @@ export interface ParsedClientVersion {
 
 // Version shapes are validated against this exact pattern on the backend too
 // (backend/config/config.go), which is what makes "this is a version" a
-// two-sided agreement rather than a client invention. eslint-disable for
-// security/detect-unsafe-regex: inputs are short, operator/CI-supplied
-// version strings (never unbounded user text), and the pattern is anchored,
-// so this is not a ReDoS vector — same reasoning as the accepted localhost
-// pattern in serviceWorkerRegistration.ts.
-// eslint-disable-next-line security/detect-unsafe-regex
-const VERSION_PATTERN = /^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z][0-9A-Za-z.-]*))?(?:\+[0-9A-Za-z][0-9A-Za-z.-]*)?$/;
+// two-sided agreement rather than a client invention. The inline
+// eslint-disable for security/detect-unsafe-regex is deliberate: inputs are
+// short, operator/CI-supplied version strings (never unbounded user text) and
+// the pattern is anchored, so this is not a ReDoS vector — same reasoning as
+// the accepted localhost pattern in serviceWorkerRegistration.ts.
+const VERSION_PATTERN =
+  // eslint-disable-next-line security/detect-unsafe-regex
+  /^v?(\d+)(?:\.(\d+))?(?:\.(\d+))?(?:-([0-9A-Za-z][0-9A-Za-z.-]*))?(?:\+[0-9A-Za-z][0-9A-Za-z.-]*)?$/;
 
 export function parseClientVersion(input: string): ParsedClientVersion | null {
   const match = VERSION_PATTERN.exec(input.trim());
