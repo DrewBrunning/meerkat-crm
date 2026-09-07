@@ -50,7 +50,14 @@ export default defineConfig({
         // navigation interception by the /_ prefix check in service-worker.ts
         // and reaches the network directly; excluding it from the manifest
         // keeps the precache route out of the way as well.
-        globIgnores: ['**/_recovery.html', '**/_recovery.js'],
+        //
+        // Issue #477 (WEB-03): /asset-skew.js is excluded for the same reason
+        // in spirit -- it is the recovery bootstrap for a stale index.html
+        // whose chunks the current deploy no longer serves, and precaching it
+        // would let an old worker serve a stale copy of the one script whose
+        // job is to notice staleness. It is a stable URL (never content-hashed)
+        // and is served no-cache by nginx, so every load gets the current one.
+        globIgnores: ['**/_recovery.html', '**/_recovery.js', '**/asset-skew.js'],
       },
     }),
   ],

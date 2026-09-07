@@ -38,6 +38,7 @@ import {
   loadAppShell,
   loadedAssetPaths,
   reloadExpectingShell,
+  resetHarness,
   setActiveProfile,
   triggerUpdate,
   waitForWaitingWorker,
@@ -46,10 +47,10 @@ import {
 
 test.describe('Service worker upgrade', () => {
   test.beforeEach(async ({ request }) => {
-    // The harness's active build is shared server state; every test pins the
-    // starting point it expects so a failed earlier test can't leak into the
-    // next one.
-    await setActiveProfile(request, 'a');
+    // The harness's control surface is shared server state; every test resets
+    // all of it (active build, readiness, asset blocks, health) so a failed
+    // earlier test cannot leak its state into this one.
+    await resetHarness(request);
   });
 
   test('serves build A and precaches exactly its manifest (recovery page excluded)', async ({
@@ -255,6 +256,44 @@ test.describe('Service worker upgrade', () => {
     await waitForWaitingWorker(page);
     await activateWaitingWorker(page);
     await reloadExpectingShell(page, 'b');
+  });
+
+  test('a client that converged on a deploy rolls back when the server rolls back', async ({
+    page,
+    request,
+  }) => {
+    // The ticket (issue #477): "clients converge rather than sticking on a
+    // version that no longer exists." A rollback is the mirror image of a
+    // deploy from the client's point of view -- the server byte-different
+    // service-worker.js makes the older build look like a brand new update, so
+    // a tab that already moved to build B must move back to A when the operator
+    // rolls back, and must not stay stuck on the rolled-forward version.
+    const aState = await loadAppShell(page);
+    expect(buildLabelOf(aState.entry)).toBe('a');
+
+    // The deploy happens and the open tab converges on build B.
+    await setActiveProfile(request, 'b');
+    await triggerUpdate(page);
+    await waitForWaitingWorker(page);
+    await activateWaitingWorker(page);
+    await reloadExpectingShell(page, 'b');
+
+    // The operator rolls the deployment back to build A.
+    await setActiveProfile(request, 'a');
+    await triggerUpdate(page);
+    await waitForWaitingWorker(page);
+    await activateWaitingWorker(page);
+    await reloadExpectingShell(page, 'a');
+
+    // Converged on the build that actually exists, with no straggler worker
+    // waiting and nothing left over from the version that no longer exists.
+    const final = await getSwState(page);
+    expect(buildLabelOf(final.entry)).toBe('a');
+    expect(final.hasWaiting, 'no worker should be left waiting after the rollback').toBe(false);
+    const inventory = await cacheInventory(page);
+    const status = await getHarnessStatus(request);
+    const expectedA = [...status.builds.a.files].sort();
+    expect(inventory.precacheEntries).toEqual(expectedA);
   });
 
   test('repeated rapid updates keep the precache bounded', async ({ page, request }) => {

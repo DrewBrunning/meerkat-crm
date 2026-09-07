@@ -14,6 +14,12 @@
       "reload": "Recharger maintenant",
       "later": "Plus tard"
     },
+    "startingUp": {
+      "loading": "Chargement",
+      "checking": "Connexion au serveur\u2026",
+      "message": "Le serveur est encore en cours de démarrage \u2014 c'est normal pendant l'application d'une mise à jour. L'application se chargera automatiquement.",
+      "retry": "Réessayer"
+    },
     "submitSearch": "Envoyer la recherche"
   },
   "duplicates": {

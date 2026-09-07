@@ -183,7 +183,8 @@ export async function ensureFixtures(force = false) {
 // expected precache set to the tests. vite-plugin-pwa's injectManifest globs
 // js/mjs/css/html only (icons, fonts and other public files are runtime
 // requests, not precache entries), and never precaches the worker script
-// itself or the /_recovery.* escape-hatch page (globIgnores in vite.config.ts).
+// itself, the /_recovery.* escape-hatch page, or the /asset-skew.js bootstrap
+// (globIgnores in vite.config.ts).
 export async function precacheableFiles(buildDir) {
   const files = await listFiles(buildDir);
   return files
@@ -192,6 +193,7 @@ export async function precacheableFiles(buildDir) {
       if (!/\.(js|mjs|css|html)$/.test(f)) return false;
       if (f === 'service-worker.js' || f === 'service-worker.mjs') return false;
       if (f === '_recovery.html' || f === '_recovery.js') return false;
+      if (f === 'asset-skew.js') return false;
       if (f.startsWith('workbox-')) return false;
       if (f.endsWith('.map')) return false;
       return true;

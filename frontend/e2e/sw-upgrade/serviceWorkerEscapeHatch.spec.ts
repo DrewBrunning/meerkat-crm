@@ -20,6 +20,7 @@ import {
   buildLabelOf,
   getSwState,
   loadAppShell,
+  resetHarness,
   setActiveProfile,
   triggerUpdate,
   waitForWaitingWorker,
@@ -28,7 +29,7 @@ import {
 
 test.describe('Service worker escape hatch', () => {
   test.beforeEach(async ({ request }) => {
-    await setActiveProfile(request, 'a');
+    await resetHarness(request);
   });
 
   test('recovers a user stuck on a broken worker via /_recovery.html', async ({

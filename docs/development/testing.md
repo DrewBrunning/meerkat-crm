@@ -292,6 +292,8 @@ and "old cached assets cannot permanently strand users":
 - the **escape hatch** (`/_recovery.html`, see
   [`service-worker-updates.md`](../service-worker-updates.md)) recovers a user
   stuck on a deliberately broken worker;
+- a client that converged on a rolled-forward deploy converges **back** when the
+  operator rolls back (issue #477);
 - the stale-client **backstop** (issue #475, `staleClient.spec.ts`): a
   mid-session deploy that raises `min_client_version` above the open tab's
   build — or announces a different `api_contract_version` — forces the tab
@@ -301,6 +303,31 @@ and "old cached assets cannot permanently strand users":
   advertises the active build's own identity by default and lets each test
   override `min_client_version` / `api_contract_version` or fail `/health`
   outright.
+
+**Interrupted-deployment specs (issue #477, WEB-03)** share the harness and add
+two scenarios a single-build stack cannot express:
+
+- **asset skew** (`assetSkew.spec.ts`, `serviceWorkers: 'block'` — a network
+  load, so no worker/precache can hide the 404): the harness withholds a chunk
+  only build "a" has, a client loads build "a"'s `index.html` and hits the
+  removed chunk, and the asset-skew bootstrap (`public/asset-skew.js`, the one
+  piece of the app that runs when the bundle itself 404s) reloads the client
+  onto the completed deploy — no opaque error, and a pre-existing
+  `sessionStorage` draft survives the recovery. The bounded half stages a
+  deploy that never completes: two automatic retries, then a clear "could not
+  be loaded" message with a retry button, never a reload loop.
+- **backend up-but-not-ready** (`readiness.spec.ts`): the harness flips
+  `/health/ready` to `503 not_ready` (the mid-migration state), and
+  `ServerStartingGate` shows the starting-up screen instead of letting the app
+  mount and fire a wall of failed requests, then mounts the app once the
+  readiness poll clears. The fail-open half (ambiguous/unreachable readiness
+  answer mounts the app as before) is unit-tested in
+  `src/readiness/readiness.test.ts`, since the shared harness origin cannot
+  produce a connection-refused response.
+
+The harness's control surface is shared server state; every spec file's
+`beforeEach` calls `resetHarness()` (active build, `/health`, `/health/ready`
+and asset-404 blocks) so a failed test cannot leak state into the next file.
 
 It runs on Chromium **and** Firefox. Run locally with
 `npx playwright test -c playwright.sw.config.ts` (the webServer builds the
@@ -405,6 +432,8 @@ gap to file, never something to silently absorb.
 | Whole-user-flow breakage (register→create→search→export), shipped-artifact boot | E2E web | v0.6.3, v0.6.6 |
 | Layout/theme regressions (a CSS refactor shifting a card or breaking a dialog) | E2E web (`visual.spec.ts`) | v0.6.3 (#258) |
 | Service-worker lifecycle, stale-cache stranding | E2E web (`serviceWorker.spec.ts`) | v0.6.10 |
+| Interrupted deploy — asset skew (stale index.html referencing chunks the new build deleted → blank boot) | E2E web (`e2e/sw-upgrade/assetSkew.spec.ts`, client half in `public/asset-skew.js`) | v0.6.10 (#477) |
+| Interrupted deploy — backend up but not ready (wall of failed requests while the server migrates) | E2E web (`e2e/sw-upgrade/readiness.spec.ts`, client half in `ServerStartingGate`) | v0.6.10 (#477) |
 | Android real-app flows (favorites, archive/delete + undo) | E2E Android | #212/#238 |
 | Referential integrity, orphan detection, reciprocal-relationship consistency, derived-data (FTS/flat-columns/cadence) drift | DB/integration (DB-01 checker, SEARCH-*) | v0.6.8 (#460/#461–463/#497) |
 | External-integration failure behavior, retries | DB/integration (services-level) + failure injection (`docs/development/fault-injection.md`) | v0.6.9, #434 |

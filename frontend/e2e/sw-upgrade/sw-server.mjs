@@ -34,6 +34,8 @@ export const DEFAULT_PORT = Number(process.env.SW_TEST_PORT || 7300);
 export const HARNESS_STATUS_PATH = '/__swtest/status';
 export const HARNESS_ACTIVE_PATH = '/__swtest/active';
 export const HARNESS_HEALTH_PATH = '/__swtest/health';
+export const HARNESS_READY_PATH = '/__swtest/ready';
+export const HARNESS_ASSET_404_PATH = '/__swtest/asset-404';
 
 const POISON_WORKER_PATH = path.join(__dirname, 'poison-worker.js');
 
@@ -81,10 +83,35 @@ export class SwUpgradeServer {
     // min_client_version / api_contract_version or fail /health entirely
     // without swapping the served build.
     this.healthOverride = null;
+    // Issue #477 (WEB-03): whether the harness's /health/ready says "ready".
+    // null = ready. Setting it false stages a backend that is up but mid-
+    // migration (nginx serving the frontend, the backend not ready behind it),
+    // which is what the readiness / "starting up" spec asserts against.
+    this.readyOverride = null;
+    // Issue #477 (WEB-03): asset paths the harness 404s on, staging a deploy
+    // whose removed chunks a stale index.html still references (the asset-skew
+    // window). Keyed by pathname.
+    this.blockedAssets = new Set();
   }
 
   get activeProfile() {
     return this.profile;
+  }
+
+  setReady(ready) {
+    this.readyOverride = ready;
+  }
+
+  resetReady() {
+    this.readyOverride = null;
+  }
+
+  blockAsset(pathname) {
+    this.blockedAssets.add(pathname);
+  }
+
+  resetBlockedAssets() {
+    this.blockedAssets.clear();
   }
 
   async statusPayload() {
@@ -98,8 +125,16 @@ export class SwUpgradeServer {
     return {
       active: this.profile,
       builds,
+      ready: this.readyOverride !== false,
+      blockedAssets: [...this.blockedAssets].sort(),
       recoveryPaths: ['/_recovery.html', '/_recovery.js'],
-      harnessPaths: [HARNESS_STATUS_PATH, HARNESS_ACTIVE_PATH, HARNESS_HEALTH_PATH],
+      harnessPaths: [
+        HARNESS_STATUS_PATH,
+        HARNESS_ACTIVE_PATH,
+        HARNESS_HEALTH_PATH,
+        HARNESS_READY_PATH,
+        HARNESS_ASSET_404_PATH,
+      ],
     };
   }
 
@@ -137,6 +172,36 @@ export class SwUpgradeServer {
     this.healthOverride = null;
   }
 
+  // The /health/ready body the ServerStartingGate probes at boot (issue #477).
+  // By default the harness is "ready", mirroring a fully-migrated backend, so
+  // existing specs see the app mount immediately. `ready:false` stages the
+  // up-but-not-ready mid-deploy window: 503 + status not_ready, the exact
+  // shape backend ReadinessCheck returns while migrations are pending.
+  async serveReady(res) {
+    if (this.readyOverride === false) {
+      this.sendJson(res, 503, {
+        status: 'not_ready',
+        checks: {
+          database: { status: 'ok' },
+          migrations: {
+            status: 'failed',
+            reason: 'pending migrations (schema is behind the binary)',
+          },
+          filesystem: { status: 'ok' },
+        },
+      });
+      return;
+    }
+    this.sendJson(res, 200, {
+      status: 'ready',
+      checks: {
+        database: { status: 'ok' },
+        migrations: { status: 'ok' },
+        filesystem: { status: 'ok' },
+      },
+    });
+  }
+
   async serveHealth(res) {
     const override = this.healthOverride ?? {};
     if (override.error) {
@@ -163,7 +228,7 @@ export class SwUpgradeServer {
     }
     if (pathname === HARNESS_ACTIVE_PATH && method === 'POST') {
       const body = await readJsonBody(req);
-      const profile = body && body.build;
+      const profile = body?.build;
       if (!PROFILES.includes(profile)) {
         this.sendJson(res, 400, {
           error: `build must be one of ${PROFILES.join('|')}, got ${profile}`,
@@ -188,6 +253,42 @@ export class SwUpgradeServer {
       this.sendJson(res, 200, { health: this.healthPayload() });
       return;
     }
+    if (pathname === HARNESS_READY_PATH && method === 'POST') {
+      const body = (await readJsonBody(req)) ?? {};
+      if (body.reset) {
+        this.resetReady();
+      } else if (typeof body.ready === 'boolean') {
+        this.setReady(body.ready);
+      } else {
+        this.sendJson(res, 400, { error: `ready must be a boolean, got ${body.ready}` });
+        return;
+      }
+      this.sendJson(res, 200, { ready: this.readyOverride !== false });
+      return;
+    }
+    if (pathname === HARNESS_READY_PATH && method === 'GET') {
+      this.sendJson(res, 200, { ready: this.readyOverride !== false });
+      return;
+    }
+    if (pathname === HARNESS_ASSET_404_PATH && method === 'POST') {
+      const body = (await readJsonBody(req)) ?? {};
+      if (body.reset) {
+        this.resetBlockedAssets();
+      } else if (typeof body.path === 'string' && body.path.startsWith('/assets/')) {
+        this.blockAsset(body.path);
+      } else {
+        this.sendJson(res, 400, {
+          error: `path must be a /assets/ URL, got ${JSON.stringify(body.path)}`,
+        });
+        return;
+      }
+      this.sendJson(res, 200, { blockedAssets: [...this.blockedAssets].sort() });
+      return;
+    }
+    if (pathname === HARNESS_ASSET_404_PATH && method === 'GET') {
+      this.sendJson(res, 200, { blockedAssets: [...this.blockedAssets].sort() });
+      return;
+    }
 
     if (method !== 'GET' && method !== 'HEAD') {
       res.writeHead(405, { 'Content-Type': 'text/plain' });
@@ -199,8 +300,29 @@ export class SwUpgradeServer {
     // Issue #475: the app's stale-client detector polls /health on load and on
     // tab focus; serve the harness's contract payload so that polling has
     // something real to read (and can be told to fail, for the fail-open spec).
+    // Issue #477: the ServerStartingGate probes /health/ready at boot, so the
+    // harness serves the readiness endpoints too. /health/live is served for
+    // parity with the real backend surface (the gate does not consume it, but
+    // global-setup-style waits elsewhere might).
+    if (pathname === '/health/ready') {
+      await this.serveReady(res);
+      return;
+    }
+    if (pathname === '/health/live') {
+      this.sendJson(res, 200, { status: 'live' });
+      return;
+    }
     if (pathname === '/health') {
       await this.serveHealth(res);
+      return;
+    }
+
+    // Issue #477 (WEB-03): an asset the harness has been told to withhold (a
+    // chunk the "new deploy" deleted but a stale index.html still references).
+    // The hard 404 mirrors what nginx does for a missing hashed asset.
+    if (this.blockedAssets.has(pathname)) {
+      res.writeHead(404, { 'Content-Type': 'text/plain' });
+      res.end('not found');
       return;
     }
 
@@ -245,9 +367,11 @@ export class SwUpgradeServer {
       const contentType = CONTENT_TYPES[ext] ?? 'application/octet-stream';
       const headers = {};
 
-      if (pathname === '/service-worker.js' || ext === '.html') {
-        // The worker script and the app shell must never be served stale; the
-        // browser checks the former before every update.
+      if (pathname === '/service-worker.js' || pathname === '/asset-skew.js' || ext === '.html') {
+        // The worker script, the asset-skew bootstrap and the app shell must
+        // never be served stale; the browser checks the former before every
+        // update, and the latter exists to run against the current server
+        // after an interrupted deploy (issue #477).
         headers['Cache-Control'] = 'no-cache';
       } else if (pathname === '/_recovery.html' || pathname === '/_recovery.js') {
         headers['Cache-Control'] = 'no-store';
