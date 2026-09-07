@@ -604,8 +604,7 @@ func GetContactTimeline(c *gin.Context) {
 		}
 	}
 
-	cfg := currentConfig(c)
-	now := time.Now().In(cfg.GetReminderLocation())
+	now := reminderNow(c)
 	cutoff, hasCutoff := timelineBucketCutoff(bucket, now)
 
 	composer := timelineComposer{

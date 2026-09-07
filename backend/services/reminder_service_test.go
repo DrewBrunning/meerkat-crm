@@ -924,3 +924,163 @@ func TestSendReminders_EmailDisabledPreservesReminders(t *testing.T) {
 	assert.False(t, reloaded.EmailSent, "reminder should be preserved (not marked sent) while email is disabled")
 	assert.Nil(t, reloaded.LastSent)
 }
+
+// --- DATE-02 (issue #483): deterministic digest day boundary -----------------
+//
+// The daily digest must decide "which reminders are due today" against the
+// configured reminder zone (REMINDER_TIMEZONE), not the server's local zone,
+// and the suite must be able to drive it at a fixed clock. sendRemindersAt is
+// the clock-injected seam (SendReminders passes time.Now().In(...)); these
+// tests use it so they pass on any calendar day.
+
+// TestSendRemindersAt_DayBoundaryUsesReminderZone pins the digest's end-of-day
+// boundary against a half-hour-offset zone (Asia/Kolkata, +05:30 — the offset
+// class that breaks naive hour arithmetic). A single fixed UTC instant is used;
+// in the reminder zone it is already March 15, so a "15 March" reminder is due
+// that run, while under a UTC digest the same instant is still March 14 and the
+// same reminder is not.
+func TestSendRemindersAt_DayBoundaryUsesReminderZone(t *testing.T) {
+	fixedInstant := time.Date(2026, 3, 14, 22, 0, 0, 0, time.UTC) // Mar 15 03:30 in Asia/Kolkata
+
+	for _, tt := range []struct {
+		name         string
+		zone         string
+		wantMessages []string
+	}{
+		{
+			name:         "reminder zone Asia/Kolkata: the instant is Mar 15, the 15th is due",
+			zone:         "Asia/Kolkata",
+			wantMessages: []string{"due-14-march", "due-15-march"},
+		},
+		{
+			name:         "UTC: the same instant is Mar 14, the 15th is not due yet",
+			zone:         "UTC",
+			wantMessages: []string{"due-14-march"},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db, _ := setupRouter()
+			user := models.User{Username: "ist-boundary", Password: "password123", Email: "ist@example.com"}
+			require.NoError(t, db.Create(&user).Error)
+			contact := models.Contact{UserID: user.ID, Firstname: "Due", Lastname: "Boundary"}
+			require.NoError(t, db.Create(&contact).Error)
+
+			f := false
+			byMail := true
+			// Canonical day-granular write path: the client sends Z (UTC)
+			// midnight of the calendar day (reminder_controller.go zeroes the
+			// time-of-day and keeps the zone).
+			r14 := models.Reminder{UserID: user.ID, ContactID: &contact.ID, Message: "due-14-march",
+				RemindAt: time.Date(2026, 3, 14, 0, 0, 0, 0, time.UTC), Recurrence: "once", ReoccurFromCompletion: &f, ByMail: &byMail}
+			r15 := models.Reminder{UserID: user.ID, ContactID: &contact.ID, Message: "due-15-march",
+				RemindAt: time.Date(2026, 3, 15, 0, 0, 0, 0, time.UTC), Recurrence: "once", ReoccurFromCompletion: &f, ByMail: &byMail}
+			require.NoError(t, db.Create(&r14).Error)
+			require.NoError(t, db.Create(&r15).Error)
+
+			var sent []string
+			originalSender := sendReminderEmailFn
+			sendReminderEmailFn = func(u models.User, reminders []models.Reminder, cfg config.Config, db *gorm.DB) error {
+				for _, r := range reminders {
+					sent = append(sent, r.Message)
+				}
+				return nil
+			}
+			defer func() { sendReminderEmailFn = originalSender }()
+
+			cfg := config.Config{UseResend: true, ResendAPIKey: "k", ResendFromEmail: "n@example.com", ReminderTime: "06:00", ReminderTimezone: tt.zone}
+			// sendRemindersAt expects now already expressed in the reminder zone.
+			now := fixedInstant.In(cfg.GetReminderLocation())
+			_, err := sendRemindersAt(db, cfg, now)
+			require.NoError(t, err)
+
+			assert.Equal(t, tt.wantMessages, sent, "the digest must fetch against the %s day boundary", tt.zone)
+		})
+	}
+}
+
+// TestSendRemindersAt_LeapDayBirthdayReachesTheDigestOnMarchFirstNonLeap pins
+// DATE-01 Rule 6 at the digest level: a stored 29-Feb birthday is celebrated
+// (DaysUntilBirthday == 0) on 1 March of a non-leap year, and only then — so
+// the birthday-only user is emailed on 2025-03-01 but neither on 2025-02-28
+// (the celebration is still tomorrow) nor on 2024-03-01 (a leap year, whose
+// occurrence was the day before).
+func TestSendRemindersAt_LeapDayBirthdayReachesTheDigestOnMarchFirstNonLeap(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		now      time.Time
+		wantCall bool
+	}{
+		{"Mar 1 2025 (non-leap): the leap-day birthday is today", time.Date(2025, 3, 1, 6, 0, 0, 0, time.UTC), true},
+		{"Feb 28 2025 (non-leap): the celebration is tomorrow", time.Date(2025, 2, 28, 6, 0, 0, 0, time.UTC), false},
+		{"Mar 1 2024 (leap): the real occurrence was yesterday", time.Date(2024, 3, 1, 6, 0, 0, 0, time.UTC), false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			db, _ := setupRouter()
+			user := models.User{Username: "leap-digest", Password: "password123", Email: "leapdigest@example.com"}
+			require.NoError(t, db.Create(&user).Error)
+			require.NoError(t, db.Create(&models.Contact{UserID: user.ID, Firstname: "Leapling", Lastname: "Digest", Birthday: "2000-02-29", Archived: false}).Error)
+
+			callCount := 0
+			originalSender := sendReminderEmailFn
+			sendReminderEmailFn = func(u models.User, reminders []models.Reminder, cfg config.Config, db *gorm.DB) error {
+				callCount++
+				return nil
+			}
+			defer func() { sendReminderEmailFn = originalSender }()
+
+			cfg := config.Config{UseResend: true, ResendAPIKey: "k", ResendFromEmail: "n@example.com", ReminderTime: "06:00"}
+			_, err := sendRemindersAt(db, cfg, tt.now)
+			require.NoError(t, err)
+
+			if tt.wantCall {
+				assert.Equal(t, 1, callCount, "the birthday-only user must be emailed when the leap-day birthday is today")
+			} else {
+				assert.Zero(t, callCount, "no email when the leap-day birthday is not today")
+			}
+		})
+	}
+}
+
+// TestSendRemindersAt_RunsOncePerCalendarDayOnTheSameDay pins the #526
+// "never doubled" half of the DST rule at the delivery layer: two digest
+// passes on the same day produce exactly one email for a due reminder — the
+// legacy email_sent mirror (and the sent delivery row) de-duplicates the
+// second pass, which is what stands between a repeated-hour day and a doubled
+// email if the scheduler ever fired twice.
+func TestSendRemindersAt_RunsOncePerCalendarDayOnTheSameDay(t *testing.T) {
+	db, _ := setupRouter()
+	user := models.User{Username: "once-a-day", Password: "password123", Email: "once@example.com"}
+	require.NoError(t, db.Create(&user).Error)
+	contact := models.Contact{UserID: user.ID, Firstname: "Once", Lastname: "ADay"}
+	require.NoError(t, db.Create(&contact).Error)
+
+	f := false
+	byMail := true
+	reminder := models.Reminder{UserID: user.ID, ContactID: &contact.ID, Message: "fold-day",
+		RemindAt: time.Date(2026, 3, 8, 0, 0, 0, 0, time.UTC), Recurrence: "weekly", ReoccurFromCompletion: &f, ByMail: &byMail}
+	require.NoError(t, db.Create(&reminder).Error)
+
+	callCount := 0
+	originalSender := sendReminderEmailFn
+	sendReminderEmailFn = func(u models.User, reminders []models.Reminder, cfg config.Config, db *gorm.DB) error {
+		callCount++
+		return nil
+	}
+	defer func() { sendReminderEmailFn = originalSender }()
+
+	cfg := config.Config{UseResend: true, ResendAPIKey: "k", ResendFromEmail: "n@example.com", ReminderTime: "06:00"}
+	now := time.Date(2026, 3, 8, 6, 0, 0, 0, time.UTC)
+
+	// First pass sends (and marks email_sent); the second pass the same day
+	// must find nothing left to send.
+	_, err := sendRemindersAt(db, cfg, now)
+	require.NoError(t, err)
+	_, err = sendRemindersAt(db, cfg, now)
+	require.NoError(t, err)
+
+	assert.Equal(t, 1, callCount, "two same-day passes must yield exactly one send")
+
+	var reloaded models.Reminder
+	require.NoError(t, db.First(&reloaded, reminder.ID).Error)
+	assert.True(t, reloaded.EmailSent)
+}

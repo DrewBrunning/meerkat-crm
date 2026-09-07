@@ -573,7 +573,7 @@ func GetUpcomingBirthdays(c *gin.Context) {
 		return
 	}
 
-	birthdays, err := services.GetUpcomingBirthdays(db, userID, time.Now())
+	birthdays, err := services.GetUpcomingBirthdays(db, userID, reminderNow(c))
 	if err != nil {
 		apperrors.AbortWithError(c, apperrors.ErrDatabase("Failed to retrieve upcoming birthdays").WithError(err))
 		return

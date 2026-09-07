@@ -6,7 +6,6 @@ import (
 	"mycorrhizal/services"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -32,7 +31,7 @@ func GetDashboard(c *gin.Context) {
 		return
 	}
 
-	now := time.Now()
+	now := reminderNow(c)
 
 	birthdays, err := services.GetUpcomingBirthdays(db, userID, now)
 	if err != nil {
