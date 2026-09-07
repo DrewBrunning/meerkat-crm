@@ -96,4 +96,26 @@ func registerVCardPins() {
 	checkPin(DivergencePin{CorpusID: "seed/gen-0008", Format: "vcard4", Dir: "reference->ours", Concepts: []string{"adr", "anniversary.place.death", "note"}, Reason: "vobject ADR is the classic 7-slot shape; the extended RFC 9554 components (room/apartment/floor/building/number/block/direction/landmark/subdistrict/district) collapse into the extended/street slots, so the neutral components differ; DEATHPLACE is a plain TEXT value; a neutral place with only components degrades to full text; vobject splits unquoted parameter values containing \":\" (CREATED timestamps, AUTHOR URIs) and drops empty-valued NOTE lines, so NOTE params do not survive a vobject round trip"})
 	checkPin(DivergencePin{CorpusID: "seed/gen-0009", Format: "vcard4", Dir: "reference->ours", Concepts: []string{"adr", "adr.geo", "anniversary.place.birth", "anniversary.place.death", "name.phonetic"}, Reason: "vobject ADR is the classic 7-slot shape; the extended RFC 9554 components (room/apartment/floor/building/number/block/direction/landmark/subdistrict/district) collapse into the extended/street slots, so the neutral components differ; vobject does not pair the standalone GEO property back to an address; coordinates are dropped on parse and not re-emitted on build; BIRTHPLACE is a plain TEXT value; a neutral place with only components degrades to full text; DEATHPLACE is a plain TEXT value; a neutral place with only components degrades to full text; reference-fidelity scope: the Python reference does not emit the RFC 9554 phonetic N variant (ALTID+PHONETIC+SCRIPT), so phonetic data is absent from the reference-built card"})
 	checkPin(DivergencePin{CorpusID: "seed/gen-0010", Format: "vcard4", Dir: "reference->ours", Concepts: []string{"adr", "adr.geo"}, Reason: "vobject ADR is the classic 7-slot shape; the extended RFC 9554 components (room/apartment/floor/building/number/block/direction/landmark/subdistrict/district) collapse into the extended/street slots, so the neutral components differ; vobject does not pair the standalone GEO property back to an address; coordinates are dropped on parse and not re-emitted on build"})
+
+	// I18N-01 (issue #484) fixture contacts: each international address
+	// round-trips through vobject the same way the existing fixture addresses
+	// do — the reference keeps the classic 7-slot ADR shape and cannot carry
+	// the extended components / CC / TZ / TYPE the neutral model stores, so the
+	// whole adr concept differs in both directions. somchai's Bangkok address
+	// is the one case that still differs under vCard 4.0, because its
+	// subdistrict/district components have no vCard 4.0 ADR home either.
+	// carmen/joao's compound surnames hit vobject's missing secondary-surname
+	// slot (RFC 9554 surname2) under vCard 4.0, already pinned for the
+	// generated seeds.
+	adrFixtureV3 := []string{"naoki", "wei", "minjun", "layla", "yael", "bjork", "carmen", "joao", "jan", "somchai", "priya", "aoife"}
+	for _, name := range adrFixtureV3 {
+		checkPin(DivergencePin{CorpusID: "fixture/" + name, Format: "vcard3", Dir: "ours->reference", Concepts: []string{"adr"}, Reason: "vobject ADR is the classic 7-slot shape; the extended RFC 9554 components (room/apartment/floor/building/number/block/direction/landmark/subdistrict/district) collapse into the extended/street slots, so the neutral components differ"})
+		checkPin(DivergencePin{CorpusID: "fixture/" + name, Format: "vcard3", Dir: "reference->ours", Concepts: []string{"adr"}, Reason: "vobject ADR is the classic 7-slot shape; the extended RFC 9554 components (room/apartment/floor/building/number/block/direction/landmark/subdistrict/district) collapse into the extended/street slots, so the neutral components differ"})
+	}
+	checkPin(DivergencePin{CorpusID: "fixture/somchai", Format: "vcard4", Dir: "ours->reference", Concepts: []string{"adr"}, Reason: "vobject ADR is the classic 7-slot shape; the extended RFC 9554 components (room/apartment/floor/building/number/block/direction/landmark/subdistrict/district) collapse into the extended/street slots, so the neutral components differ"})
+	checkPin(DivergencePin{CorpusID: "fixture/somchai", Format: "vcard4", Dir: "reference->ours", Concepts: []string{"adr"}, Reason: "vobject ADR is the classic 7-slot shape; the extended RFC 9554 components (room/apartment/floor/building/number/block/direction/landmark/subdistrict/district) collapse into the extended/street slots, so the neutral components differ"})
+	for _, name := range []string{"carmen", "joao"} {
+		checkPin(DivergencePin{CorpusID: "fixture/" + name, Format: "vcard4", Dir: "ours->reference", Concepts: []string{"name.surname2"}, Reason: "vobject's N has no secondary-surname slot (RFC 9554 surname2); it collapses into the family slot"})
+		checkPin(DivergencePin{CorpusID: "fixture/" + name, Format: "vcard4", Dir: "reference->ours", Concepts: []string{"name.surname2"}, Reason: "vobject's N has no secondary-surname slot (RFC 9554 surname2); it collapses into the family slot"})
+	}
 }

@@ -61,6 +61,35 @@ list:
   edge-case dates (year-less leap-day birthday, far-future wedding, DST gift
   date), and deliberately duplicate/conflicting records (`hugo`/`ida` share
   email, phone, and a near-identical name — a real duplicate-detection pair).
+- **I18N-01 international records** (`naoki`…`aoife`, issue #484): genuinely
+  international names and shapes drawn from real naming conventions, each
+  load-bearing on its convention:
+  - **naming conventions**: Japanese, Chinese (pinyin) and Korean
+    (Hangul) names with per-component phonetic readings; Arabic and Hebrew
+    (RTL) names; an Icelandic patronymic; Spanish and Portuguese compound
+    surnames (`surname2`); a Dutch tussenvoegsel; a Thai contact filed under
+    its given name with no surname; an Irish Gaelic name with a fada.
+  - **addresses**: Japanese region→locality administrative order, an Irish
+    Eircode, a streetless+postcode-less Icelandic farm address, an address
+    with no postal code, Thai district/subdistrict granularity.
+  - **phones**: E.164 and several national formats (Indian, Chinese, Korean,
+    Israeli, Spanish, Portuguese, Egyptian, Japanese, Icelandic, Thai, Irish
+    landline/mobile conventions) — the `phone` validator must accept every one
+    (`TestI18NPhoneValidatorAcceptsEveryDeclaredNumber`).
+  - **text pathologies**: RTL + embedded-LTR bidirectional notes, emoji in
+    names/nicknames/notes, and a Devanagari name dense with combining marks
+    plus a zero-width-joiner family emoji — the byte-vs-rune truncation
+    tripwire (`priya`).
+  - **sort order**: `contacts.sort_name` is the dedicated key, derived from
+    the structured surname (or given when there is none), never inferred from
+    display order — pinned per convention by
+    `TestI18NSortNameDrivesInternationalOrdering` and exercised end to end by
+    the name-sorted contacts list over this fixture.
+  - Every record flows through the shared consumers like the trap records:
+    migration, interop, the TEST-03 round trip (all three serialized formats)
+    and the TEST-08 differential corpus — each has reference-divergence pins
+    for the documented vobject/calcard limitations, so a corpus addition never
+    pins a silent drop.
 - **TEST-07 shrunk counterexamples** (`test07_*` contacts, issue #435): the
   minimal failing records the round-trip *property* (generative testing, not
   a hand-written fixture) found and that had to be fixed in the adapters —

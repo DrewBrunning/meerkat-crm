@@ -12,12 +12,12 @@
         "smoke": {
           "queries": 1,
           "result_size": 0,
-          "row_scale": 300
+          "row_scale": 324
         },
         "typical": {
           "queries": 1,
           "result_size": 0,
-          "row_scale": 900
+          "row_scale": 918
         }
       }
     },
@@ -28,12 +28,12 @@
         "smoke": {
           "queries": 8,
           "result_size": 0,
-          "row_scale": 300
+          "row_scale": 324
         },
         "typical": {
           "queries": 8,
           "result_size": 0,
-          "row_scale": 900
+          "row_scale": 918
         }
       }
     },
@@ -44,12 +44,12 @@
         "smoke": {
           "queries": 25,
           "result_size": 0,
-          "row_scale": 300
+          "row_scale": 324
         },
         "typical": {
           "queries": 25,
           "result_size": 0,
-          "row_scale": 900
+          "row_scale": 918
         }
       }
     },
@@ -60,12 +60,12 @@
         "smoke": {
           "queries": 20,
           "result_size": 0,
-          "row_scale": 300
+          "row_scale": 324
         },
         "typical": {
           "queries": 20,
           "result_size": 0,
-          "row_scale": 900
+          "row_scale": 918
         }
       }
     },
@@ -76,12 +76,12 @@
         "smoke": {
           "queries": 1,
           "result_size": 2,
-          "row_scale": 300
+          "row_scale": 324
         },
         "typical": {
           "queries": 1,
           "result_size": 2,
-          "row_scale": 900
+          "row_scale": 918
         }
       }
     },
@@ -92,12 +92,12 @@
         "smoke": {
           "queries": 1,
           "result_size": 50,
-          "row_scale": 300
+          "row_scale": 324
         },
         "typical": {
           "queries": 1,
           "result_size": 50,
-          "row_scale": 900
+          "row_scale": 918
         }
       }
     },
@@ -108,12 +108,12 @@
         "smoke": {
           "queries": 100,
           "result_size": 0,
-          "row_scale": 300
+          "row_scale": 324
         },
         "typical": {
           "queries": 100,
           "result_size": 0,
-          "row_scale": 900
+          "row_scale": 918
         }
       }
     },
@@ -124,12 +124,12 @@
         "smoke": {
           "queries": 11,
           "result_size": 0,
-          "row_scale": 300
+          "row_scale": 324
         },
         "typical": {
           "queries": 11,
           "result_size": 0,
-          "row_scale": 900
+          "row_scale": 918
         }
       }
     },
@@ -140,12 +140,12 @@
         "smoke": {
           "queries": 8,
           "result_size": 0,
-          "row_scale": 300
+          "row_scale": 324
         },
         "typical": {
           "queries": 8,
           "result_size": 0,
-          "row_scale": 900
+          "row_scale": 918
         }
       }
     },
@@ -156,12 +156,12 @@
         "smoke": {
           "queries": 35,
           "result_size": 0,
-          "row_scale": 300
+          "row_scale": 324
         },
         "typical": {
           "queries": 35,
           "result_size": 0,
-          "row_scale": 900
+          "row_scale": 918
         }
       }
     },
@@ -171,13 +171,13 @@
       "profiles": {
         "smoke": {
           "queries": 5,
-          "result_size": 370,
-          "row_scale": 300
+          "result_size": 306,
+          "row_scale": 324
         },
         "typical": {
           "queries": 5,
-          "result_size": 14220,
-          "row_scale": 900
+          "result_size": 11254,
+          "row_scale": 918
         }
       }
     },
@@ -187,13 +187,13 @@
       "profiles": {
         "smoke": {
           "queries": 1,
-          "result_size": 20,
-          "row_scale": 300
+          "result_size": 12,
+          "row_scale": 324
         },
         "typical": {
           "queries": 1,
           "result_size": 50,
-          "row_scale": 900
+          "row_scale": 918
         }
       }
     },
@@ -204,12 +204,12 @@
         "smoke": {
           "queries": 3,
           "result_size": 10,
-          "row_scale": 300
+          "row_scale": 324
         },
         "typical": {
           "queries": 3,
           "result_size": 10,
-          "row_scale": 900
+          "row_scale": 918
         }
       }
     },
@@ -219,13 +219,13 @@
       "profiles": {
         "smoke": {
           "queries": 2,
-          "result_size": 49,
-          "row_scale": 300
+          "result_size": 29,
+          "row_scale": 324
         },
         "typical": {
           "queries": 2,
-          "result_size": 299,
-          "row_scale": 900
+          "result_size": 169,
+          "row_scale": 918
         }
       }
     },
@@ -235,13 +235,13 @@
       "profiles": {
         "smoke": {
           "queries": 2,
-          "result_size": 49,
-          "row_scale": 300
+          "result_size": 29,
+          "row_scale": 324
         },
         "typical": {
           "queries": 2,
-          "result_size": 299,
-          "row_scale": 900
+          "result_size": 169,
+          "row_scale": 918
         }
       }
     },
@@ -251,13 +251,13 @@
       "profiles": {
         "smoke": {
           "queries": 2,
-          "result_size": 12,
-          "row_scale": 300
+          "result_size": 9,
+          "row_scale": 324
         },
         "typical": {
           "queries": 2,
-          "result_size": 31,
-          "row_scale": 900
+          "result_size": 30,
+          "row_scale": 918
         }
       }
     },
@@ -268,12 +268,12 @@
         "smoke": {
           "queries": 5,
           "result_size": 0,
-          "row_scale": 300
+          "row_scale": 324
         },
         "typical": {
           "queries": 5,
           "result_size": 0,
-          "row_scale": 900
+          "row_scale": 918
         }
       }
     }
