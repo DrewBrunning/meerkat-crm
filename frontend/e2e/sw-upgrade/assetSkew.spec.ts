@@ -52,9 +52,10 @@ test.describe('Interrupted deployment — asset skew (WEB-03)', () => {
     await resetHarness(request);
   });
 
-  function entryOf(status: Awaited<ReturnType<typeof getHarnessStatus>>, label: 'a' | 'b') {
+  function entryOf(status: Awaited<ReturnType<typeof getHarnessStatus>>, label: 'a' | 'b'): string {
     const entry = status.builds[label].files.find((file) => file.includes(`swf${label}-`));
-    return entry ?? null;
+    if (!entry) throw new Error(`build ${label} should have a distinct entry chunk`);
+    return entry;
   }
 
   test('a stale index whose chunk the new build deleted reloads onto the current build', async ({
@@ -63,11 +64,9 @@ test.describe('Interrupted deployment — asset skew (WEB-03)', () => {
   }) => {
     const status = await getHarnessStatus(request);
     const aEntry = entryOf(status, 'a');
-    expect(aEntry, 'build A should have a distinct entry chunk').not.toBeNull();
-
     // The deploy deleted build A's unique entry chunk: any client still holding
     // A's index.html now asks for a file the server no longer serves.
-    await blockAsset(request, aEntry!);
+    await blockAsset(request, aEntry);
 
     // Seed a draft (issue #557's sessionStorage persistence) so the recovery
     // can be asserted to not lose what a user had in progress.
@@ -80,7 +79,10 @@ test.describe('Interrupted deployment — asset skew (WEB-03)', () => {
     );
     await page.goto('/seed');
     await page.evaluate(() =>
-      sessionStorage.setItem('mycorrhizal:draft:note-dialog:unsent', '{"content":"note in progress"}'),
+      sessionStorage.setItem(
+        'mycorrhizal:draft:note-dialog:unsent',
+        '{"content":"note in progress"}',
+      ),
     );
     await page.unroute('**/seed');
 
@@ -131,8 +133,7 @@ test.describe('Interrupted deployment — asset skew (WEB-03)', () => {
   }) => {
     const status = await getHarnessStatus(request);
     const aEntry = entryOf(status, 'a');
-    expect(aEntry).not.toBeNull();
-    await blockAsset(request, aEntry!);
+    await blockAsset(request, aEntry);
 
     // Count document loads: the bootstrap is allowed a bounded number of
     // automatic retries, then must stop and put a manual way forward in front
@@ -151,9 +152,10 @@ test.describe('Interrupted deployment — asset skew (WEB-03)', () => {
     // broken even though the server is still broken.
     expect(documentLoads).toBeLessThanOrEqual(3);
     await page.waitForTimeout(1_500);
-    expect(documentLoads, 'a broken deploy must not spin an unbounded reload loop').toBeLessThanOrEqual(
-      3,
-    );
+    expect(
+      documentLoads,
+      'a broken deploy must not spin an unbounded reload loop',
+    ).toBeLessThanOrEqual(3);
 
     // The app never mounted (so there is nothing to hit an ErrorBoundary dead
     // end either) — the user got a clear message and a way forward instead.

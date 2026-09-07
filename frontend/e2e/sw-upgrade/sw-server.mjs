@@ -99,7 +99,7 @@ export class SwUpgradeServer {
   }
 
   setReady(ready) {
-    this.readyOverride = ready ? true : false;
+    this.readyOverride = ready;
   }
 
   resetReady() {
@@ -228,7 +228,7 @@ export class SwUpgradeServer {
     }
     if (pathname === HARNESS_ACTIVE_PATH && method === 'POST') {
       const body = await readJsonBody(req);
-      const profile = body && body.build;
+      const profile = body?.build;
       if (!PROFILES.includes(profile)) {
         this.sendJson(res, 400, {
           error: `build must be one of ${PROFILES.join('|')}, got ${profile}`,

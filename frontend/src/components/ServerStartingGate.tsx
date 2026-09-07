@@ -1,7 +1,7 @@
 import { Box, Button, CircularProgress, Stack, Typography } from '@mui/material';
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { READY_POLL_MS, probeServerReadiness, type ServerReadiness } from '../readiness/readiness';
+import { probeServerReadiness, READY_POLL_MS, type ServerReadiness } from '../readiness/readiness';
 
 // ServerStartingGate (issue #477, WEB-03): the "starting up" screen.
 //
@@ -90,10 +90,13 @@ export default function ServerStartingGate({ children }: { children: React.React
         ) : (
           <Typography variant="body2">{t('app.startingUp.checking')}</Typography>
         )}
-        <Button variant="outlined" onClick={() => {
-          setPhase('checking');
-          runProbeLoop.current();
-        }}>
+        <Button
+          variant="outlined"
+          onClick={() => {
+            setPhase('checking');
+            runProbeLoop.current();
+          }}
+        >
           {t('app.startingUp.retry')}
         </Button>
       </Stack>

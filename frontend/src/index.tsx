@@ -45,7 +45,11 @@ root.render(
             <ServerStartingGate>
               <SessionExpiredGate />
               <StaleClientGate />
-              <ErrorBoundary name="Application" onError={logError} showDetails={import.meta.env.DEV}>
+              <ErrorBoundary
+                name="Application"
+                onError={logError}
+                showDetails={import.meta.env.DEV}
+              >
                 <App />
                 <ServiceWorkerUpdatePrompt />
               </ErrorBoundary>

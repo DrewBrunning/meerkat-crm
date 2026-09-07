@@ -26,9 +26,7 @@
 // broken load, so there is no form state to lose, and #557's per-surface
 // drafts live in sessionStorage, which a reload does not clear.
 
-(function () {
-  'use strict';
-
+(() => {
   // Only assets under /assets/ are content-hashed build output. A 404 on any
   // other resource (favicon, manifest, fonts) is not a build-skew signal and
   // must not trigger a reload.
@@ -70,7 +68,7 @@
   }
 
   function assetUrlOf(target) {
-    if (!target || target.nodeType !== 1) return null;
+    if (target?.nodeType !== 1) return null;
     var tag = target.tagName;
     if (tag !== 'SCRIPT' && tag !== 'LINK') return null;
     var url = target.src || target.href || '';
@@ -86,13 +84,15 @@
   }
 
   function readAttempts() {
+    var raw = null;
+    var parsed = 0;
     try {
-      var raw = window.sessionStorage.getItem(ATTEMPTS_KEY);
-      var n = raw ? Number(raw) : 0;
-      return Number.isFinite(n) ? n : 0;
+      raw = window.sessionStorage.getItem(ATTEMPTS_KEY);
+      parsed = raw ? Number(raw) : 0;
     } catch {
-      return 0;
+      // storage disabled -- count as zero attempts
     }
+    return Number.isFinite(parsed) ? parsed : 0;
   }
 
   function writeAttempts(n) {
@@ -134,8 +134,8 @@
       clearAttempts();
       return;
     }
-    var reason = event && event.reason;
-    var message = (reason && reason.message) || String(reason || '');
+    var reason = event?.reason;
+    var message = reason?.message || String(reason || '');
     // A dynamic-import failure for a hashed chunk (defense in depth -- the app
     // currently only statically imports, but future lazy routes would surface
     // here). A rejection without any asset signal is not ours to act on.
@@ -163,7 +163,7 @@
     }
     var observer;
     try {
-      observer = new MutationObserver(function () {
+      observer = new MutationObserver(() => {
         if (appIsBooted()) {
           booted = true;
           clearAttempts();
@@ -185,7 +185,7 @@
     // even when a module failed -- so load is a reliable "the module graph has
     // settled" signal. If the error arrived after load already fired, decide
     // immediately.
-    var settle = function () {
+    var settle = () => {
       if (handled) return;
       if (appIsBooted()) {
         booted = true;
@@ -222,11 +222,11 @@
     if (window.navigator && 'serviceWorker' in window.navigator) {
       window.navigator.serviceWorker
         .getRegistration()
-        .then(function (registration) {
+        .then((registration) => {
           if (registration) return registration.update();
           return undefined;
         })
-        .catch(function () {
+        .catch(() => {
           // offline / no worker -- the plain reload below still retries
         });
     }
@@ -268,7 +268,7 @@
     var retry = document.createElement('button');
     retry.type = 'button';
     retry.textContent = FALLBACK_RETRY;
-    retry.addEventListener('click', function () {
+    retry.addEventListener('click', () => {
       // A manual retry is a fresh start: clear the counter so a recovered
       // deploy is not kept in the fallback state.
       clearAttempts();

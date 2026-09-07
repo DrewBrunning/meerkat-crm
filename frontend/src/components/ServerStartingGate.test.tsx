@@ -129,7 +129,10 @@ describe('ServerStartingGate', () => {
     await act(async () => {
       await vi.advanceTimersByTimeAsync(3_000);
     });
-    expect(gate.probe, 'a cancelled gate must not keep polling after unmount').not.toHaveBeenCalled();
+    expect(
+      gate.probe,
+      'a cancelled gate must not keep polling after unmount',
+    ).not.toHaveBeenCalled();
   });
 
   test('a manual retry that is still not ready keeps the starting-up state up', async () => {
