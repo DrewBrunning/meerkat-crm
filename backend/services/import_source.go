@@ -701,6 +701,12 @@ func importCustomFields(tx *gorm.DB, userID uint, plan *ImportSourcePlan, import
 // gorm/sqlite serialization changed over time); Monica uses RFC3339, with
 // date-only strings for events. Returns a zero-time error for anything else,
 // which the callers report as an invalid field rather than guessing.
+//
+// Zone-less assumption (docs/adrs/0015-temporal-semantics.md): time.Parse
+// (not ParseInLocation) interprets the two naive layouts — "2006-01-02
+// 15:04:05" and the date-only "2006-01-02" — as UTC. That is a stated
+// assumption about an import source's missing zone, not a verified fact about
+// the source's writer.
 func parseSourceTime(s string) (time.Time, error) {
 	s = strings.TrimSpace(s)
 	if s == "" {

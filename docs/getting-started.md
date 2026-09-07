@@ -46,8 +46,8 @@ fresh instance (issue #450).
 | `OIDC_AUTO_PROVISION` | When `true`, a new account is automatically created on first SSO login. Default is `false` |
 | `OIDC_TRUST_EMAIL` | When `true`, skips the `email_verified`  requirement when linking an OIDC identity to an existing account by email. Safe to enable for self-hosted providers (e.g. Authentik) where you control all user accounts. Default is `false` |
 | `OIDC_SCOPES` | Comma-separated list of OAuth2/OIDC scopes to request. Default is `openid,email,profile` |
-| `REMINDER_TIME` | Time of day at which reminder notifications are sent, in `HH:MM` format (24-hour). Default is `06:00` |
-| `REMINDER_TIMEZONE` | Timezone used for scheduling reminder emails. Must be a valid [IANA timezone name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) (e.g. `Europe/Berlin`). Default is `UTC` |
+| `REMINDER_TIME` | Time of day at which reminder notifications are sent, in `HH:MM` format (24-hour). Default is `06:00`. **Server-wide, not per user** — every user on the deployment shares this one clock. See [Temporal semantics (ADR 0015)](adrs/0015-temporal-semantics.md) for the DST and timezone rules |
+| `REMINDER_TIMEZONE` | Timezone used for scheduling reminder emails. Must be a valid [IANA timezone name](https://en.wikipedia.org/wiki/List_of_tz_database_time_zones) (e.g. `Europe/Berlin`). Default is `UTC`. Applied to every user (one clock per deployment); a multi-timezone deployment should expect all users on this zone |
 
 SSO is disabled unless all three of `OIDC_PROVIDER_URL`, `OIDC_CLIENT_ID`, and `OIDC_CLIENT_SECRET` are set.
 

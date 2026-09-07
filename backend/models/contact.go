@@ -80,13 +80,19 @@ type ContactAddress struct {
 
 type Contact struct {
 	gorm.Model
-	UserID             uint       `gorm:"not null;index" json:"-"`
-	Firstname          string     `gorm:"type:text not null COLLATE NOCASE" json:"firstname" validate:"required,min=1,max=100"`
-	Lastname           string     `gorm:"type:text COLLATE NOCASE" json:"lastname" validate:"max=100"`
-	Nickname           string     `gorm:"type:text COLLATE NOCASE" json:"nickname" validate:"max=50"`
-	Gender             string     `json:"gender" validate:"omitempty,max=100"`
-	Email              string     `gorm:"type:text COLLATE NOCASE" json:"email" validate:"omitempty,email"`
-	Phone              string     `json:"phone" validate:"omitempty,phone"`
+	UserID    uint   `gorm:"not null;index" json:"-"`
+	Firstname string `gorm:"type:text not null COLLATE NOCASE" json:"firstname" validate:"required,min=1,max=100"`
+	Lastname  string `gorm:"type:text COLLATE NOCASE" json:"lastname" validate:"max=100"`
+	Nickname  string `gorm:"type:text COLLATE NOCASE" json:"nickname" validate:"max=50"`
+	Gender    string `json:"gender" validate:"omitempty,max=100"`
+	Email     string `gorm:"type:text COLLATE NOCASE" json:"email" validate:"omitempty,email"`
+	Phone     string `json:"phone" validate:"omitempty,phone"`
+	// Birthday is a date-only calendar date with no time and no zone (never
+	// zone-converted; see docs/adrs/0015-temporal-semantics.md). A full
+	// YYYY-MM-DD value is date-only; a year-less --MM-DD value is the partial
+	// date form. String, not time.Time, because vCard BDAY permits the
+	// year-less form no timestamp type can carry; validated by the "birthday"
+	// custom validator (middleware/validation.go).
 	Birthday           string     `json:"birthday" validate:"omitempty,birthday"`
 	Photo              string     `json:"photo"`                                                               // Path to the profile photo
 	PhotoThumbnail     string     `json:"-"`                                                                   // Base64 data URL of thumbnail (not exposed in JSON directly)
@@ -129,6 +135,7 @@ type Contact struct {
 	Role         string `gorm:"type:text" json:"role" validate:"max=200"`
 
 	// Anniversary date (vCard X-ANNIVERSARY), same format as Birthday
+	// (date-only / partial, no time, no zone — docs/adrs/0015).
 	Anniversary string `json:"anniversary" validate:"omitempty,birthday"`
 
 	// CardDAV fields

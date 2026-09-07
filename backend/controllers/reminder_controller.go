@@ -46,7 +46,12 @@ func CreateReminder(c *gin.Context) {
 	reminder.ContactID = &contact.ID
 	reminder.UserID = userID
 
-	// Set hours, minutes, seconds to 0 to ensure reminders are found when comparing for "until date"
+	// Set hours, minutes, seconds to 0 to ensure reminders are found when comparing for "until date".
+	// RemindAt is day-granular in intent: a reminder "for 14 March" has no
+	// meaningful time-of-day, and the daily job compares remind_at against the
+	// day boundary (docs/adrs/0015-temporal-semantics.md). The zone carried
+	// here is whatever the client's RFC3339 value had (commonly Z); the day
+	// boundary is re-derived in the reminder zone at send time.
 	reminder.RemindAt = time.Date(reminder.RemindAt.Year(),
 		reminder.RemindAt.Month(),
 		reminder.RemindAt.Day(), 0, 0, 0, 0, reminder.RemindAt.Location())

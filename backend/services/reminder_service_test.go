@@ -153,10 +153,10 @@ func TestAddYears(t *testing.T) {
 		expected time.Time
 	}{
 		{
-			name:     "Feb 29 2024 + 1 year = Feb 28 2025 (leap to non-leap)",
+			name:     "Feb 29 2024 + 1 year = Mar 1 2025 (leap to non-leap advances to Mar 1)",
 			start:    time.Date(2024, 2, 29, 12, 0, 0, 0, time.UTC),
 			years:    1,
-			expected: time.Date(2025, 2, 28, 12, 0, 0, 0, time.UTC),
+			expected: time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC),
 		},
 		{
 			name:     "Feb 28 2023 + 1 year = Feb 28 2024 (normal case)",
@@ -223,13 +223,13 @@ func TestCalculateNextReminderTimeMonthlyEdgeCases(t *testing.T) {
 			expected: time.Date(2023, 11, 30, 12, 0, 0, 0, time.UTC),
 		},
 		{
-			name: "Yearly from Feb 29 leap year should go to Feb 28 non-leap",
+			name: "Yearly from Feb 29 leap year advances to Mar 1 in non-leap year",
 			reminder: models.Reminder{
 				RemindAt:              time.Date(2024, 2, 29, 12, 0, 0, 0, time.UTC),
 				Recurrence:            "yearly",
 				ReoccurFromCompletion: &reoccurFalse,
 			},
-			expected: time.Date(2025, 2, 28, 12, 0, 0, 0, time.UTC),
+			expected: time.Date(2025, 3, 1, 12, 0, 0, 0, time.UTC),
 		},
 	}
 

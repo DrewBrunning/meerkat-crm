@@ -134,7 +134,10 @@ type LifeEvent struct {
 
 	// Date reuses contactmodel.PartialDate own instruction
 	// ("life events are often known only to a year"), JSON-serialized like
-	// Household.Address.
+	// Household.Address. A date-only / partial calendar date with no time and
+	// no zone — never zone-converted (docs/adrs/0015-temporal-semantics.md).
+	// A month/day value recurs annually (1 March for a year-less 29-Feb in a
+	// non-leap year); a year-only value has no annual occurrence.
 	Date *contactmodel.PartialDate `gorm:"type:text;serializer:json" json:"date,omitempty"`
 
 	Description string `gorm:"serializer:encrypted" json:"description,omitempty" validate:"max=2000"`

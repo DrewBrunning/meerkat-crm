@@ -193,7 +193,22 @@ func validateHTTPURL(fl validator.FieldLevel) bool {
 	return scheme == "http" || scheme == "https"
 }
 
-// validateBirthday validates date format (YYYY-MM-DD or --MM-DD)
+// validateBirthday validates date format (YYYY-MM-DD or --MM-DD).
+//
+// Accepted lexical set — exactly two shapes, the date-only / partial-date
+// boundary documented in docs/adrs/0015-temporal-semantics.md (mirrored, by
+// hand, in models/contact_record.go's birthdayFormatRE and
+// services/import_service.go's IsValidBirthdayFormat — models cannot import
+// middleware):
+//
+//	YYYY-MM-DD   a whole calendar date (year, month, day)
+//	--MM-DD      a year-less partial date (RFC 6350 year-less convention)
+//
+// The check is lexical only: calendar-range validity (1990-13-45, 1990-99-99)
+// is deliberately not enforced here — the reduced-precision forms those
+// strings could otherwise represent (month 99, day 45) are not valid RFC
+// partial dates either, and DATE-02 (issue #483) owns pathological-date
+// handling. Surrounding whitespace is rejected by the anchors.
 func validateBirthday(fl validator.FieldLevel) bool {
 	birthday := fl.Field().String()
 	if birthday == "" {
@@ -202,12 +217,7 @@ func validateBirthday(fl validator.FieldLevel) bool {
 
 	// Check format YYYY-MM-DD or --MM-DD (ISO 8601 format, year optional)
 	match, _ := regexp.MatchString(`^(--|\d{4}-)\d{2}-\d{2}$`, birthday)
-	if !match {
-		return false
-	}
-
-	// Additional validation could check if date is valid
-	return true
+	return match
 }
 
 // validateStrongPassword checks password strength based on entropy

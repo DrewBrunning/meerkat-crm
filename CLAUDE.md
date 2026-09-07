@@ -236,13 +236,20 @@ same port) — see T51's landing note.
 
 ## Coverage gate
 
-The `codecov/patch` status is a **hard, diff-based gate** (issue #267): `target: 100%` on changed lines,
-so a PR that adds an executable line the coverage tooling records as uncovered goes red. It applies to all
-three areas (Go coverprofile / vitest lcov / JaCoCo). The project-wide `codecov/project` number is
-deliberately *not* gated. Overrides exist and are meant to be rare — write the test first, then
-`// pragma: no cover` for a structurally unhittable line, or (coarse) an `ignore:` entry in `codecov.yml`.
-Full rules: `docs/development/coverage.md`. The status only blocks merges once `codecov/patch` is a
-required check in branch protection.
+The diff-based gate (issue #267) is **three per-area `codecov/patch/*` statuses** —
+`codecov/patch/backend` (target 95%), `codecov/patch/frontend` (target 90%),
+`codecov/patch/android` (target 80%); see `codecov.yml` for why the targets differ.
+Each judges its own area's changed lines (Go coverprofile / vitest lcov / JaCoCo), so
+a PR that adds an executable line the coverage tooling records as uncovered goes red
+in that area. The project-wide `codecov/project` number is deliberately *not* gated.
+Overrides exist and are meant to be rare — write the test first, then
+`// pragma: no cover` for a structurally unhittable line, or (coarse) an `ignore:`
+entry in `codecov.yml`. Full rules: `docs/development/coverage.md`. The statuses only
+block merges because all three are required checks in the `main-protection` ruleset.
+Splitting a single `codecov/patch` into per-area ones (issue #808) **renamed the
+reported contexts** — if a `codecov/patch*` check ever sits stuck as "expected —
+waiting for status", the ruleset is requiring a context Codecov no longer reports
+and must be re-pointed at the current names.
 
 ## Backend traps
 

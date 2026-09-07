@@ -40,7 +40,13 @@ type OIDCConfig struct {
 // Config is the fully-loaded application configuration, populated once by
 // LoadConfig from environment variables at process start.
 type Config struct {
-	DBPath                       string
+	DBPath string
+	// ReminderTime and ReminderTimezone are the operator's single reminder
+	// clock: REMINDER_TIME is a local wall time (HH:MM) interpreted in
+	// REMINDER_TIMEZONE (IANA), and together they are server-wide — every
+	// user on the deployment is scheduled against this one clock, never a
+	// per-user zone (docs/adrs/0015-temporal-semantics.md "local wall time"
+	// category). See GetReminderLocation.
 	ReminderTime                 string
 	ReminderTimezone             string
 	FrontendURL                  string
@@ -848,6 +854,9 @@ func (c *Config) EmailEnabled() bool {
 
 // GetReminderLocation returns the parsed time.Location for the configured ReminderTimezone.
 // Falls back to UTC if the timezone is invalid (validation should prevent this in practice).
+// This is the single zone in which the scheduler's daily wall-clock REMINDER_TIME is
+// interpreted and in which the scheduled digest computes its day boundary — it is the
+// whole product's one reminder clock (docs/adrs/0015-temporal-semantics.md).
 func (c *Config) GetReminderLocation() *time.Location {
 	loc, err := time.LoadLocation(c.ReminderTimezone)
 	if err != nil {
