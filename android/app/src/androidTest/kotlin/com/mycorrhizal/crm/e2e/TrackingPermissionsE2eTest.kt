@@ -18,18 +18,29 @@ import org.junit.runner.RunWith
 
 /**
  * Issue #721: the call/SMS tracking toggles must now request (and respect) the
- * OS runtime permissions. The grant/deny state machine itself is covered by
- * unit tests; this instrumented test proves the wiring end to end on the real
- * app against the real backend harness: the Settings toggle flip — through the
- * real ViewModel, the real permission check, the real DataStore flag and the
- * real WorkManager scheduler — actually persists the opt-in and kicks the
- * grant-time catch-up worker, and a system-settings revoke is reflected the
- * next time the screen reconciles.
+ * OS runtime permissions. The grant/deny state machine is covered by unit tests
+ * (`SettingsViewModelTest`); this instrumented test proves the GRANT wiring end
+ * to end on the real app against the real backend harness: the Settings toggle
+ * flip — through the real ViewModel, the real permission check, the real
+ * DataStore flag and the real WorkManager scheduler — actually persists the
+ * opt-in and kicks the grant-time catch-up worker.
  *
- * Permissions are granted/revoked through UiAutomation rather than driving the
- * system permission dialog (the dialog's button text is device/locale-bound and
- * would make this suite flaky); the toggle -> enable decision itself is
- * exercised by the unit suite for both the grant and denial outcomes.
+ * Permissions are granted through UiAutomation rather than driving the system
+ * permission dialog (the dialog's button text is device/locale-bound and would
+ * make this suite flaky).
+ *
+ * WHY THERE IS NO INSTRUMENTED REVOKE TEST: revoking a runtime permission the
+ * app currently holds makes Android force-stop the app process (verified on
+ * API 35/37: `pm revoke` against a live app SIGKILLs it, while `pm grant` does
+ * not restart it). Instrumentation shares that process, so an in-process revoke
+ * always ends the run as "Process crashed" — no test can revoke and keep
+ * running. The revoke/reconcile paths are therefore pinned at the unit level
+ * instead: `SettingsViewModelTest` "a stored call-tracking flag whose permission
+ * was revoked is reverted on refresh", "a stored SMS flag whose permission was
+ * revoked is reverted on refresh" and "refreshPermissionState reconciles after
+ * a permission is revoked". Leftover grants across tests are harmless: every
+ * test grants exactly what it needs (grant is idempotent and never restarts the
+ * process) and the DataStore opt-in flags are reset in @Before/@After.
  */
 @RunWith(AndroidJUnit4::class)
 class TrackingPermissionsE2eTest : E2eBaseTest() {
@@ -48,11 +59,6 @@ class TrackingPermissionsE2eTest : E2eBaseTest() {
 
     private fun grant(permission: String) =
         uiAutomation.grantRuntimePermission(packageName, permission)
-
-    private fun revoke(permission: String) {
-        // revokeRuntimePermission throws if the permission was never granted.
-        runCatching { uiAutomation.revokeRuntimePermission(packageName, permission) }
-    }
 
     private fun assertCallTracking(expect: Boolean) {
         compose.waitUntil(30_000) {
@@ -85,12 +91,15 @@ class TrackingPermissionsE2eTest : E2eBaseTest() {
 
     @Before
     fun permissionSetup() {
+        // Grants-only baseline: grants are idempotent and never restart the
+        // process (see the class doc). Revokes are deliberately absent — a
+        // revoke of a held permission force-stops the app and kills this
+        // instrumentation, so the revoke/reconcile scenarios live in
+        // SettingsViewModelTest instead.
         runBlocking {
             trackingSettings.setCallTrackingEnabled(false)
             trackingSettings.setSmsTrackingEnabled(false)
         }
-        TrackingPermissions.CALL_TRACKING.forEach { revoke(it) }
-        TrackingPermissions.SMS_TRACKING.forEach { revoke(it) }
     }
 
     @After
@@ -99,8 +108,6 @@ class TrackingPermissionsE2eTest : E2eBaseTest() {
             trackingSettings.setCallTrackingEnabled(false)
             trackingSettings.setSmsTrackingEnabled(false)
         }
-        TrackingPermissions.CALL_TRACKING.forEach { revoke(it) }
-        TrackingPermissions.SMS_TRACKING.forEach { revoke(it) }
     }
 
     @Test
@@ -136,26 +143,5 @@ class TrackingPermissionsE2eTest : E2eBaseTest() {
             .performScrollTo()
             .performClick()
         assertSmsTracking(false)
-    }
-
-    @Test
-    fun aRevokedCallPermission_isReflectedAsOffAfterReconciliation() {
-        TrackingPermissions.CALL_TRACKING.forEach { grant(it) }
-        navigateViaDrawer("Settings")
-        toggleCallTrackingOnce()
-        assertCallTracking(true)
-
-        // Revoke READ_CALL_LOG in system settings (as the user would); the
-        // stored "on" flag must not be allowed to lie.
-        revoke(TrackingPermissions.READ_CALL_LOG)
-        revoke(TrackingPermissions.READ_PHONE_STATE)
-
-        // Leave and re-enter Settings so the screen reconciles against the OS
-        // grant state (fresh ViewModel / resume refresh both do this).
-        navigateViaDrawer("Dashboard")
-        waitForText("Dashboard")
-        navigateViaDrawer("Settings")
-        waitForText("Log calls as activities")
-        assertCallTracking(false)
     }
 }
