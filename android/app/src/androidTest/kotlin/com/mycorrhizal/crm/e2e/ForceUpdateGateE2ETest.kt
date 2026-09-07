@@ -1,7 +1,6 @@
 package com.mycorrhizal.crm.e2e
 
 import androidx.compose.ui.test.ExperimentalTestApi
-import androidx.compose.ui.test.hasSetTextAction
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -33,15 +32,17 @@ import org.junit.runner.RunWith
  *
  * Since issue #692 the server enforces its floor at authentication, so a
  * below-floor client's login would be refused there. The force-update screen is
- * the UX layer that pre-empts that: as soon as the app resolves the compat
- * backend's /health (triggered by configuring its URL), the blocking gate
- * appears and the app never submits the user into a dead session. This pins the
- * real-app half of that flow: configure the compat server, attempt sign-in, the
- * gate appears, and the app never proceeds to the dashboard.
+ * the UX layer that pre-empts that: the app resolves the compat backend's
+ * /health as soon as its URL is configured (LoginViewModel persists the URL as
+ * it is typed; MainViewModel re-checks on URL change, even without a session),
+ * so the blocking gate appears before any credential work — the auth form is
+ * replaced, never left behind a sign-in the server would refuse. This pins the
+ * real-app half of that flow: configure the below-floor server, the gate
+ * appears, and the app never proceeds to the dashboard.
  *
  * The other two states (compatible / server-outdated notice) are covered by
  * MainViewModelTest + CompatibilityResolverTest; this test pins the one thing
- * those cannot: the real app, real login attempt, real /health.
+ * those cannot: the real app, real /health, real pre-login gate.
  */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -70,23 +71,26 @@ class ForceUpdateGateE2ETest {
     @Test
     fun configuringBelowFloorServer_showsForceUpdateGateAndBlocksDashboard() {
         waitForText("Sign in")
+
+        // Configuring the below-floor server URL raises the pre-login gate: the
+        // server's /health (resolved on URL change) declares a floor above this
+        // build, so the auth form is swapped for the blocking screen instead of
+        // submitting the user into a session the server would refuse.
         replaceTextInField("Server URL", COMPAT_BACKEND_URL)
-        replaceTextInField("Username or email", E2eConfig.SEED_USERNAME)
-        waitForText("Password")
-        compose.onNode(hasText("Password") and hasSetTextAction()).performTextInput(E2eConfig.SEED_PASSWORD)
-        compose.onNodeWithText("Sign in").performClick()
 
         // The blocking screen appears and names the versions + server URL. The
-        // server would refuse this build at authentication (its floor is
-        // 0.9.0), so the gate is the UX that pre-empts a dead session.
+        // versions live inside the one formatted message node, so match them as
+        // substrings.
         waitForText("Update required")
-        waitForText("0.9.0")
-        waitForText("0.1.0")
+        waitForSubstringText("0.9.0")
+        waitForSubstringText("0.1.0")
         waitForText("Server: $COMPAT_BACKEND_URL")
 
-        // The app never proceeds to the dashboard.
+        // No credentials were ever offered against the refused server, and the
+        // app never proceeds to the dashboard.
         compose.waitUntil(5_000) {
-            compose.onAllNodesWithText("Dashboard").fetchSemanticsNodes().isEmpty()
+            compose.onAllNodesWithText("Username or email").fetchSemanticsNodes().isEmpty() &&
+                compose.onAllNodesWithText("Dashboard").fetchSemanticsNodes().isEmpty()
         }
     }
 
@@ -94,10 +98,6 @@ class ForceUpdateGateE2ETest {
     fun preLoginForceUpdateGate_returnsToTheAuthFlow() {
         waitForText("Sign in")
         replaceTextInField("Server URL", COMPAT_BACKEND_URL)
-        replaceTextInField("Username or email", E2eConfig.SEED_USERNAME)
-        waitForText("Password")
-        compose.onNode(hasText("Password") and hasSetTextAction()).performTextInput(E2eConfig.SEED_PASSWORD)
-        compose.onNodeWithText("Sign in").performClick()
 
         waitForText("Update required")
 
@@ -113,6 +113,10 @@ class ForceUpdateGateE2ETest {
 
     private fun waitForText(text: String, timeoutMs: Long = 30_000) {
         compose.waitUntilAtLeastOneExists(hasText(text), timeoutMs)
+    }
+
+    private fun waitForSubstringText(text: String, timeoutMs: Long = 30_000) {
+        compose.waitUntilAtLeastOneExists(hasText(text, substring = true), timeoutMs)
     }
 
     private fun replaceTextInField(label: String, text: String) {
