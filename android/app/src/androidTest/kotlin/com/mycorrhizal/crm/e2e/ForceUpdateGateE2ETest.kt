@@ -20,8 +20,8 @@ import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Issue #528: the blocking force-update screen against a REAL backend that
- * declares a floor above this debug build's versionName (0.1.0).
+ * Issues #528 + #692: the blocking force-update screen against a REAL backend
+ * that declares a floor above this debug build's versionName (0.1.0).
  *
  * The suite's default backend (docker-compose.test.yml, port 7300) reports no
  * floor, which is the policy's default posture. This test targets a second
@@ -31,10 +31,17 @@ import org.junit.runner.RunWith
  * the test skips when it is not reachable — a local run without the second
  * backend is not a failure.
  *
+ * Since issue #692 the server enforces its floor at authentication, so a
+ * below-floor client's login would be refused there. The force-update screen is
+ * the UX layer that pre-empts that: as soon as the app resolves the compat
+ * backend's /health (triggered by configuring its URL), the blocking gate
+ * appears and the app never submits the user into a dead session. This pins the
+ * real-app half of that flow: configure the compat server, attempt sign-in, the
+ * gate appears, and the app never proceeds to the dashboard.
+ *
  * The other two states (compatible / server-outdated notice) are covered by
  * MainViewModelTest + CompatibilityResolverTest; this test pins the one thing
- * those cannot: the real app, real login, real /health — the force-update
- * screen appears and the app never proceeds to the dashboard.
+ * those cannot: the real app, real login attempt, real /health.
  */
 @OptIn(ExperimentalTestApi::class)
 @RunWith(AndroidJUnit4::class)
@@ -50,18 +57,18 @@ class ForceUpdateGateE2ETest {
         // Clean skip when the dedicated compat backend is not running.
         assumeTrue("compat backend at $COMPAT_BACKEND_URL is not reachable", backend.isReachable())
         backend.registerSeedUser()
-        backend.login()
         clearSession()
     }
 
     @After
     fun tearDown() {
-        // Leave the app logged out so a subsequent suite class starts clean.
+        // Leave the app fully logged out (server URL included) so the next
+        // test starts from a blank login screen.
         runCatching { clearSession() }
     }
 
     @Test
-    fun `a server floor above the client blocks login with a force-update screen`() {
+    fun `configuring a below-floor server shows the force-update gate and blocks the dashboard`() {
         waitForText("Sign in")
         replaceTextInField("Server URL", COMPAT_BACKEND_URL)
         replaceTextInField("Username or email", E2eConfig.SEED_USERNAME)
@@ -69,22 +76,22 @@ class ForceUpdateGateE2ETest {
         compose.onNode(hasText("Password") and hasSetTextAction()).performTextInput(E2eConfig.SEED_PASSWORD)
         compose.onNodeWithText("Sign in").performClick()
 
-        // The blocking screen appears and names the versions + server URL.
+        // The blocking screen appears and names the versions + server URL. The
+        // server would refuse this build at authentication (its floor is
+        // 0.9.0), so the gate is the UX that pre-empts a dead session.
         waitForText("Update required")
         waitForText("0.9.0")
         waitForText("0.1.0")
         waitForText("Server: $COMPAT_BACKEND_URL")
 
-        // The app does not proceed to the dashboard: after the gate has
-        // settled the authenticated tree (whose start destination is the
-        // dashboard) must be gone — the force-update screen replaced it.
+        // The app never proceeds to the dashboard.
         compose.waitUntil(5_000) {
             compose.onAllNodesWithText("Dashboard").fetchSemanticsNodes().isEmpty()
         }
     }
 
     @Test
-    fun `logout from the force-update screen returns to the auth flow`() {
+    fun `the pre-login force-update gate returns to the auth flow`() {
         waitForText("Sign in")
         replaceTextInField("Server URL", COMPAT_BACKEND_URL)
         replaceTextInField("Username or email", E2eConfig.SEED_USERNAME)
@@ -93,8 +100,11 @@ class ForceUpdateGateE2ETest {
         compose.onNodeWithText("Sign in").performClick()
 
         waitForText("Update required")
-        waitForText("Log out")
-        compose.onNodeWithText("Log out").performClick()
+
+        // No session exists behind a pre-login gate, so the escape is "Back to
+        // sign in" (to point at a different server), not "Log out".
+        waitForText("Back to sign in")
+        compose.onNodeWithText("Back to sign in").performClick()
 
         waitForText("Sign in")
     }
@@ -116,7 +126,7 @@ class ForceUpdateGateE2ETest {
         val session = compose.activity.sessionManager
         runBlocking {
             session.awaitHydrated()
-            session.clearSession()
+            session.clearSession(keepServerUrl = false)
         }
         waitForText("Sign in")
     }

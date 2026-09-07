@@ -43,8 +43,11 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mycorrhizal.crm.domain.compat.ServerCapabilities
+import com.mycorrhizal.crm.domain.compat.ServerFeature
 import com.mycorrhizal.crm.model.network.ContactAddressSuggestion
 import com.mycorrhizal.crm.model.network.formatSuggestionAddress
+import com.mycorrhizal.crm.ui.LocalServerVersion
 import com.mycorrhizal.crm.ui.R
 import java.io.File
 
@@ -122,11 +125,15 @@ fun DataScreen(
                 exporting = state.isExporting,
                 onClick = { viewModel.export(DataExportKind.JSCONTACT) },
             )
-            ExportRow(
-                labelRes = R.string.data_export_audit,
-                exporting = state.isExporting,
-                onClick = { viewModel.export(DataExportKind.AUDIT_CSV) },
-            )
+            // Issue #692: the audit-log export endpoint shipped in v0.6.1, so on
+            // a v0.6.0 server the row is hidden rather than 404ing.
+            if (ServerCapabilities.isSupported(LocalServerVersion.current, ServerFeature.AUDIT_EXPORT)) {
+                ExportRow(
+                    labelRes = R.string.data_export_audit,
+                    exporting = state.isExporting,
+                    onClick = { viewModel.export(DataExportKind.AUDIT_CSV) },
+                )
+            }
 
             HorizontalDivider(modifier = Modifier.padding(vertical = 4.dp))
 

@@ -50,6 +50,14 @@ const (
 	ErrCodeTokenExpired       = "TOKEN_EXPIRED"
 	ErrCodeTokenInvalid       = "TOKEN_INVALID"
 	ErrCodeForbidden          = "FORBIDDEN"
+	// ErrCodeClientNotSupported signals that a native client's own version is
+	// below the server's configured MIN_CLIENT_VERSION floor, so the server
+	// refuses to authenticate it (issue #692, docs/client-compatibility-policy.md
+	// "Moving the floor"). The client-side force-update screen is the UX layer
+	// that pre-empts it; this is the authoritative backstop a modified client
+	// that skips its own check cannot. 403 — the request is understood but the
+	// policy refuses this client version.
+	ErrCodeClientNotSupported = "CLIENT_NOT_SUPPORTED"
 
 	// Resource errors
 	ErrCodeNotFound      = "NOT_FOUND"
@@ -143,6 +151,18 @@ func ErrForbidden(message string) *AppError {
 		message = "You don't have permission to access this resource"
 	}
 	return NewError(ErrCodeForbidden, message, http.StatusForbidden)
+}
+
+// ErrClientNotSupported returns a 403 for a native client whose own version is
+// below the server's configured MIN_CLIENT_VERSION floor (issue #692). The
+// message names the required version so the operator-facing log line and any
+// future client that reads the body can act on it.
+func ErrClientNotSupported(requiredVersion string) *AppError {
+	message := "This version of the app is no longer supported"
+	if requiredVersion != "" {
+		message = fmt.Sprintf("This version of the app is no longer supported; update to version %s or newer", requiredVersion)
+	}
+	return NewError(ErrCodeClientNotSupported, message, http.StatusForbidden)
 }
 
 // --- Resource Errors ---

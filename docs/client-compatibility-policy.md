@@ -102,10 +102,40 @@ unknown fields from a client per
 A non-blocking notice that the server could be upgraded to unlock a feature
 is appropriate; a fatal error or a permanently broken screen is not.
 
-The concrete per-feature gating mechanism (a `minServerVersion` check per
-feature, plus the server-side floor enforcement at auth) is split out to
-issue #692 (v0.6.7); this page states the requirement that mechanism has to
-satisfy.
+The concrete per-feature gating mechanism is issue #692's Android `ServerFeature`
+registry (android/core/domain/.../compat/ServerFeature.kt) — a `minServerVersion`
+per server-backed capability — applied against the same `/health` version, plus
+the server-side floor enforcement at auth described in "Server-side floor
+enforcement" below. The client has a hard baseline under which degradation is
+not attempted at all:
+
+- **A server below the app's v0.6.0 baseline is refused outright.** The whole
+  authenticated surface expects the v0.6.0 API contract (the same floor as the
+  backend's database migration floor), so instead of failing on every screen the
+  app renders a blocking "server needs an upgrade" screen. This is deliberately
+  *not* the three-state check's fail-open case: it only fires when /health is
+  reachable and reports an old-but-parseable version, so an unreachable or
+  unparseable server still fails open.
+- **Between the baseline and the current release**, capabilities whose endpoints
+  arrived after v0.6.0 are hidden when the connected server predates them (the
+  per-feature `minServerVersion` floors in the registry), so a newer client
+  degrades gracefully rather than offering actions that would 404.
+
+## Server-side floor enforcement
+
+The client-side force-update screen is the UX layer; the authoritative backstop
+lives on the server (issue #692). A native client advertises its own
+`versionName` as an `X-Client-Version` request header on every call to the API
+server. When `MIN_CLIENT_VERSION` is configured, every session-minting route —
+`POST /register`, `POST /login`, `POST /login/2fa`, and the device-grant
+exchange `POST /auth/device/session` — refuses a client whose header is absent,
+is not a strict `major.minor.patch`, or is below the floor, with
+`403 CLIENT_NOT_SUPPORTED`, **before any credential work**: no password
+comparison, no account-lockout accounting, no user lookup. A modified client
+that skips its own client-side check cannot get past it. (OIDC login runs in the
+system browser and carries no such header; it is outside this enforcement and
+relies on the client-side gate.) With no floor configured the header is
+advisory — logged by the request logger — and never rejects.
 
 ## How a client discovers the contract
 
@@ -210,9 +240,20 @@ required a client to update to keep working.
 - Issue #528's Android mechanism and issue #475's web mechanism each implement
   exactly the three states described here (compatible / client-too-old /
   server-too-old-for-client) — neither invents a fourth state or a different
-  trigger.
+  trigger. The Android force-update state additionally raises **before** a
+  session exists (issue #692): once a below-floor server's URL is configured
+  the gate appears without attempting an authentication the server would
+  refuse. Issue #692's server-too-old gate (a reachable server below the
+  app's v0.6.0 baseline) is not a fourth compatibility state — it is the
+  baseline floor's refusal, and it is equally fail-open against an unreachable
+  or unparseable /health.
 - A newer client against an older server degrades the specific feature the
-  server lacks rather than failing the whole session.
+  server lacks rather than failing the whole session: per-feature surfaces
+  whose `minServerVersion` exceeds the connected server's version are hidden,
+  per the Android `ServerFeature` registry.
+- With `MIN_CLIENT_VERSION` set, the server refuses below-floor clients at
+  authentication (403 `CLIENT_NOT_SUPPORTED`) before any credential work —
+  the authoritative backstop for a client that skips its own check.
 - `/health` unreachable or returning a malformed body leaves both clients
   fully functional (fail open).
 
@@ -230,5 +271,6 @@ required a client to update to keep working.
 - Issue #475 (WEB-01) — the web mechanism that enforces this policy.
 - Issue #527 — the Android `versionCode`/signature-verification prerequisite
   for #528.
-- Issue #692 — the per-feature `minServerVersion` gating that makes "newer
-  client degrades" concrete.
+- Issue #692 — the per-feature `minServerVersion` gating (Android `ServerFeature`)
+  plus the server-side floor enforcement at auth that make "newer client
+  degrades" and the force-update backstop concrete.

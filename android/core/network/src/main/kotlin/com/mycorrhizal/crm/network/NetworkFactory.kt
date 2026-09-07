@@ -25,9 +25,19 @@ object NetworkFactory {
         baseUrlProvider: BaseUrlProvider,
         debug: Boolean = false,
         sessionExpiryInterceptor: SessionExpiryInterceptor? = null,
+        clientVersionProvider: ClientVersionProvider? = null,
     ): OkHttpClient {
         val builder = OkHttpClient.Builder()
             .addInterceptor(BaseUrlInterceptor(baseUrlProvider))
+            // Issue #692: the version header must see the rewritten URL (its
+            // host check compares against the configured server), so it runs
+            // after BaseUrl and before Auth, exactly like AuthInterceptor.
+            .addInterceptor(
+                ClientVersionInterceptor(
+                    versionProvider = clientVersionProvider ?: ClientVersionProvider { null },
+                    baseUrlProvider = baseUrlProvider,
+                ),
+            )
             .addInterceptor(AuthInterceptor(tokenProvider, baseUrlProvider))
             .addInterceptor(RetryInterceptor())
             .connectTimeout(CONNECT_TIMEOUT_SECONDS, TimeUnit.SECONDS)

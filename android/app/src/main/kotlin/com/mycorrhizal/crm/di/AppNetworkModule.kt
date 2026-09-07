@@ -2,6 +2,7 @@ package com.mycorrhizal.crm.di
 
 import com.mycorrhizal.crm.BuildConfig
 import com.mycorrhizal.crm.network.BaseUrlProvider
+import com.mycorrhizal.crm.network.ClientVersionProvider
 import com.mycorrhizal.crm.network.NetworkFactory
 import com.mycorrhizal.crm.network.SessionExpiryInterceptor
 import com.mycorrhizal.crm.network.SessionExpiryNotifier
@@ -40,5 +41,10 @@ object AppNetworkModule {
         baseUrlProvider = baseUrlProvider,
         debug = BuildConfig.DEBUG,
         sessionExpiryInterceptor = SessionExpiryInterceptor(sessionExpiryNotifier, baseUrlProvider),
+        // Issue #692: the app advertises its versionName on every API request
+        // so the server can log it and enforce its MIN_CLIENT_VERSION floor at
+        // authentication. BuildConfig is readable here because this module is
+        // in :app; the interceptor keeps the header off non-API hosts.
+        clientVersionProvider = ClientVersionProvider { BuildConfig.VERSION_NAME },
     )
 }
