@@ -86,6 +86,16 @@ COPY frontend/ .
 # Must stay empty so the bundle uses relative URLs
 ENV VITE_API_URL=""
 
+# Stale-client identity (issue #475): stamp the web bundle with the same
+# release this image is (APP_VERSION is passed to the build for the backend
+# ldflags; ARG scope is per-stage so it is redeclared here), so a tab left
+# open across a deploy can compare its own version against the server's
+# /health contract. Defaults to "dev" like the backend buildinfo, which keeps
+# an unstamped build inert in practice (dev vs dev never compares).
+ARG APP_VERSION=dev
+ARG VITE_APP_VERSION=${APP_VERSION}
+ENV VITE_APP_VERSION=${VITE_APP_VERSION}
+
 RUN yarn build
 
 # =============================================================================

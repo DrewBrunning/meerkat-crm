@@ -1,6 +1,7 @@
 import { cleanup, render } from '@testing-library/react';
 import { createElement } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
+import { isAnythingDirty, resetDirtyTrackerForTest } from '../staleClient/dirty';
 import { useBeforeUnloadGuard } from './useBeforeUnloadGuard';
 
 function Harness({ isDirty }: { isDirty: boolean }) {
@@ -20,6 +21,7 @@ afterEach(() => {
   // for the rest of the file, so a later "not dirty" test would still see
   // the previous test's warning fire.
   cleanup();
+  resetDirtyTrackerForTest();
   vi.restoreAllMocks();
 });
 
@@ -54,5 +56,34 @@ describe('useBeforeUnloadGuard', () => {
 
     const event = fireBeforeUnload();
     expect(event.defaultPrevented).toBe(false);
+  });
+
+  test('reports dirty state to the app-wide registry while dirty', () => {
+    render(createElement(Harness, { isDirty: true }));
+    expect(isAnythingDirty()).toBe(true);
+  });
+
+  test('clears its registry slot when isDirty flips back to false', () => {
+    const { rerender } = render(createElement(Harness, { isDirty: true }));
+    rerender(createElement(Harness, { isDirty: false }));
+    expect(isAnythingDirty()).toBe(false);
+  });
+
+  test('clears its registry slot on unmount while dirty', () => {
+    const { unmount } = render(createElement(Harness, { isDirty: true }));
+    unmount();
+    expect(isAnythingDirty()).toBe(false);
+  });
+
+  test('two mounted editing surfaces are tracked independently', () => {
+    const first = render(createElement(Harness, { isDirty: true }));
+    const second = render(createElement(Harness, { isDirty: true }));
+    expect(isAnythingDirty()).toBe(true);
+
+    first.unmount();
+    expect(isAnythingDirty()).toBe(true); // second is still dirty
+
+    second.unmount();
+    expect(isAnythingDirty()).toBe(false);
   });
 });

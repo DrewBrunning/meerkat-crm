@@ -6,9 +6,11 @@ import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
 import ServiceWorkerUpdatePrompt from './components/ServiceWorkerUpdatePrompt';
 import SessionExpiredGate from './components/SessionExpiredGate';
+import StaleClientGate from './components/StaleClientGate';
 import reportWebVitals from './reportWebVitals';
 import * as serviceWorkerRegistration from './serviceWorkerRegistration';
 import { notifyUpdateAvailable } from './serviceWorkerUpdates';
+import { startStaleClientDetector } from './staleClient/detector';
 import './i18n/config';
 import { AppThemeProvider } from './AppThemeProvider';
 import { AnnouncerProvider } from './context/AnnouncerContext';
@@ -30,8 +32,11 @@ root.render(
           <AnnouncerProvider>
             {/* Issue #557: outside the ErrorBoundary on purpose -- a page
                 crash or a route navigation must not take the re-auth prompt
-                down with it. */}
+                down with it. StaleClientGate sits here for the same reason: a
+                forced reload must keep working even if the routed page (or
+                the whole app) has crashed. */}
             <SessionExpiredGate />
+            <StaleClientGate />
             <ErrorBoundary name="Application" onError={logError} showDetails={import.meta.env.DEV}>
               <App />
               <ServiceWorkerUpdatePrompt />
@@ -62,6 +67,13 @@ root.render(
 // (browsers refuse to register a service worker over plain HTTP), which is why
 // browser push needs HTTPS or localhost.
 serviceWorkerRegistration.register({ onUpdate: notifyUpdateAvailable });
+
+// The stale-client detector (issue #475) is the backstop to the update prompt
+// above: it polls /health so a tab left open through a deploy notices the
+// server moved, and forces a reload when this bundle drops below the server's
+// declared floor. It is inert in dev/test builds (no stamped version), same as
+// register(). Safe to call unconditionally.
+startStaleClientDetector();
 
 // If you want to start measuring performance in your app, pass a function
 // to log results (for example: reportWebVitals(console.log))

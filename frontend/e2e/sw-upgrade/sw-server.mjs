@@ -26,13 +26,14 @@ import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { FIXTURE_DIRS, FIXTURE_LABELS, precacheableFiles } from './fixtures.mjs';
+import { FIXTURE_DIRS, FIXTURE_LABELS, FIXTURE_VERSIONS, precacheableFiles } from './fixtures.mjs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const DEFAULT_PORT = Number(process.env.SW_TEST_PORT || 7300);
 export const HARNESS_STATUS_PATH = '/__swtest/status';
 export const HARNESS_ACTIVE_PATH = '/__swtest/active';
+export const HARNESS_HEALTH_PATH = '/__swtest/health';
 
 const POISON_WORKER_PATH = path.join(__dirname, 'poison-worker.js');
 
@@ -74,6 +75,12 @@ export class SwUpgradeServer {
       this.fileSets[label] = precacheableFiles(buildDirs[label]);
     }
     this.poisonWorker = readFile(POISON_WORKER_PATH, 'utf8');
+    // Issue #475: optional test override for the /health the app's stale-
+    // client detector polls. null = advertise the active build's own release
+    // identity (compatible with that build); an override lets a spec raise
+    // min_client_version / api_contract_version or fail /health entirely
+    // without swapping the served build.
+    this.healthOverride = null;
   }
 
   get activeProfile() {
@@ -92,7 +99,7 @@ export class SwUpgradeServer {
       active: this.profile,
       builds,
       recoveryPaths: ['/_recovery.html', '/_recovery.js'],
-      harnessPaths: [HARNESS_STATUS_PATH, HARNESS_ACTIVE_PATH],
+      harnessPaths: [HARNESS_STATUS_PATH, HARNESS_ACTIVE_PATH, HARNESS_HEALTH_PATH],
     };
   }
 
@@ -101,6 +108,47 @@ export class SwUpgradeServer {
       throw new Error(`unknown profile: ${profile}`);
     }
     this.profile = profile;
+  }
+
+  // The /health body the stale-client detector reads. By default it advertises
+  // the active build's own release identity (fixture "a" is 0.6.8, "b" is
+  // 0.6.10) with contract "v1" and no floor — i.e. exactly what a build that
+  // matches that release expects to see, so existing specs are unaffected.
+  // `healthOverride` fields replace the base values; `{ error: true }` makes
+  // /health fail, to prove the detector fails open.
+  healthPayload() {
+    const label = this.profile === 'poison' ? 'a' : this.profile;
+    const override = this.healthOverride ?? {};
+    return {
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      database: { status: 'healthy', response_time_ms: 1 },
+      version: FIXTURE_VERSIONS[label],
+      api_contract_version: 'v1',
+      ...override,
+    };
+  }
+
+  setHealthOverride(override) {
+    this.healthOverride = override;
+  }
+
+  resetHealthOverride() {
+    this.healthOverride = null;
+  }
+
+  async serveHealth(res) {
+    const override = this.healthOverride ?? {};
+    if (override.error) {
+      // An unreachable/failing /health is a routine event the app must fail
+      // open against; a non-2xx is the simplest way to stage it.
+      this.sendJson(res, 503, {
+        status: 'unhealthy',
+        database: { status: 'unhealthy', response_time_ms: 0 },
+      });
+      return;
+    }
+    this.sendJson(res, 200, this.healthPayload());
   }
 
   async handle(req, res) {
@@ -126,6 +174,20 @@ export class SwUpgradeServer {
       this.sendJson(res, 200, { active: this.profile });
       return;
     }
+    if (pathname === HARNESS_HEALTH_PATH && method === 'POST') {
+      const body = (await readJsonBody(req)) ?? {};
+      if (body.reset) {
+        this.resetHealthOverride();
+      } else {
+        this.setHealthOverride(body);
+      }
+      this.sendJson(res, 200, { health: this.healthPayload() });
+      return;
+    }
+    if (pathname === HARNESS_HEALTH_PATH && method === 'GET') {
+      this.sendJson(res, 200, { health: this.healthPayload() });
+      return;
+    }
 
     if (method !== 'GET' && method !== 'HEAD') {
       res.writeHead(405, { 'Content-Type': 'text/plain' });
@@ -134,6 +196,14 @@ export class SwUpgradeServer {
     }
 
     // ---- Content -----------------------------------------------------------
+    // Issue #475: the app's stale-client detector polls /health on load and on
+    // tab focus; serve the harness's contract payload so that polling has
+    // something real to read (and can be told to fail, for the fail-open spec).
+    if (pathname === '/health') {
+      await this.serveHealth(res);
+      return;
+    }
+
     // A poisoned (broken) deploy serves its own worker script in place of the
     // build's. Everything else comes from the active fixture's build dir.
     const swBytes =

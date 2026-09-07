@@ -7,6 +7,13 @@
       "available": "Une nouvelle version de Mycorrhizal CRM est disponible.",
       "reload": "Recharger"
     },
+    "incompatible": {
+      "title": "Version incompatible",
+      "blockedMessage": "Cette version de Mycorrhizal CRM n'est plus prise en charge par ce serveur. Rechargez maintenant pour charger la version actuelle.",
+      "unsavedMessage": "Vous avez des modifications non enregistrées qui seraient perdues au rechargement. Enregistrez-les ou fermez-les d'abord, ou rechargez et abandonnez-les.",
+      "reload": "Recharger maintenant",
+      "later": "Plus tard"
+    },
     "submitSearch": "Envoyer la recherche"
   },
   "duplicates": {
