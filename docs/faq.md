@@ -4,7 +4,7 @@ nav_order: 11
 has_children: false
 ---
 
-# FAQ & Troubelshooting
+# FAQ & Troubleshooting
 
 ### When registering a new user or signing in I get the error `Failed to execute 'json' on 'Response': Unexpected end of JSON input`.
 

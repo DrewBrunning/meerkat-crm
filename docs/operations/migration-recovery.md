@@ -8,6 +8,11 @@ commands and decisions, not background reading. The milestone bar is that
 recovery has been exercised by following the document, not from memory — the
 procedure for that is [The drill](#the-drill).
 
+Commands in this runbook assume a **checkout of this repo with a Go toolchain on
+the host** (`make`/`go run` targets run from `backend/`; the shipped Docker image
+has neither). Where a step has a toolchain-free equivalent (`sqlite3`), it is
+given inline.
+
 | | |
 |---|---|
 | **Scope** | The three fail-closed migration states (MIG-04, issue [#439](https://github.com/DrewBrunning/mycorrhizal-crm/issues/439)): dirty schema, schema ahead of the binary, and schema below the supported floor — plus the mandatory pre-migration backup, [rolling back a bad release](#rolling-back-a-bad-release-n1--n), and what `make migrate-down` is and is not for. |
