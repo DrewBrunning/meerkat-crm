@@ -222,20 +222,36 @@ class E2eBackend(
     private companion object {
         /** A full offline-sync test run creates tens of activities, never thousands. */
         const val MAX_ACTIVITY_PAGES = 50
+        /** The version the E2E harness advertises on its own API calls. */
+        const val HARNESS_CLIENT_VERSION = "0.9.0"
     }
 
     // --- transport -----------------------------------------------------------
 
     private fun urlEncode(value: String): String = URLEncoder.encode(value, "UTF-8")
 
+    // Issue #692: the harness acts as a current, supported client, so it
+    // advertises a version at/above the compat backend's MIN_CLIENT_VERSION
+    // floor (docker-compose.compat-test.yml sets 0.9.0). Without the header the
+    // server would refuse the /register and /login seeding calls once a floor is
+    // configured. The floor is only enforced on session-minting routes, so the
+    // header is harmless against the no-floor suite backend.
+    private fun Request.Builder.clientVersion() {
+        header("X-Client-Version", HARNESS_CLIENT_VERSION)
+    }
+
     private fun get(path: String, authenticated: Boolean = false): Response =
         client.newCall(
-            Request.Builder().url(apiBase + path).apply { if (authenticated) auth() }.build(),
+            Request.Builder().url(apiBase + path)
+                .apply { clientVersion() }
+                .apply { if (authenticated) auth() }
+                .build(),
         ).execute()
 
     private fun post(path: String, body: String, authenticated: Boolean = false): Response =
         client.newCall(
             Request.Builder().url(apiBase + path)
+                .apply { clientVersion() }
                 .apply { if (authenticated) auth() }
                 .post(body.toRequestBody(jsonType))
                 .build(),
@@ -244,6 +260,7 @@ class E2eBackend(
     private fun delete(path: String, authenticated: Boolean = false): Response =
         client.newCall(
             Request.Builder().url(apiBase + path)
+                .apply { clientVersion() }
                 .apply { if (authenticated) auth() }
                 .delete()
                 .build(),
