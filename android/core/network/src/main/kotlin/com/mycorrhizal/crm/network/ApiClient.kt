@@ -4,6 +4,8 @@ import com.mycorrhizal.crm.model.network.AcceptHouseholdSuggestionInput
 import com.mycorrhizal.crm.model.network.AcceptHouseholdSuggestionResponse
 import com.mycorrhizal.crm.model.network.AddressSuggestionsResponse
 import com.mycorrhizal.crm.model.network.ApplyContactAddressSuggestionInput
+import com.mycorrhizal.crm.model.network.AttachmentListResponse
+import com.mycorrhizal.crm.model.network.AttachmentUploadResponse
 import com.mycorrhizal.crm.model.network.ContactAddressSuggestion
 import com.mycorrhizal.crm.model.network.ContactAddressSuggestionsResponse
 import com.mycorrhizal.crm.model.network.DeviceGrantCreateRequest
@@ -57,6 +59,7 @@ import com.mycorrhizal.crm.model.network.ContactRemindersResponse
 import com.mycorrhizal.crm.model.network.ContactTag
 import com.mycorrhizal.crm.model.network.ContactTagInput
 import com.mycorrhizal.crm.model.network.ContactsPage
+import com.mycorrhizal.crm.model.network.ContactAttachment
 import com.mycorrhizal.crm.model.network.CreateActivityResponse
 import com.mycorrhizal.crm.model.network.CreateCircleResponse
 import com.mycorrhizal.crm.model.network.CreateContactResponse
@@ -84,6 +87,8 @@ import com.mycorrhizal.crm.model.network.DashboardResponse
 import com.mycorrhizal.crm.model.network.DeviceRegistration
 import com.mycorrhizal.crm.model.network.DeviceRegistrationInput
 import com.mycorrhizal.crm.model.network.DeviceRegistrationsResponse
+import com.mycorrhizal.crm.model.network.DuplicateDismissalInput
+import com.mycorrhizal.crm.model.network.DuplicatePairsResponse
 import com.mycorrhizal.crm.model.network.ExternalIdentitiesPage
 import com.mycorrhizal.crm.model.network.ImmichAssetsResponse
 import com.mycorrhizal.crm.model.network.ImmichAssetSummary
@@ -705,6 +710,42 @@ class ApiClient(
     }
 
     /**
+     * GET /api/v1/export/vcf — every contact as one .vcf file (web's "Export
+     * vCard" full-dataset action). Same endpoint as [exportContactVcf]; the
+     * absence of `vcard_uid` widens it to the whole address book. Honors the
+     * backend's default field selection (all sections, private/secret
+     * sensitivity excluded). Returns the raw file bytes.
+     */
+    suspend fun exportAllContactsVcf(version: Int? = null): Result<ByteArray> {
+        val urlBuilder = "$PLACEHOLDER_ORIGIN$EXPORT_VCF_PATH".toHttpUrl().newBuilder()
+        if (version == 3) urlBuilder.addQueryParameter("version", "3")
+        return executeGetBytes(urlBuilder.build().toString())
+    }
+
+    /**
+     * GET /api/v1/export — the full per-user backup as one CSV file with
+     * section banner rows (CONTACTS/RELATIONSHIPS/ACTIVITIES/NOTES/
+     * REMINDERS), formula-injection-neutralized. Returns the raw file bytes.
+     */
+    suspend fun exportDataCsv(): Result<ByteArray> =
+        executeGetBytes("$PLACEHOLDER_ORIGIN$EXPORT_PATH")
+
+    /**
+     * GET /api/v1/export/jscontact — every contact as a JSContact (RFC 9553)
+     * JSON array document. Returns the raw file bytes.
+     */
+    suspend fun exportAllContactsJsContact(): Result<ByteArray> =
+        executeGetBytes("$PLACEHOLDER_ORIGIN$EXPORT_JSCONTACT_PATH")
+
+    /**
+     * GET /api/v1/audit/export — the caller's full audit trail as CSV (every
+     * event, oldest first, unlike the capped interactive list). Returns the
+     * raw file bytes.
+     */
+    suspend fun exportAuditLogCsv(): Result<ByteArray> =
+        executeGetBytes("$PLACEHOLDER_ORIGIN$AUDIT_EXPORT_PATH")
+
+    /**
      * POST /api/v1/contacts/{id}/profile_picture — a multipart upload with
      * form field `photo`, matching web's `uploadProfilePicture` and the
      * backend's `AddPhotoToContact`. The backend re-sniffs the image format
@@ -727,6 +768,46 @@ class ApiClient(
             mediaType = mimeType,
             fileBytes = bytes,
         ) { _, _ -> Unit }
+
+    // N7 contact attachments: the per-contact file/document feature whose
+    // metadata rows are the ContactAttachment DTO (the bytes stay server-side
+    // under a generated UUID name). Endpoints in backend/routes/routes.go.
+
+    /** GET /api/v1/contacts/{id}/attachments — the contact's non-deleted attachments, newest first. */
+    suspend fun listContactAttachments(contactId: Int): Result<AttachmentListResponse> =
+        executeGet("$PLACEHOLDER_ORIGIN$CONTACTS_PATH/$contactId/attachments") { _, body ->
+            moshi.adapter(AttachmentListResponse::class.java).fromJson(body)
+        }
+
+    /**
+     * POST /api/v1/contacts/{id}/attachments — a multipart upload with form
+     * field `file`, matching web's AttachmentsSection. The server stores the
+     * bytes under its own UUID name and enforces the 25MB cap and the
+     * SVG/HTML reject itself (400 on excess/forbidden type). [fileName] is
+     * display-only; [mimeType] should reflect the picked file so the backend
+     * can classify it.
+     */
+    suspend fun uploadContactAttachment(
+        id: Int,
+        fileName: String,
+        mimeType: String,
+        bytes: ByteArray,
+    ): Result<Unit> =
+        executeMultipartUpload(
+            path = "$CONTACTS_PATH/$id/attachments",
+            fieldName = "file",
+            fileName = fileName,
+            mediaType = mimeType,
+            fileBytes = bytes,
+        ) { _, _ -> Unit }
+
+    /** GET /api/v1/attachments/{id}/download — the raw attachment bytes. */
+    suspend fun downloadAttachment(attachmentId: Int): Result<ByteArray> =
+        executeGetBytes("$PLACEHOLDER_ORIGIN$ATTACHMENTS_PATH/$attachmentId/download")
+
+    /** DELETE /api/v1/attachments/{id} — soft-deletes the attachment (T26 tombstone). */
+    suspend fun deleteAttachment(attachmentId: Int): Result<Unit> =
+        executeDelete("$PLACEHOLDER_ORIGIN$ATTACHMENTS_PATH/$attachmentId")
 
     /** GET /api/v1/field-definitions (T84). */
     suspend fun listFieldDefinitions(limit: Int? = null): Result<FieldDefinitionsResponse> {
@@ -1570,6 +1651,33 @@ class ApiClient(
             moshi.adapter(BulkOperationResult::class.java).fromJson(body)
         }
 
+    /**
+     * GET /api/v1/contacts/duplicates (T93) — the duplicate-scan review
+     * surface. Re-derives candidate pairs server-side on every call (three
+     * tiers: email, exact name, phone), strongest-first, offset-paginated;
+     * already-dismissed pairs are filtered out. Read-only and idempotent.
+     */
+    suspend fun listDuplicatePairs(page: Int = 1, limit: Int? = null): Result<DuplicatePairsResponse> {
+        val urlBuilder = "$PLACEHOLDER_ORIGIN$CONTACTS_PATH/duplicates".toHttpUrl().newBuilder()
+        urlBuilder.addQueryParameter("page", page.toString())
+        limit?.let { urlBuilder.addQueryParameter("limit", it.toString()) }
+        return executeGet(urlBuilder.build().toString()) { _, body ->
+            moshi.adapter(DuplicatePairsResponse::class.java).fromJson(body)
+        }
+    }
+
+    /**
+     * POST /api/v1/contacts/duplicates/dismiss (T93) — records a permanent
+     * "not a duplicate" verdict for the pair, so the scanner never offers it
+     * again. Idempotent server-side (the two UIDs are ordered into a
+     * (user_id, uid_low, uid_high) row, so (A,B) and (B,A) are the same
+     * dismissal).
+     */
+    suspend fun dismissDuplicatePair(uidA: String, uidB: String): Result<Unit> =
+        executePost("$CONTACTS_PATH/duplicates/dismiss", DuplicateDismissalInput(uidA = uidA, uidB = uidB)) { _, _ ->
+            Unit
+        }
+
     // --- Import (CSV / VCF / JSContact) ---
 
     suspend fun uploadCsvImport(fileBytes: ByteArray, fileName: String): Result<ImportUploadResponse> =
@@ -2130,8 +2238,12 @@ class ApiClient(
         private const val DASHBOARD_PATH = "$API_V1/dashboard"
         private const val REACH_OUT_SUGGESTIONS_PATH = "$API_V1/reach-out-suggestions"
         private const val EXPORT_VCF_PATH = "$API_V1/export/vcf"
+        private const val EXPORT_PATH = "$API_V1/export"
+        private const val EXPORT_JSCONTACT_PATH = "$API_V1/export/jscontact"
+        private const val ATTACHMENTS_PATH = "$API_V1/attachments"
         private const val CONTACT_SHARES_PATH = "$API_V1/contact-shares"
         private const val AUDIT_PATH = "$API_V1/audit"
+        private const val AUDIT_EXPORT_PATH = "$AUDIT_PATH/export"
         private const val ADMIN_SYSTEM_EVENTS_PATH = "$API_V1/admin/system-events"
         private const val ADMIN_SUBSYSTEM_HEALTH_PATH = "$API_V1/admin/subsystem-health"
         private const val ADMIN_ERROR_AGGREGATION_PATH = "$API_V1/admin/error-aggregation"
