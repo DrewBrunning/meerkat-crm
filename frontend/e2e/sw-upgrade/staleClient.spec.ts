@@ -27,6 +27,7 @@ import {
   buildLabelOf,
   getSwState,
   loadAppShell,
+  resetHarness,
   resetHealthOverride,
   setActiveProfile,
   setHealthOverride,
@@ -50,8 +51,7 @@ async function expectOnBuild(page: Page, label: 'a' | 'b'): Promise<void> {
 
 test.describe('Stale-client behavior (WEB-01)', () => {
   test.beforeEach(async ({ request }) => {
-    await setActiveProfile(request, 'a');
-    await resetHealthOverride(request);
+    await resetHarness(request);
   });
 
   test('a mid-session deploy that raises the floor forces the stale tab onto the new build', async ({

@@ -51,6 +51,62 @@ The WEB-01 scenarios are covered by the same suite (its `/health` harness endpoi
 active build's own identity and lets a test raise the floor, flip `api_contract_version`, or fail
 `/health`).
 
+## Interrupted deployments: two windows the client must survive (WEB-03, issue #477)
+
+A deployment is not atomic, and on a single-instance self-hosted deployment there is no rolling
+update to smooth it over. The container stops, migrations run, the container starts, and anyone with
+the app open lives through it. Two distinct windows can hurt a client, and the app handles them with
+two different mechanisms:
+
+### 1. Assets that no longer exist (the asset-skew window)
+
+The static frontend and the API ship in one immutable image; nginx serves the app shell and the
+backend is proxied behind it. When the new image starts, the previous build's content-hashed assets
+are simply gone. A client that loads an `index.html` from the *previous* build during the swap — an
+in-flight response, an HTTP cache revalidation that straddled it, or a browser whose service worker
+was cleared — then asks for entry/vendor chunks the new build deleted. Every request 404s, the ES
+module graph fails to evaluate, and the page would be a blank white screen whose own bundle
+(ErrorBoundary, service worker, stale-client detector) never ran.
+
+The one piece of the app that *does* run in that state is the **asset-skew bootstrap**
+(`frontend/public/asset-skew.js`, referenced from `<head>` in `index.html` *outside* the bundle, at
+a stable un-hashed URL, excluded from the precache and served `no-cache` so a stale cache can never
+shadow it). It watches for a failed load of a `/assets/` module script or modulepreload, waits a
+moment for an in-flight deploy to finish, then reloads onto whatever the server serves now. The
+recovery is bounded (two automatic attempts, tracked in `sessionStorage`, cleared when a boot
+succeeds): a deploy that is genuinely stuck shows a plain "could not be loaded" message with a
+retry button instead of spinning the tab forever, and a load that succeeds is never re-armed. No
+reload ever discards in-progress work — a broken boot mounts nothing, and #557's drafts live in
+`sessionStorage`, which survives.
+
+**Why we do not retain the previous build's hashed assets across a deploy** (the ticket's
+recommended-action #2, decided deliberately): this project deploys by swapping an immutable image,
+so `/usr/share/nginx/html` is replaced wholesale — there is no in-place file update that a
+"keep last release's assets" rule could act on, and keeping old assets would mean a shared,
+stateful volume that the current stateless image model deliberately avoids. The residual skew window
+is bounded to clients holding a stale `index.html`, and the bootstrap above resolves it.
+
+### 2. A backend that is up but not ready (the starting-up screen)
+
+The backend runs migrations at startup, before it binds its listener. During that window nginx (in
+the same container, already up) serves the frontend but proxies every `/api` and `/health` request
+to a backend that is not listening yet — `502` — or that answers `503 not_ready` on
+`GET /health/ready` (issue #421) while migrations are still pending. Without handling, the app
+mounts anyway and fires a wall of failed requests.
+
+`ServerStartingGate` (`frontend/src/components/ServerStartingGate.tsx`, mounted at the root outside
+the routed ErrorBoundary) holds the tree back behind a clear "starting up" screen until
+`/health/ready` stops reporting not-ready, polling every few seconds, then mounts the app once. It
+fails open (`frontend/src/readiness/readiness.ts`): only an authoritative not-ready signal
+(`502`/`503`/`504` from `/health/ready`) keeps the gate up; an ambiguous or unreachable answer
+mounts the app exactly as if the gate did not exist, so a network error never locks a user out. Once
+the gate has passed it stays passed for the life of the page; later in-session server hiccups are
+the stale-client detector's and `SessionExpiredGate`'s job.
+
+The WEB-03 scenarios — a stale index whose chunk the new deploy deleted, a deploy that never
+completes, rollback convergence, and the not-ready window — are pinned by the same suite (its
+harness can withhold any `/assets/` path and flip `/health/ready` between ready and `not_ready`).
+
 ## The escape hatch: `/_recovery.html`
 
 For the case where the worker itself is broken — it installs and takes over but serves a broken

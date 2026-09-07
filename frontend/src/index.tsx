@@ -4,6 +4,7 @@ import './colors.css';
 import './index.css';
 import App from './App';
 import ErrorBoundary from './components/ErrorBoundary';
+import ServerStartingGate from './components/ServerStartingGate';
 import ServiceWorkerUpdatePrompt from './components/ServiceWorkerUpdatePrompt';
 import SessionExpiredGate from './components/SessionExpiredGate';
 import StaleClientGate from './components/StaleClientGate';
@@ -30,17 +31,25 @@ root.render(
       <DateFormatProvider>
         <SnackbarProvider>
           <AnnouncerProvider>
-            {/* Issue #557: outside the ErrorBoundary on purpose -- a page
-                crash or a route navigation must not take the re-auth prompt
-                down with it. StaleClientGate sits here for the same reason: a
-                forced reload must keep working even if the routed page (or
-                the whole app) has crashed. */}
-            <SessionExpiredGate />
-            <StaleClientGate />
-            <ErrorBoundary name="Application" onError={logError} showDetails={import.meta.env.DEV}>
-              <App />
-              <ServiceWorkerUpdatePrompt />
-            </ErrorBoundary>
+            {/* Issue #477 (WEB-03): ServerStartingGate is the outermost gate --
+                while the backend reports up-but-not-ready (mid-migration), the
+                tree below it is held back behind a "starting up" screen so a
+                client loading during a deploy does not fire a wall of failed
+                requests. It fails open (an unreachable/ambiguous /health/ready
+                mounts the app as before) and, once passed, stays passed. Issue
+                #557: SessionExpiredGate sits outside the ErrorBoundary on
+                purpose -- a page crash or a route navigation must not take the
+                re-auth prompt down with it. StaleClientGate sits here for the
+                same reason: a forced reload must keep working even if the
+                routed page (or the whole app) has crashed. */}
+            <ServerStartingGate>
+              <SessionExpiredGate />
+              <StaleClientGate />
+              <ErrorBoundary name="Application" onError={logError} showDetails={import.meta.env.DEV}>
+                <App />
+                <ServiceWorkerUpdatePrompt />
+              </ErrorBoundary>
+            </ServerStartingGate>
           </AnnouncerProvider>
         </SnackbarProvider>
       </DateFormatProvider>

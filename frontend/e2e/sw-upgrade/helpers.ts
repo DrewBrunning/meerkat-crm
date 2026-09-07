@@ -12,6 +12,21 @@
 
 import { type APIRequestContext, expect, type Page } from '@playwright/test';
 
+/**
+ * Resets the harness to a known-good shared state before a test: build A
+ * active, /health and /health/ready answering normally, no asset withheld.
+ * The harness's control surface is SHARED server state across every spec in
+ * the suite, and a test that leaves it dirty (a failed or mid-flight test can
+ * leak anything) breaks whichever spec runs next — so every spec file's
+ * beforeEach calls this, not just the knobs that file itself touches.
+ */
+export async function resetHarness(request: APIRequestContext): Promise<void> {
+  await setActiveProfile(request, 'a');
+  await resetHealthOverride(request);
+  await resetReady(request);
+  await resetBlockedAssets(request);
+}
+
 export type Profile = 'a' | 'b' | 'poison';
 
 export interface SwState {
@@ -30,6 +45,8 @@ export interface SwState {
 export interface HarnessStatus {
   active: Profile;
   builds: Record<'a' | 'b', { dir: string; files: string[] }>;
+  ready: boolean;
+  blockedAssets: string[];
 }
 
 export function buildLabelOf(entry: string | null): 'a' | 'b' | null {
@@ -131,6 +148,37 @@ export async function setHealthOverride(
 export async function resetHealthOverride(request: APIRequestContext): Promise<void> {
   const response = await request.post('/__swtest/health', { data: { reset: true } });
   expect(response.ok(), 'harness should accept a health reset').toBeTruthy();
+}
+
+/**
+ * Issue #477 (WEB-03): stages whether the harness's /health/ready says the
+ * backend is ready. `ready:false` is the up-but-not-ready mid-deploy window
+ * (503 not_ready); `ready:true` restores it.
+ */
+export async function setReady(request: APIRequestContext, ready: boolean): Promise<void> {
+  const response = await request.post('/__swtest/ready', { data: { ready } });
+  expect(response.ok(), 'harness should accept a readiness override').toBeTruthy();
+}
+
+/** Clears any readiness override (back to ready). */
+export async function resetReady(request: APIRequestContext): Promise<void> {
+  const response = await request.post('/__swtest/ready', { data: { reset: true } });
+  expect(response.ok(), 'harness should accept a readiness reset').toBeTruthy();
+}
+
+/**
+ * Issue #477 (WEB-03): withholds a single /assets/ path (a chunk the "new
+ * deploy" deleted but a stale index.html still references), making it 404.
+ */
+export async function blockAsset(request: APIRequestContext, path: string): Promise<void> {
+  const response = await request.post('/__swtest/asset-404', { data: { path } });
+  expect(response.ok(), 'harness should accept an asset-404 block').toBeTruthy();
+}
+
+/** Removes every asset-404 block (the deploy "completes"). */
+export async function resetBlockedAssets(request: APIRequestContext): Promise<void> {
+  const response = await request.post('/__swtest/asset-404', { data: { reset: true } });
+  expect(response.ok(), 'harness should accept an asset-404 reset').toBeTruthy();
 }
 
 /**

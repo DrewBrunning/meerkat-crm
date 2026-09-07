@@ -8,6 +8,18 @@
     <meta name="description" content="Mycorrhizal CRM - Personal Relationship Manager" />
     <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
     <!--
+      Issue #477 (WEB-03): the asset-skew bootstrap. A stale index.html that
+      references hashed build chunks the current deploy deleted leaves a blank
+      page whose own bundle (ErrorBoundary, service worker, stale-client
+      detector) never runs. /asset-skew.js is the one piece of the app that
+      still executes in that state, so it MUST load before the module entry
+      below (vite hoists that entry into <head> at build time) and MUST be a
+      stable, un-hashed URL -- a content-hashed copy would itself be the
+      victim of the skew it exists to recover from. Kept out of the precache
+      and served no-cache (docker/nginx.conf, frontend/nginx.conf).
+    -->
+    <script src="/asset-skew.js"></script>
+    <!--
       manifest.json provides metadata used when your web app is installed on a
       user's mobile device or desktop. See https://developers.google.com/web/fundamentals/web-app-manifest/
     -->

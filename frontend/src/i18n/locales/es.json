@@ -14,6 +14,12 @@
       "reload": "Recargar ahora",
       "later": "Más tarde"
     },
+    "startingUp": {
+      "loading": "Cargando",
+      "checking": "Conectando con el servidor\u2026",
+      "message": "El servidor todavía se está iniciando \u2014 es normal mientras aplica una actualización. La aplicación se cargará automáticamente.",
+      "retry": "Reintentar"
+    },
     "submitSearch": "Enviar búsqueda"
   },
   "duplicates": {

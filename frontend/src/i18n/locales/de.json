@@ -14,6 +14,12 @@
       "reload": "Jetzt neu laden",
       "later": "Später"
     },
+    "startingUp": {
+      "loading": "Wird geladen",
+      "checking": "Verbindung zum Server wird hergestellt \u2026",
+      "message": "Der Server startet noch \u2014 das ist normal, während ein Update angewendet wird. Die App wird automatisch geladen.",
+      "retry": "Erneut versuchen"
+    },
     "submitSearch": "Suche absenden"
   },
   "duplicates": {
