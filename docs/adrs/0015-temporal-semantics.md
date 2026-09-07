@@ -49,7 +49,7 @@ Every date-ish value in the product is exactly one of these:
    `time.Time`. Server-generated instants are UTC by construction; a client-supplied RFC3339 instant is
    unambiguous because an offset is present. SQLite stores the driver's offset-bearing text serialization,
    so **write UTC** (`Z` or `+00:00`) at every instant boundary — the recurring-reminder arithmetic does
-   this deliberately (`CalculateNextReminderTime`, `backend/services/reminder_service.go:562-600`) — and a
+   this deliberately (`CalculateNextReminderTime`, `backend/services/reminder_service.go:570-608`) — and a
    value written with a non-UTC offset is a latent SQL-comparison hazard, not a feature.
 2. **Date-only** — a whole calendar date with no time of day and no zone. `2026-03-14` is the 14th
    everywhere; it is never converted across zones. A birthday or anniversary is this.
@@ -175,7 +175,7 @@ served as `VALUE=DATE` so clients never timezone-shift them — `backend/caldav/
 - **Next occurrence** is defined only for a partial date carrying a **month and a day**: it recurs
   annually. The next occurrence is the first such date not before "today" (Rule 4's calendar day); a
   month/day in the past wraps forward a year — the Dec 31 → Jan 1 wrap is pinned by
-  `DaysUntilBirthday` (`backend/services/birthday_service.go:128`). A **year-only** partial (a life
+  `DaysUntilBirthday` (`backend/services/birthday_service.go:131`). A **year-only** partial (a life
   event known only to a year) has no annual occurrence: it is not a calendar event and cannot generate a
   reminder (`lifeEventHasCalendarDate`, `backend/controllers/life_event_controller.go:57-71`;
   `backend/caldav/backend.go:232-237`).
@@ -193,18 +193,19 @@ future feature, not current behaviour. Concretely:
 - The daily digest job runs once per day at `REMINDER_TIME` in the reminder zone
   (`backend/main.go:306-307`), and its "today" day boundary — which reminders are due, and which
   birthdays fall *today* — is `23:59:59` of the current local day **in the reminder zone**
-  (`backend/services/reminder_service.go:91-98`, birthday fetch at `470-471`). Birthdays reach the digest
-  only when `DaysUntilBirthday(...) == 0` against that zone's "now" (`reminder_service.go:133-152`).
+  (`backend/services/reminder_service.go:100-101`, birthday fetch at `479-485`). Birthdays reach the digest
+  only when `DaysUntilBirthday(...) == 0` against that zone's "now" (`reminder_service.go:151-156`).
 - Life-event reminders fire at a fixed 09:00 in the **same** zone (`nextRemindAt`,
   `backend/controllers/life_event_controller.go:73-81`).
-- **Known divergence, written down rather than rounded away:** some interactive endpoints compute
-  "today" with server-local `time.Now()` rather than the reminder zone — `GET /contacts/birthdays`
-  (`backend/controllers/contact_controller.go`), the dashboard composite, and `GET /reminders/upcoming`
-  (`backend/controllers/reminder_controller.go`) — while the scheduled digest, cadence, timeline, and
-  briefing paths use the reminder zone. On a host whose local zone differs from `REMINDER_TIMEZONE`, the
-  UI can disagree with the email by a day. Aligning every interactive endpoint to `GetReminderLocation`
-  is a follow-up (the endpoints take `time.Now()` where the digest passes the zone-aware value); DATE-02
-  or a dedicated temporal-conformance ticket should pin the aligned behaviour.
+- **Resolved in DATE-02 (issue #483), no longer a divergence:** every interactive endpoint that decides
+  "today" now goes through the same zone-aware helper the digest uses — `reminderNow(c)`
+  (`backend/controllers/reminder_clock.go`), a single clock-injectable seam — so `GET /contacts/birthdays`
+  (`backend/controllers/contact_controller.go`), the dashboard composite
+  (`backend/controllers/dashboard_controller.go`), `GET /reminders/upcoming`
+  (`backend/controllers/reminder_controller.go`), the briefing (`briefing_controller.go`), and the timeline
+  (`timeline_controller.go`) all compute the day boundary in `REMINDER_TIMEZONE`, never the server's own
+  local zone. The endpoint-vs-digest disagreement this paragraph warned about is pinned closed by
+  `controllers/date_02_reminder_zone_test.go` (fixed injected instant, several server `Local` zones).
 
 ### Rule 5 — DST and the wall clock: one run per local label, never skipped, never doubled
 
@@ -226,10 +227,14 @@ location via Go `time.Date` (`roundToMidnightAndAddDSTAware`), so:
   "never skipped, never doubled" statement and ADR 0011's de-duplication are the same policy seen from
   two sides; issue #526's ticket text and this rule agree.
 - These gap/fold behaviours are inherited from the pinned gocron + Go `time.Date`; they are stated here
-  so DATE-02 can pin them with tests. The days-until arithmetic that truncates absolute hours
-  (`DaysUntilBirthday`) is *not* DST-safe across a spring-forward (two local midnights are 23 absolute
-  hours apart) — the cadence engine's `calendarDaysBetween` rounds for exactly that reason
-  (`backend/services/cadence_service.go:37-52`); hardening `DaysUntilBirthday` is DATE-02 material.
+  so DATE-02 can pin them with tests. The **never-doubled** half is pinned at the delivery layer by
+  DATE-02 (`sendRemindersAt` driving two same-day digest passes to one email — `services/
+  reminder_service_test.go`), and Go's fire-time normalization that gocron inherits is pinned by the DST
+  spring-forward/fold cases in `services/birthday_service_test.go`. The days-until arithmetic used to
+  truncate absolute hours (`DaysUntilBirthday`), which was *not* DST-safe across a spring-forward (two
+  local midnights are 23 absolute hours apart); DATE-02 hardened it to count whole calendar days via
+  `calendarDaysBetween`'s rounding (`backend/services/birthday_service.go`) — the cadence engine had
+  already rounded for exactly that reason (`backend/services/cadence_service.go:37-52`).
 
 ### Rule 6 — 29 February advances to 1 March in a non-leap year
 
@@ -239,17 +244,17 @@ day" rule — Go `time.Date` day-overflow implements it natively, which is why t
 Consequences:
 
 - **Birthdays**: a stored 29-Feb birthday is celebrated on 1 March in non-leap years. `DaysUntilBirthday`
-  reports 0 ("today") on 1 March of a non-leap year (`backend/services/birthday_service.go:128`), and
+  reports 0 ("today") on 1 March of a non-leap year (`backend/services/birthday_service.go:131`), and
   `GetUpcomingBirthdays` fetches the row on that one date so the digest and the birthdays list can report
   it — its stored month (02) is not in the query window in March, so the preselect has an explicit
   leap-day branch for `1 March of a non-leap year` (`birthday_service.go:30-42`).
 - **Life events and reminders**: `nextRemindAt` and yearly reminder recurrence land on 1 March too
   (`addYears` is a plain `AddDate`, which day-overflows 29 Feb → 1 Mar; `backend/services/
-  reminder_service.go:549-558`). The single consumer that used to *clamp* to 28 February — yearly
+  reminder_service.go:557-566`). The single consumer that used to *clamp* to 28 February — yearly
   recurring reminders — was aligned to this rule in DATE-01 (see Consequences).
 - **Monthly cadence is deliberately different.** A monthly recurrence clamps to the last real day of the
   target month (`addMonths`, Jan 31 → Feb 28/29) — that is the "monthly on the Nth" reading, not an
-  annual date, and is unchanged (`reminder_service.go:527-547`).
+  annual date, and is unchanged (`reminder_service.go:535-555`).
 - **CalDAV caveat, stated rather than hidden:** a year-known 29-Feb life event is served as a
   `FREQ=YEARLY` VEVENT anchored on its real date. Per RFC 5545 a yearly recurrence of 29 Feb simply has
   no instance in a non-leap year, so spec-conformant calendar clients show it only in leap years —
@@ -282,11 +287,16 @@ birthday may be:
 
 - **One behavioural change shipped with this decision:** yearly recurring reminders from a 29-Feb base
   date now advance to **1 March** in a non-leap year instead of clamping to 28 February
-  (`addYears`, `reminder_service.go:549-558`; tests updated in `reminder_service_test.go`). The digest
+  (`addYears`, `reminder_service.go:557-566`; tests updated in `reminder_service_test.go`). The digest
   "Feb-29 birthday is never today in a non-leap year" gap is closed (`GetUpcomingBirthdays` leap branch,
   pinned by `birthday_service_test.go`).
 - Operators now have the single-timezone statement where they configure it: `docs/notifications.md`,
   `docs/getting-started.md`'s environment table, and the two `.env.example` files point at this ADR.
-- DATE-02 inherits a spec to test: partial-date resolution ladders, DST gap/fold pinning for the daily
-  job, DST-safe days-until, the Feb-29 fetch window, and the interactive-endpoint zone divergence.
+- DATE-02 (#483) shipped the pathological-date suite against the rules above: the leap-day matrix,
+  absent/garbage partial values (never "1 January year zero"), far-past/far-future stored dates, the
+  cross-zone "today" decision, DST spring-forward/fold cases, and the half-hour-offset (Asia/Kolkata)
+  digest day boundary — all at a fixed injected clock (`services/birthday_service_test.go`,
+  `services/reminder_service_test.go`, `controllers/date_02_reminder_zone_test.go`). Two DATE-02
+  hardening changes landed with it: `DaysUntilBirthday` now counts whole calendar days (DST-safe), and
+  every interactive endpoint routes "today" through the reminder zone (see Rule 4).
 - No schema change; no migration. Category classification is documentation plus comment-level citations.

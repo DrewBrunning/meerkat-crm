@@ -355,3 +355,91 @@ func TestValidateStruct_NoAtSign(t *testing.T) {
 		})
 	}
 }
+
+// TestValidateStruct_BirthdayIsLexicalOnly pins the DATE-01 decision that the
+// birthday validator is deliberately lexical (validateBirthday's doc comment,
+// docs/adrs/0015-temporal-semantics.md): it accepts any string matching the
+// two canonical shapes — including calendar-impossible month/day values like
+// 1990-13-40 or --02-30 — and rejects anything outside those shapes. DATE-02
+// (issue #483) owns pathological values: downstream handling (DaysUntilBirthday
+// and friends) must never turn an accepted-but-impossible value into a real
+// date such as 1 January year zero, which the services test
+// TestDaysUntilBirthday_AbsentAndGarbageNeverBecomeJan1YearZero pins.
+func TestValidateStruct_BirthdayIsLexicalOnly(t *testing.T) {
+	type TestStruct struct {
+		Birthday string `validate:"birthday"`
+	}
+
+	tests := []struct {
+		name    string
+		date    string
+		isValid bool
+	}{
+		{
+			name:    "out-of-range month passes the lexical check",
+			date:    "1990-13-15",
+			isValid: true,
+		},
+		{
+			name:    "out-of-range day passes the lexical check",
+			date:    "1990-01-40",
+			isValid: true,
+		},
+		{
+			name:    "both month and day out of range passes the lexical check",
+			date:    "1990-99-99",
+			isValid: true,
+		},
+		{
+			name:    "year-less out-of-range month passes the lexical check",
+			date:    "--13-40",
+			isValid: true,
+		},
+		{
+			name:    "year zero passes the lexical check",
+			date:    "0000-01-01",
+			isValid: true,
+		},
+		{
+			name:    "far-future year passes the lexical check",
+			date:    "9999-12-31",
+			isValid: true,
+		},
+		{
+			name:    "year-less 29 February passes",
+			date:    "--02-29",
+			isValid: true,
+		},
+		{
+			name:    "shape break: DD-MM-YYYY is rejected",
+			date:    "15-03-1985",
+			isValid: false,
+		},
+		{
+			name:    "shape break: three-digit year is rejected",
+			date:    "123-01-15",
+			isValid: false,
+		},
+		{
+			name:    "shape break: single-digit month is rejected",
+			date:    "1990-1-15",
+			isValid: false,
+		},
+		{
+			name:    "surrounding whitespace is rejected by the anchors",
+			date:    " 1990-01-15",
+			isValid: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			obj := TestStruct{Birthday: tt.date}
+			errors := ValidateStruct(obj)
+			hasErrors := len(errors) > 0
+			if hasErrors == tt.isValid {
+				t.Errorf("ValidateStruct with birthday %q: hasErrors=%v, want isValid=%v", tt.date, hasErrors, tt.isValid)
+			}
+		})
+	}
+}

@@ -273,7 +273,7 @@ func GetUpcomingReminders(c *gin.Context) {
 		return
 	}
 
-	reminders, err := services.GetUpcomingReminders(db, userID, time.Now())
+	reminders, err := services.GetUpcomingReminders(db, userID, reminderNow(c))
 	if err != nil {
 		apperrors.AbortWithError(c, apperrors.ErrDatabase("Failed to retrieve reminders").WithError(err))
 		return

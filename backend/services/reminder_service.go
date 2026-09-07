@@ -84,12 +84,20 @@ type notificationDeliveryKey struct {
 // vanishes: the aggregate error propagates so the reminder job run is recorded
 // as failed (issue #391).
 func SendReminders(db *gorm.DB, config config.Config) (int, error) {
+	return sendRemindersAt(db, config, time.Now().In(config.GetReminderLocation()))
+}
+
+// sendRemindersAt is SendReminders with the "now" instant pinned by the caller
+// so tests can drive the daily digest deterministically against a fixed
+// calendar day (DATE-02 / issue #483 — the suite must never depend on the
+// ambient clock). The caller decides the zone: SendReminders passes the
+// operator's single clock (REMINDER_TIMEZONE), the only place the day
+// boundary may be computed (docs/adrs/0015-temporal-semantics.md Rule 4).
+func sendRemindersAt(db *gorm.DB, config config.Config, now time.Time) (int, error) {
 	ctx := logger.JobContext(models.JobNameDailyReminders)
 	logger.Info().Msg("Sending reminders...")
 	var reminders []models.Reminder
-	// Get the current time in the configured reminder timezone
 	loc := config.GetReminderLocation()
-	now := time.Now().In(loc)
 	endOfDay := time.Date(now.Year(), now.Month(), now.Day(), 23, 59, 59, 0, loc)
 
 	// Fetch reminders that are due today or before and not completed. Per-channel
