@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { RouterProvider, createMemoryRouter } from 'react-router';
 import '../i18n/config';
 import { SnackbarProvider } from '../context/SnackbarContext';
 import { DateFormatProvider } from '../DateFormatProvider';
@@ -212,11 +212,7 @@ describe('AddNoteDialog in-app route navigation guard (issue #805)', () => {
         {
           path: '/notes',
           element: (
-            <AddNoteDialog
-              open
-              onClose={onClose}
-              onSave={vi.fn().mockResolvedValue(undefined)}
-            />
+            <AddNoteDialog open onClose={onClose} onSave={vi.fn().mockResolvedValue(undefined)} />
           ),
         },
         { path: '/contacts', element: <div>contacts page</div> },
@@ -273,9 +269,7 @@ describe('AddNoteDialog in-app route navigation guard (issue #805)', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Keep editing' }));
 
     expect(router.state.location.pathname).toBe('/notes');
-    await waitFor(() =>
-      expect(screen.queryByText('Discard unsaved changes?')).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByText('Discard unsaved changes?')).toBeNull());
     expect(onClose).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Content *')).toHaveValue('A note I have not saved yet.');
     expect(sessionStorage.getItem(draftKey)).not.toBeNull();

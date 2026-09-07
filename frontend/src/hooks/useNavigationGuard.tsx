@@ -1,8 +1,5 @@
-import { useCallback, useContext, useEffect, useRef, useState, type ReactElement } from 'react';
-import {
-  UNSAFE_DataRouterContext as DataRouterContext,
-  useBlocker,
-} from 'react-router';
+import { type ReactElement, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { UNSAFE_DataRouterContext as DataRouterContext, useBlocker } from 'react-router';
 
 // Issue #805: guards in-app route navigation away from a dirty editing surface.
 //
@@ -55,7 +52,11 @@ interface NavigationGuardBridgeProps {
 // changes across a block/unblock cycle. Only a 'blocked' blocker exposes
 // proceed/reset (the react-router type models the other states without them),
 // which is why the imperative handle is captured inside that branch.
-function NavigationGuardBridge({ shouldBlock, onHandle, onBlockedChange }: NavigationGuardBridgeProps) {
+function NavigationGuardBridge({
+  shouldBlock,
+  onHandle,
+  onBlockedChange,
+}: NavigationGuardBridgeProps) {
   const blocker = useBlocker(shouldBlock);
   const blocked = blocker.state === 'blocked';
 

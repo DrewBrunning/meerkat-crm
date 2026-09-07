@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type ReactElement } from 'react';
+import { type ReactElement, useCallback, useEffect, useRef, useState } from 'react';
 import { useBeforeUnloadGuard } from './useBeforeUnloadGuard';
 import { useNavigationGuard } from './useNavigationGuard';
 
@@ -41,10 +41,7 @@ interface DiscardGuard {
 // ConfirmDiscardDialog. One hook covers all three triggers, since each exists
 // to answer the same question: does leaving right now lose something the user
 // hasn't saved.
-export function useDiscardGuard(
-  isDirty: boolean,
-  options: DiscardGuardOptions = {},
-): DiscardGuard {
+export function useDiscardGuard(isDirty: boolean, options: DiscardGuardOptions = {}): DiscardGuard {
   useBeforeUnloadGuard(isDirty);
 
   const [pendingClose, setPendingClose] = useState<(() => void) | null>(null);

@@ -1,6 +1,14 @@
-import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from '@testing-library/react';
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  renderHook,
+  screen,
+  waitFor,
+} from '@testing-library/react';
+import { createMemoryRouter, Link, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { Link, RouterProvider, createMemoryRouter } from 'react-router';
 import ConfirmDiscardDialog from '../components/ConfirmDiscardDialog';
 import { useDiscardGuard } from './useDiscardGuard';
 import '../i18n/config';
@@ -94,7 +102,9 @@ function GuardHarness({
     <div>
       {navigationGuardElement}
       <Link to="/away">leave</Link>
-      <button onClick={() => guardedClose(onClose)}>close</button>
+      <button type="button" onClick={() => guardedClose(onClose)}>
+        close
+      </button>
       <ConfirmDiscardDialog {...confirmDialogProps} />
     </div>
   );
@@ -159,9 +169,7 @@ describe('useDiscardGuard under a data router (in-app navigation guard)', () => 
     expect(router.state.location.pathname).toBe('/home');
     // MUI keeps a closing Dialog's children mounted through its exit
     // transition, so wait for the confirm to actually unmount.
-    await waitFor(() =>
-      expect(screen.queryByText('Discard unsaved changes?')).toBeNull(),
-    );
+    await waitFor(() => expect(screen.queryByText('Discard unsaved changes?')).toBeNull());
     expect(onNavigationDiscard).not.toHaveBeenCalled();
   });
 

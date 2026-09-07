@@ -79,12 +79,12 @@ import {
 import { Suspense, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
+  createBrowserRouter,
   Link,
   Navigate,
   Route,
   RouterProvider,
   Routes,
-  createBrowserRouter,
   useLocation,
   useNavigate,
   useSearchParams,

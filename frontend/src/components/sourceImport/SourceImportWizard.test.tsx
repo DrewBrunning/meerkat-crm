@@ -1,6 +1,6 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { createMemoryRouter, RouterProvider } from 'react-router';
 import { afterEach, describe, expect, test, vi } from 'vitest';
-import { RouterProvider, createMemoryRouter } from 'react-router';
 import '../../i18n/config';
 import type { SourceImportWizard as Wizard } from '../../hooks/useSourceImportWizard';
 import SourceImportWizard from './SourceImportWizard';

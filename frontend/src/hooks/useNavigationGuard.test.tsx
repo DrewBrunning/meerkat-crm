@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react';
-import { afterEach, describe, expect, test } from 'vitest';
 import { useState } from 'react';
-import { Link, MemoryRouter, RouterProvider, createMemoryRouter } from 'react-router';
+import { createMemoryRouter, Link, MemoryRouter, RouterProvider } from 'react-router';
+import { afterEach, describe, expect, test } from 'vitest';
 import { useNavigationGuard } from './useNavigationGuard';
 
 afterEach(() => {
@@ -18,13 +18,19 @@ function GuardHarness({ shouldBlock }: { shouldBlock: boolean }) {
     <div>
       {guard.guardElement}
       <Link to="/away">leave</Link>
-      <button onClick={() => setDirty(true)}>make dirty</button>
+      <button type="button" onClick={() => setDirty(true)}>
+        make dirty
+      </button>
       <span>dirty:{dirty ? 'yes' : 'no'}</span>
       <span>blocked:{guard.blocked ? 'yes' : 'no'}</span>
       {guard.blocked && (
         <>
-          <button onClick={guard.cancel}>cancel</button>
-          <button onClick={guard.proceed}>discard and leave</button>
+          <button type="button" onClick={guard.cancel}>
+            cancel
+          </button>
+          <button type="button" onClick={guard.proceed}>
+            discard and leave
+          </button>
         </>
       )}
     </div>
