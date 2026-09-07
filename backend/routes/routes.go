@@ -41,15 +41,20 @@ func RegisterRoutes(router *gin.Engine, cfg *config.Config, db *gorm.DB, oidcPro
 			v1.GET("/auth/oidc/callback", middleware.AuthRateLimitMiddleware(), controllers.OIDCCallbackHandler(oidcProvider, cfg))
 		}
 
-		// Public routes (no authentication required, strict rate limiting)
-		v1.POST("/register", middleware.AuthRateLimitMiddleware(), middleware.ValidateJSONMiddleware(&models.UserRegistrationInput{}), controllers.RegisterUser(cfg))
-		v1.POST("/login", middleware.AuthRateLimitMiddleware(), func(c *gin.Context) {
+		// Public routes (no authentication required, strict rate limiting).
+		// Issue #692: every route that mints a session (register, login, the
+		// 2FA step, the device-grant exchange) enforces the configured
+		// MIN_CLIENT_VERSION floor BEFORE any user authentication work — a
+		// client below the floor is refused outright (client_version.go). The
+		// floor is empty by default, which makes this middleware inert.
+		v1.POST("/register", middleware.AuthRateLimitMiddleware(), middleware.EnforceMinClientVersion(cfg), middleware.ValidateJSONMiddleware(&models.UserRegistrationInput{}), controllers.RegisterUser(cfg))
+		v1.POST("/login", middleware.AuthRateLimitMiddleware(), middleware.EnforceMinClientVersion(cfg), func(c *gin.Context) {
 			controllers.LoginUser(c, cfg)
 		})
 		// N8: step 2 of interactive login — exchange a pending 2FA challenge
 		// (2fa_pending cookie set by /login) + a TOTP/recovery code for the
 		// real session cookie.
-		v1.POST("/login/2fa", middleware.AuthRateLimitMiddleware(), func(c *gin.Context) {
+		v1.POST("/login/2fa", middleware.AuthRateLimitMiddleware(), middleware.EnforceMinClientVersion(cfg), func(c *gin.Context) {
 			controllers.Complete2FALogin(c, cfg)
 		})
 		// Issue #722: fully biometric login — a device that holds an
@@ -57,7 +62,7 @@ func RegisterRoutes(router *gin.Engine, cfg *config.Config, db *gorm.DB, oidcPro
 		// biometric gate) exchanges it for a fresh session JWT. Rate-limited
 		// exactly like /login: possession of a grant is as powerful as a
 		// password and must be defended the same way.
-		v1.POST("/auth/device/session", middleware.AuthRateLimitMiddleware(), middleware.ValidateJSONMiddleware(&models.DeviceGrantSessionInput{}), func(c *gin.Context) {
+		v1.POST("/auth/device/session", middleware.AuthRateLimitMiddleware(), middleware.EnforceMinClientVersion(cfg), middleware.ValidateJSONMiddleware(&models.DeviceGrantSessionInput{}), func(c *gin.Context) {
 			controllers.ExchangeDeviceGrant(c, cfg)
 		})
 		v1.POST("/logout", func(c *gin.Context) {

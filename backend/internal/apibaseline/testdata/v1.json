@@ -997,7 +997,13 @@
     {
       "method": "POST",
       "path": "/auth/device/session",
-      "parameters": null,
+      "parameters": [
+        {
+          "name": "X-Client-Version",
+          "in": "header",
+          "required": false
+        }
+      ],
       "request_body": "ref:DeviceGrantSessionInput",
       "responses": [
         {
@@ -1011,6 +1017,10 @@
         {
           "status": "401",
           "schema": "ref:Error"
+        },
+        {
+          "status": "403",
+          "schema": ""
         },
         {
           "status": "429",
@@ -4956,7 +4966,13 @@
     {
       "method": "POST",
       "path": "/login",
-      "parameters": null,
+      "parameters": [
+        {
+          "name": "X-Client-Version",
+          "in": "header",
+          "required": false
+        }
+      ],
       "request_body": "ref:LoginInput",
       "responses": [
         {
@@ -4972,6 +4988,10 @@
           "schema": "ref:Error"
         },
         {
+          "status": "403",
+          "schema": ""
+        },
+        {
           "status": "429",
           "schema": ""
         }
@@ -4980,7 +5000,13 @@
     {
       "method": "POST",
       "path": "/login/2fa",
-      "parameters": null,
+      "parameters": [
+        {
+          "name": "X-Client-Version",
+          "in": "header",
+          "required": false
+        }
+      ],
       "request_body": "ref:TwoFactorCodeInput",
       "responses": [
         {
@@ -4994,6 +5020,10 @@
         {
           "status": "401",
           "schema": "ref:Error"
+        },
+        {
+          "status": "403",
+          "schema": ""
         },
         {
           "status": "429",
@@ -5855,7 +5885,13 @@
     {
       "method": "POST",
       "path": "/register",
-      "parameters": null,
+      "parameters": [
+        {
+          "name": "X-Client-Version",
+          "in": "header",
+          "required": false
+        }
+      ],
       "request_body": "ref:UserRegistrationInput",
       "responses": [
         {

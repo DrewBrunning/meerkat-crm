@@ -43,12 +43,15 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.mycorrhizal.crm.domain.compat.ServerCapabilities
+import com.mycorrhizal.crm.domain.compat.ServerFeature
 import com.mycorrhizal.crm.model.network.API_TOKEN_EXPIRY_OPTIONS
 import com.mycorrhizal.crm.model.network.API_TOKEN_SCOPES
 import com.mycorrhizal.crm.model.network.ApiToken
 import com.mycorrhizal.crm.model.network.ApiTokenCreateResponse
 import com.mycorrhizal.crm.model.network.DEFAULT_API_TOKEN_EXPIRY_DAYS
 import com.mycorrhizal.crm.model.network.DEFAULT_API_TOKEN_SCOPE
+import com.mycorrhizal.crm.ui.LocalServerVersion
 import com.mycorrhizal.crm.ui.R
 import com.mycorrhizal.crm.ui.components.AccessibleIconButton
 import com.mycorrhizal.crm.ui.components.BrandFab
@@ -76,6 +79,11 @@ fun ApiTokensScreen(
     var rotatingToken by remember { mutableStateOf<ApiToken?>(null) }
     var revokeAllOpen by remember { mutableStateOf(false) }
 
+    // Issue #692: create/list/revoke are v0.6.0; rotate + revoke-all need the
+    // v0.6.1 endpoints, so those affordances are hidden on a v0.6.0 server.
+    val advancedTokensSupported =
+        ServerCapabilities.isSupported(LocalServerVersion.current, ServerFeature.API_TOKENS_ADVANCED)
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -88,14 +96,16 @@ fun ApiTokensScreen(
                     Text(stringResource(R.string.settings_api_tokens_title), style = MaterialTheme.typography.titleLarge)
                 },
                 actions = {
-                    AccessibleIconButton(
-                        onClick = { revokeAllOpen = true },
-                        enabled = state.activeCount > 0 && !state.isRevokingAll,
-                    ) {
-                        Icon(
-                            Icons.Outlined.Block,
-                            contentDescription = stringResource(R.string.settings_api_tokens_revoke_all),
-                        )
+                    if (advancedTokensSupported) {
+                        AccessibleIconButton(
+                            onClick = { revokeAllOpen = true },
+                            enabled = state.activeCount > 0 && !state.isRevokingAll,
+                        ) {
+                            Icon(
+                                Icons.Outlined.Block,
+                                contentDescription = stringResource(R.string.settings_api_tokens_revoke_all),
+                            )
+                        }
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -154,6 +164,7 @@ fun ApiTokensScreen(
                         token = token,
                         rotating = state.rotatingId == token.id,
                         revoking = state.revokingId == token.id,
+                        rotateSupported = advancedTokensSupported,
                         onRotate = { rotatingToken = token },
                         onRevoke = { revokingToken = token },
                     )
@@ -246,6 +257,7 @@ internal fun ApiTokenRow(
     revoking: Boolean,
     onRotate: () -> Unit,
     onRevoke: () -> Unit,
+    rotateSupported: Boolean = true,
 ) {
     val active = token.isActive()
     Row(
@@ -290,17 +302,19 @@ internal fun ApiTokenRow(
             }
         }
         if (active) {
-            AccessibleIconButton(onClick = onRotate, enabled = !rotating) {
-                if (rotating) {
-                    CircularProgressIndicator(modifier = Modifier.padding(4.dp), strokeWidth = 2.dp)
-                } else {
-                    // #205-equivalent: the row-action label carries the token
-                    // name so TalkBack doesn't read a bare "Rotate"/"Revoke"
-                    // on every row.
-                    Icon(
-                        Icons.Outlined.Autorenew,
-                        contentDescription = stringResource(R.string.settings_api_tokens_rotate_named, token.name),
-                    )
+            if (rotateSupported) {
+                AccessibleIconButton(onClick = onRotate, enabled = !rotating) {
+                    if (rotating) {
+                        CircularProgressIndicator(modifier = Modifier.padding(4.dp), strokeWidth = 2.dp)
+                    } else {
+                        // #205-equivalent: the row-action label carries the token
+                        // name so TalkBack doesn't read a bare "Rotate"/"Revoke"
+                        // on every row.
+                        Icon(
+                            Icons.Outlined.Autorenew,
+                            contentDescription = stringResource(R.string.settings_api_tokens_rotate_named, token.name),
+                        )
+                    }
                 }
             }
             AccessibleIconButton(onClick = onRevoke, enabled = !revoking) {
