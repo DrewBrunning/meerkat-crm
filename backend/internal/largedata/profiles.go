@@ -26,7 +26,7 @@ import (
 //     1.0.0 (#558), and per-user jobs/indexes scale with user count
 //     independently of per-user data volume;
 //  2. a NON-UNIFORM graph — Scale alone yields a disconnected forest of
-//     identical 15-contact islands, but traversal cost lives in the tails, so
+//     identical 27-contact islands, but traversal cost lives in the tails, so
 //     each profile adds a deep cross-block relationship chain and a set of
 //     dense hub contacts;
 //  3. an explicit seed, so a regression is reproducible and two runs are
@@ -51,7 +51,10 @@ type Profile struct {
 	// yields a different but equally deterministic dataset.
 	Seed int64
 	// Contacts is the per-user target, rounded up to a whole manifest block
-	// (15 contacts) by UserManifests.
+	// (27 contacts since the I18N-01 records landed, issue #484) by
+	// UserManifests. The catalogue below picks targets that ARE whole blocks,
+	// so the round-up is exact and tests can assert
+	// ContactCount == Contacts x Users.
 	Contacts int
 	// Users is how many isolated user accounts the dataset spans. Each gets
 	// the full per-user Contacts count and its own re-keyed rows.
@@ -75,20 +78,20 @@ var (
 	// Smoke is a deliberately tiny profile — big enough to exercise the graph
 	// shape, multi-user split, and every pathological record, small enough to
 	// populate in seconds under -race on every PR.
-	Smoke = Profile{Name: "smoke", Seed: 1, Contacts: 150, Users: 2, Hubs: 2, HubFanout: 8, ChainDepth: 6}
+	Smoke = Profile{Name: "smoke", Seed: 1, Contacts: 162, Users: 2, Hubs: 2, HubFanout: 8, ChainDepth: 6}
 
 	// Typical is what a real personal-CRM user has after a few years: a few
 	// hundred contacts, one account, a handful of well-connected people.
-	Typical = Profile{Name: "typical", Seed: 1, Contacts: 900, Users: 1, Hubs: 5, HubFanout: 25, ChainDepth: 12}
+	Typical = Profile{Name: "typical", Seed: 1, Contacts: 918, Users: 1, Hubs: 5, HubFanout: 25, ChainDepth: 12}
 
 	// Large is a heavy user, or someone who imported an entire address-book
 	// history, on a small shared instance: tens of thousands of contacts
 	// across a few accounts.
-	Large = Profile{Name: "large", Seed: 1, Contacts: 15000, Users: 3, Hubs: 25, HubFanout: 150, ChainDepth: 40}
+	Large = Profile{Name: "large", Seed: 1, Contacts: 15012, Users: 3, Hubs: 25, HubFanout: 150, ChainDepth: 40}
 
 	// Stress is beyond the intended MVP scale — its job is to find the cliff,
-	// not to promise support: 100k contacts per user across ten accounts.
-	Stress = Profile{Name: "stress", Seed: 1, Contacts: 100000, Users: 10, Hubs: 60, HubFanout: 400, ChainDepth: 80}
+	// not to promise support: ~100k contacts per user across ten accounts.
+	Stress = Profile{Name: "stress", Seed: 1, Contacts: 100008, Users: 10, Hubs: 60, HubFanout: 400, ChainDepth: 80}
 )
 
 // Profiles returns the catalogue in ascending size order.

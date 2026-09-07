@@ -457,6 +457,551 @@
         "name": { "components": [{ "kind": "given", "value": "Ruth" }] },
         "keywords": ["e\u0301tude", "e\u0301tude"]
       }
+    },
+    {
+      "name": "naoki",
+      "comment": "I18N-01 (issue #484): a Japanese name with Latin phonetic (romaji) readings on each component, a Japanese address expressed largest-to-smallest administrative unit, an E.164 number, and an emoji note. The hiragana sortAs records the kana reading separately so name sort is driven by the dedicated field, never inferred from the display string.",
+      "card": {
+        "uid": "10000000-0000-4000-8000-000000000020",
+        "kind": "individual",
+        "language": "ja",
+        "name": {
+          "full": "佐藤 直樹",
+          "components": [
+            { "kind": "given", "value": "直樹", "phonetic": "Naoki" },
+            { "kind": "surname", "value": "佐藤", "phonetic": "Satō" }
+          ],
+          "sortAs": { "surname": "さとう" }
+        },
+        "nicknames": [{ "name": "ナオキ" }],
+        "emails": [{ "address": "naoki.sato@example.co.jp", "label": "work" }],
+        "phones": [
+          { "number": "+81 90 1234 5678", "label": "cell", "features": ["cell"] }
+        ],
+        "addresses": [
+          {
+            "components": [
+              { "kind": "region", "value": "東京都" },
+              { "kind": "locality", "value": "渋谷区" },
+              { "kind": "name", "value": "神南一丁目20-5" },
+              { "kind": "postcode", "value": "150-0041" },
+              { "kind": "country", "value": "日本" }
+            ],
+            "contexts": ["private"],
+            "countryCode": "JP"
+          }
+        ],
+        "anniversaries": [
+          { "kind": "birth", "date": { "partial": { "year": 1985, "month": 3, "day": 2 } } }
+        ],
+        "notes": [
+          { "note": "直樹とは大学時代の友人。たまにラーメンと餃子を食べに行く。メールよりLINEの方が返事が早い。🇯🇵" }
+        ]
+      },
+      "crm": {
+        "kind": "human",
+        "how_we_met": "大学のサークルで知り合った。"
+      }
+    },
+    {
+      "name": "wei",
+      "comment": "I18N-01 (issue #484): a mainland-Chinese name with pinyin phonetic readings, a Shanghai address, and a mobile in E.164 plus a landline in national format. Sorting must key on the surname 王, not on the display order of the full name.",
+      "card": {
+        "uid": "10000000-0000-4000-8000-000000000021",
+        "kind": "individual",
+        "language": "zh",
+        "name": {
+          "full": "王芳",
+          "components": [
+            { "kind": "given", "value": "芳", "phonetic": "Fāng" },
+            { "kind": "surname", "value": "王", "phonetic": "Wáng" }
+          ]
+        },
+        "nicknames": [{ "name": "Fangfang" }],
+        "emails": [{ "address": "wei.wang@example.cn", "label": "work" }],
+        "phones": [
+          { "number": "+86 139 1234 5678", "label": "cell", "features": ["cell"] },
+          { "number": "021-5888-1234", "label": "home" }
+        ],
+        "addresses": [
+          {
+            "components": [
+              { "kind": "name", "value": "世纪大道100号" },
+              { "kind": "locality", "value": "浦东新区" },
+              { "kind": "region", "value": "上海市" },
+              { "kind": "postcode", "value": "200120" },
+              { "kind": "country", "value": "中国" }
+            ],
+            "contexts": ["work"],
+            "countryCode": "CN",
+            "timeZone": "Asia/Shanghai"
+          }
+        ],
+        "anniversaries": [
+          { "kind": "birth", "date": { "partial": { "year": 1990, "month": 10, "day": 1 } } }
+        ],
+        "notes": [
+          { "note": "王芳在上海工作。周末喜欢去世纪公园跑步。她会说普通话和一点粤语。" }
+        ]
+      },
+      "crm": {
+        "kind": "human",
+        "how_we_met": "工作中认识的客户。"
+      }
+    },
+    {
+      "name": "minjun",
+      "comment": "I18N-01 (issue #484): a Korean name in Hangul with romanized phonetic readings, a Seoul address, and both an E.164 mobile and a national-format Seoul landline. Sorting keys on the family name 김.",
+      "card": {
+        "uid": "10000000-0000-4000-8000-000000000022",
+        "kind": "individual",
+        "language": "ko",
+        "name": {
+          "full": "김민준",
+          "components": [
+            { "kind": "given", "value": "민준", "phonetic": "Minjun" },
+            { "kind": "surname", "value": "김", "phonetic": "Kim" }
+          ]
+        },
+        "nicknames": [{ "name": "준" }],
+        "emails": [{ "address": "minjun.kim@example.kr", "label": "work" }],
+        "phones": [
+          { "number": "+82 10 9876 5432", "label": "cell", "features": ["cell"] },
+          { "number": "02-555-1234", "label": "home" }
+        ],
+        "addresses": [
+          {
+            "components": [
+              { "kind": "region", "value": "서울특별시" },
+              { "kind": "locality", "value": "강남구" },
+              { "kind": "name", "value": "테헤란로123" },
+              { "kind": "postcode", "value": "06236" },
+              { "kind": "country", "value": "대한민국" }
+            ],
+            "contexts": ["private"],
+            "countryCode": "KR",
+            "timeZone": "Asia/Seoul"
+          }
+        ],
+        "anniversaries": [
+          { "kind": "birth", "date": { "partial": { "year": 1992, "month": 7, "day": 15 } } }
+        ],
+        "notes": [
+          { "note": "민준이랑 매주 목요일 독서모임을 해요. 같이 커피를 마시며 책 이야기를 해요. ☕" }
+        ]
+      },
+      "crm": {
+        "kind": "human",
+        "how_we_met": "독서모임에서 만났어요."
+      }
+    },
+    {
+      "name": "layla",
+      "comment": "I18N-01 (issue #484): an Arabic (RTL) name with an address that deliberately has no postal code, an Egyptian mobile in E.164 plus a landline in national format, and a note mixing RTL Arabic with an embedded LTR phrase (bidirectional text).",
+      "card": {
+        "uid": "10000000-0000-4000-8000-000000000023",
+        "kind": "individual",
+        "language": "ar",
+        "name": {
+          "full": "ليلى حسن",
+          "components": [
+            { "kind": "given", "value": "ليلى" },
+            { "kind": "surname", "value": "حسن" }
+          ]
+        },
+        "nicknames": [{ "name": "ليل" }],
+        "emails": [{ "address": "layla.hassan@example.eg", "label": "home" }],
+        "phones": [
+          { "number": "+20 100 123 4567", "label": "cell", "features": ["cell"] },
+          { "number": "02 2345 6789", "label": "home" }
+        ],
+        "addresses": [
+          {
+            "components": [
+              { "kind": "name", "value": "شارع رمسيس" },
+              { "kind": "locality", "value": "القاهرة" },
+              { "kind": "region", "value": "محافظة القاهرة" },
+              { "kind": "country", "value": "مصر" }
+            ],
+            "contexts": ["private"],
+            "countryCode": "EG",
+            "timeZone": "Africa/Cairo"
+          }
+        ],
+        "anniversaries": [
+          { "kind": "birth", "date": { "partial": { "year": 1991, "month": 6, "day": 15 } } }
+        ],
+        "notes": [
+          { "note": "ليلى صديقتي من الجامعة. تفضّل التواصل مساءً بعد السادسة (6 pm) حتى لو كان الأمر متعلقًا بالعمل." }
+        ]
+      },
+      "crm": {
+        "kind": "human",
+        "how_we_met": "صديقة من الجامعة."
+      }
+    },
+    {
+      "name": "yael",
+      "comment": "I18N-01 (issue #484): a Hebrew (RTL) name with an Israeli mobile stored in national format (052 prefix) plus a Tel Aviv landline, and a Tel Aviv address with its 7-digit postcode.",
+      "card": {
+        "uid": "10000000-0000-4000-8000-000000000024",
+        "kind": "individual",
+        "language": "he",
+        "name": {
+          "full": "יעל כהן",
+          "components": [
+            { "kind": "given", "value": "יעל" },
+            { "kind": "surname", "value": "כהן" }
+          ]
+        },
+        "nicknames": [{ "name": "יעלי" }],
+        "emails": [{ "address": "yael.cohen@example.co.il", "label": "work" }],
+        "phones": [
+          { "number": "052-456-7890", "label": "cell", "features": ["cell"] },
+          { "number": "03-612-3456", "label": "home" }
+        ],
+        "addresses": [
+          {
+            "components": [
+              { "kind": "name", "value": "רחוב דיזנגוף 99" },
+              { "kind": "locality", "value": "תל אביב-יפו" },
+              { "kind": "region", "value": "מחוז תל אביב" },
+              { "kind": "postcode", "value": "6433214" },
+              { "kind": "country", "value": "ישראל" }
+            ],
+            "contexts": ["private"],
+            "countryCode": "IL",
+            "timeZone": "Asia/Jerusalem"
+          }
+        ],
+        "anniversaries": [
+          { "kind": "birth", "date": { "partial": { "year": 1988, "month": 9, "day": 23 } } }
+        ],
+        "notes": [
+          { "note": "יעל היא מעצבת גרפית בצוות. היא גרה בתל אביב ועובדת מהבית ברוב הימים. 🎨" }
+        ]
+      },
+      "crm": {
+        "kind": "human",
+        "how_we_met": "עמיתה לעבודה."
+      }
+    },
+    {
+      "name": "bjork",
+      "comment": "I18N-01 (issue #484): an Icelandic patronymic (Guðmundur's daughter) — the surname is genuinely a patronymic, so name sort keys on it like any surname. The address is an Icelandic farm with no street and no postal code: only locality + region + country, which the ADR must survive without.",
+      "card": {
+        "uid": "10000000-0000-4000-8000-000000000025",
+        "kind": "individual",
+        "language": "is",
+        "name": {
+          "full": "Björk Guðmundsdóttir",
+          "components": [
+            { "kind": "given", "value": "Björk" },
+            { "kind": "surname", "value": "Guðmundsdóttir" }
+          ]
+        },
+        "emails": [{ "address": "bjork.gudmundsdottir@example.is", "label": "home" }],
+        "phones": [
+          { "number": "+354 898 1234", "label": "cell", "features": ["cell"] }
+        ],
+        "addresses": [
+          {
+            "components": [
+              { "kind": "locality", "value": "Hrunamannahreppur" },
+              { "kind": "region", "value": "Suðurland" },
+              { "kind": "country", "value": "Ísland" }
+            ],
+            "contexts": ["private"],
+            "countryCode": "IS",
+            "timeZone": "Atlantic/Reykjavik"
+          }
+        ],
+        "anniversaries": [
+          { "kind": "birth", "date": { "partial": { "year": 1982, "month": 5, "day": 12 } } }
+        ],
+        "notes": [
+          { "note": "Björk býr á bóndabæ í Hrunamannahreppi. Við hittumst á tónleikum í Reykjavík. ☕" }
+        ]
+      },
+      "crm": {
+        "kind": "human",
+        "how_we_met": "Hittumst á tónleikum."
+      }
+    },
+    {
+      "name": "carmen",
+      "comment": "I18N-01 (issue #484): a Spanish compound surname (paternal García + maternal Rodríguez) with a Madrid address whose postcode is numeric, and a mobile stored in national format. Sort keys on the first surname García, never on the display string.",
+      "card": {
+        "uid": "10000000-0000-4000-8000-000000000026",
+        "kind": "individual",
+        "language": "es",
+        "name": {
+          "full": "Carmen García Rodríguez",
+          "components": [
+            { "kind": "given", "value": "Carmen" },
+            { "kind": "surname", "value": "García" },
+            { "kind": "surname2", "value": "Rodríguez" }
+          ]
+        },
+        "nicknames": [{ "name": "Carmencita" }],
+        "emails": [{ "address": "carmen.garcia@example.es", "label": "home" }],
+        "phones": [
+          { "number": "600 12 34 56", "label": "cell", "features": ["cell"] }
+        ],
+        "addresses": [
+          {
+            "components": [
+              { "kind": "name", "value": "Calle de Alcalá 12" },
+              { "kind": "locality", "value": "Madrid" },
+              { "kind": "region", "value": "Comunidad de Madrid" },
+              { "kind": "postcode", "value": "28014" },
+              { "kind": "country", "value": "España" }
+            ],
+            "contexts": ["private"],
+            "countryCode": "ES",
+            "timeZone": "Europe/Madrid"
+          }
+        ],
+        "anniversaries": [
+          { "kind": "birth", "date": { "partial": { "year": 1980, "month": 11, "day": 20 } } }
+        ],
+        "notes": [
+          { "note": "Carmen y yo jugamos al pádel los sábados por la mañana. Su familia es de Zaragoza." }
+        ]
+      },
+      "crm": {
+        "kind": "human",
+        "gender": "female",
+        "how_we_met": "Amiga del club de pádel."
+      }
+    },
+    {
+      "name": "joao",
+      "comment": "I18N-01 (issue #484): a Portuguese compound surname (mother's Costa before father's Martins) with two given names, and a Lisbon address carrying the 7-character numeric-letter postcode Portugal uses.",
+      "card": {
+        "uid": "10000000-0000-4000-8000-000000000027",
+        "kind": "individual",
+        "language": "pt",
+        "name": {
+          "full": "João Pedro Costa Martins",
+          "components": [
+            { "kind": "given", "value": "João" },
+            { "kind": "given2", "value": "Pedro" },
+            { "kind": "surname", "value": "Costa" },
+            { "kind": "surname2", "value": "Martins" }
+          ]
+        },
+        "nicknames": [{ "name": "Joca" }],
+        "emails": [{ "address": "joao.costa@example.pt", "label": "home" }],
+        "phones": [
+          { "number": "+351 912 345 678", "label": "cell", "features": ["cell"] }
+        ],
+        "addresses": [
+          {
+            "components": [
+              { "kind": "name", "value": "Rua Augusta 100" },
+              { "kind": "locality", "value": "Lisboa" },
+              { "kind": "region", "value": "Lisboa" },
+              { "kind": "postcode", "value": "1100-053" },
+              { "kind": "country", "value": "Portugal" }
+            ],
+            "contexts": ["private"],
+            "countryCode": "PT",
+            "timeZone": "Europe/Lisbon"
+          }
+        ],
+        "anniversaries": [
+          { "kind": "birth", "date": { "partial": { "year": 1979, "month": 3, "day": 18 } } }
+        ],
+        "notes": [
+          { "note": "O João é meu antigo colega de faculdade. Ao fim de semana joga futebol com os amigos no bairro." }
+        ]
+      },
+      "crm": {
+        "kind": "human",
+        "how_we_met": "Colega da faculdade."
+      }
+    },
+    {
+      "name": "jan",
+      "comment": "I18N-01 (issue #484): a Dutch tussenvoegsel name. The tussenvoegsel is stored as part of the surname component exactly as the person spells it (van der Berg); name sort keys on that surname component — the sort_name field is what drives ordering, never the display first name. (Dutch collation conventionally files this under Berg, a known flat-key nuance the neutral card's sortAs can express.)",
+      "card": {
+        "uid": "10000000-0000-4000-8000-000000000028",
+        "kind": "individual",
+        "language": "nl",
+        "name": {
+          "full": "Jan van der Berg",
+          "components": [
+            { "kind": "given", "value": "Jan" },
+            { "kind": "surname", "value": "van der Berg" }
+          ],
+          "sortAs": { "surname": "Berg" }
+        },
+        "emails": [{ "address": "jan.vandenberg@example.nl", "label": "work" }],
+        "phones": [
+          { "number": "+31 6 1234 5678", "label": "cell", "features": ["cell"] }
+        ],
+        "addresses": [
+          {
+            "components": [
+              { "kind": "name", "value": "Keizersgracht 123" },
+              { "kind": "locality", "value": "Amsterdam" },
+              { "kind": "region", "value": "Noord-Holland" },
+              { "kind": "postcode", "value": "1015 CJ" },
+              { "kind": "country", "value": "Nederland" }
+            ],
+            "contexts": ["private"],
+            "countryCode": "NL",
+            "timeZone": "Europe/Amsterdam"
+          }
+        ],
+        "anniversaries": [
+          { "kind": "birth", "date": { "partial": { "year": 1975, "month": 1, "day": 9 } } }
+        ],
+        "notes": [
+          { "note": "Jan en ik fietsen elke vrijdag samen naar kantoor. Hij woont aan de Keizersgracht in Amsterdam." }
+        ]
+      },
+      "crm": {
+        "kind": "human",
+        "how_we_met": "Fietsmaatje."
+      }
+    },
+    {
+      "name": "somchai",
+      "comment": "I18N-01 (issue #484): a Thai name recorded with no surname at all — Thai convention files people under their given name, so this contact has only a given component and name sort falls back to it. Address uses Thai administrative granularity (subdistrict/district within Bangkok) and an emoji-bearing nickname.",
+      "card": {
+        "uid": "10000000-0000-4000-8000-000000000029",
+        "kind": "individual",
+        "language": "th",
+        "name": {
+          "full": "สมชาย",
+          "components": [
+            { "kind": "given", "value": "สมชาย", "phonetic": "Somchai" }
+          ]
+        },
+        "nicknames": [{ "name": "บาส 🏀" }],
+        "emails": [{ "address": "somchai@example.co.th", "label": "work" }],
+        "phones": [
+          { "number": "+66 81 234 5678", "label": "cell", "features": ["cell"] }
+        ],
+        "addresses": [
+          {
+            "components": [
+              { "kind": "name", "value": "สุขุมวิท 24" },
+              { "kind": "subdistrict", "value": "คลองเตยเหนือ" },
+              { "kind": "district", "value": "วัฒนา" },
+              { "kind": "locality", "value": "กรุงเทพมหานคร" },
+              { "kind": "postcode", "value": "10110" },
+              { "kind": "country", "value": "ไทย" }
+            ],
+            "contexts": ["work"],
+            "countryCode": "TH",
+            "timeZone": "Asia/Bangkok"
+          }
+        ],
+        "anniversaries": [
+          { "kind": "birth", "date": { "partial": { "year": 1987, "month": 4, "day": 25 } } }
+        ],
+        "notes": [
+          { "note": "สมชายทำงานที่บริษัทเดียวกันกับฉันที่กรุงเทพฯ เขาชอบทานข้าวมันไก่ 🍗" }
+        ]
+      },
+      "crm": {
+        "kind": "human",
+        "how_we_met": "เพื่อนร่วมงานที่กรุงเทพฯ"
+      }
+    },
+    {
+      "name": "priya",
+      "comment": "I18N-01 (issue #484): an Indian name written in Devanagari — dense with combining marks (vowel signs, virama), so a length limit that counts bytes instead of characters will break it — with romanized phonetic readings, and a note carrying a zero-width-joiner family emoji. This record is the byte-vs-rune tripwire.",
+      "card": {
+        "uid": "10000000-0000-4000-8000-000000000030",
+        "kind": "individual",
+        "language": "hi",
+        "name": {
+          "full": "प्रिया शर्मा",
+          "components": [
+            { "kind": "given", "value": "प्रिया", "phonetic": "Priya" },
+            { "kind": "surname", "value": "शर्मा", "phonetic": "Sharma" }
+          ]
+        },
+        "nicknames": [{ "name": "Pinky 🐘" }],
+        "emails": [{ "address": "priya.sharma@example.in", "label": "home" }],
+        "phones": [
+          { "number": "+91 98765 43210", "label": "cell", "features": ["cell"] },
+          { "number": "022 4123 4567", "label": "home" }
+        ],
+        "addresses": [
+          {
+            "components": [
+              { "kind": "name", "value": "MG Road" },
+              { "kind": "locality", "value": "Pune" },
+              { "kind": "region", "value": "Maharashtra" },
+              { "kind": "postcode", "value": "411001" },
+              { "kind": "country", "value": "India" }
+            ],
+            "contexts": ["private"],
+            "countryCode": "IN",
+            "timeZone": "Asia/Kolkata"
+          }
+        ],
+        "anniversaries": [
+          { "kind": "birth", "date": { "partial": { "year": 1993, "month": 8, "day": 8 } } }
+        ],
+        "notes": [
+          { "note": "प्रिया और उसका परिवार 👨‍👩‍👧‍👦 बहुत मिलनसार हैं। मिलने पर नमस्ते कहना।" }
+        ]
+      },
+      "crm": {
+        "kind": "human",
+        "how_we_met": "पड़ोसी।"
+      }
+    },
+    {
+      "name": "aoife",
+      "comment": "I18N-01 (issue #484): an Irish name (Gaelic given name with a fada) and a Dublin address carrying an Eircode (D02 X285) — the alphanumeric postcode shape this suite must not assume away.",
+      "card": {
+        "uid": "10000000-0000-4000-8000-000000000031",
+        "kind": "individual",
+        "language": "ga",
+        "name": {
+          "full": "Aoife Ó Conaill",
+          "components": [
+            { "kind": "given", "value": "Aoife" },
+            { "kind": "surname", "value": "Ó Conaill" }
+          ]
+        },
+        "nicknames": [{ "name": "Eefa" }],
+        "emails": [{ "address": "aoife.oconnell@example.ie", "label": "home" }],
+        "phones": [
+          { "number": "+353 87 123 4567", "label": "cell", "features": ["cell"] }
+        ],
+        "addresses": [
+          {
+            "components": [
+              { "kind": "name", "value": "College Green" },
+              { "kind": "locality", "value": "Dublin 2" },
+              { "kind": "region", "value": "County Dublin" },
+              { "kind": "postcode", "value": "D02 X285" },
+              { "kind": "country", "value": "Ireland" }
+            ],
+            "contexts": ["private"],
+            "countryCode": "IE",
+            "timeZone": "Europe/Dublin"
+          }
+        ],
+        "anniversaries": [
+          { "kind": "birth", "date": { "partial": { "year": 1994, "month": 12, "day": 2 } } }
+        ],
+        "notes": [
+          { "note": "Aoife works in Trinity College Dublin. We meet for coffee in town most Fridays. ☕" }
+        ]
+      },
+      "crm": {
+        "kind": "human",
+        "how_we_met": "Met at a conference in Dublin."
+      }
     }
   ],
   "notes": [

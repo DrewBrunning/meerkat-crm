@@ -19,16 +19,17 @@ import (
 )
 
 // largeDatasetContacts is the CI-sized "large" dataset: 2,000 contacts, which
-// rounds up to 134 manifest blocks (2,010 contacts). It is enough rows that
-// the row-touching migrations do real work — the sort-name backfill, the
-// revision-token UPDATE, the audit table rebuild — while staying fast enough
-// to run in the dedicated nightly/main-push job. The full production-scale
-// profile (100k+ contacts) is a documented operator-run measurement, not a CI
-// test; see docs/development/scale-testing.md and cmd/migratebench.
+// rounds up to 75 manifest blocks (2,025 contacts, since the canonical manifest
+// carries 27 records after the I18N-01 addition, issue #484). It is enough
+// rows that the row-touching migrations do real work — the sort-name backfill,
+// the revision-token UPDATE, the audit table rebuild — while staying fast
+// enough to run in the dedicated nightly/main-push job. The full production-
+// scale profile (100k+ contacts) is a documented operator-run measurement, not
+// a CI test; see docs/development/scale-testing.md and cmd/migratebench.
 const largeDatasetContacts = 2000
 
 // largeTestsEnabled gates the slow large-dataset migration tests. They are
-// deliberately NOT part of the default `go test ./...` suite: at 2,010
+// deliberately NOT part of the default `go test ./...` suite: at 2,025
 // contacts each they take minutes under -race, which every PR would pay. The
 // migration-tests `large-dataset` CI job (main push + nightly) sets
 // MYCORRHIZAL_LARGE_TESTS=1 to run them; a contributor sets the same variable
@@ -74,8 +75,8 @@ func buildLargeFixture(t *testing.T, release Release) string {
 }
 
 // TestLargeDatasetUpgradeToCurrent is the large-dataset migration test (issue
-// #495): every supported release's large fixture — populated at 134x the
-// canonical pathological manifest, including 134 soft-deleted contacts and 134
+// #495): every supported release's large fixture — populated at 75x the
+// canonical pathological manifest, including 75 soft-deleted contacts and 75
 // vcard-uid-recreating pairs — migrates to the current schema through
 // database.InitDB with every table's row count surviving, a clean flag, the
 // current version, and PRAGMA integrity_check ok. The v0.6.0 entry is the
