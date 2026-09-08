@@ -348,18 +348,31 @@ func RateLimitMiddleware(limiter *IPRateLimiter) gin.HandlerFunc {
 	}
 }
 
+// The three constructors below each wrap RateLimitMiddleware in their own
+// closure rather than returning it directly. Behaviourally identical, but it
+// gives each a distinct runtime function name
+// (middleware.AuthRateLimitMiddleware.func1 vs .APIRateLimitMiddleware.func1
+// vs .CardDAVRateLimitMiddleware.func1) instead of the shared
+// middleware.RateLimitMiddleware.func1. That is what lets a router-enumerated
+// test tell which bucket a given route is wired to — see
+// routes/session_minting_route_gate_test.go (issue #840), which asserts every
+// session-minting route carries AuthRateLimitMiddleware specifically.
+
 // AuthRateLimitMiddleware applies strict rate limiting for authentication endpoints
 func AuthRateLimitMiddleware() gin.HandlerFunc {
-	return RateLimitMiddleware(authLimiter)
+	limit := RateLimitMiddleware(authLimiter)
+	return func(c *gin.Context) { limit(c) }
 }
 
 // APIRateLimitMiddleware applies general rate limiting for API endpoints
 func APIRateLimitMiddleware() gin.HandlerFunc {
-	return RateLimitMiddleware(apiLimiter)
+	limit := RateLimitMiddleware(apiLimiter)
+	return func(c *gin.Context) { limit(c) }
 }
 
 // CardDAVRateLimitMiddleware applies rate limiting for CardDAV endpoints.
 // Uses a higher burst than auth endpoints to allow bulk sync from clients like vdirsyncer.
 func CardDAVRateLimitMiddleware() gin.HandlerFunc {
-	return RateLimitMiddleware(cardDAVLimiter)
+	limit := RateLimitMiddleware(cardDAVLimiter)
+	return func(c *gin.Context) { limit(c) }
 }
