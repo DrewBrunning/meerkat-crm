@@ -192,7 +192,7 @@ func GetUnassignedNotes(c *gin.Context) {
 		return
 	}
 
-	search := strings.ToLower(strings.TrimSpace(c.Query("search")))
+	search := services.NormalizeSearchTerm(strings.ToLower(strings.TrimSpace(c.Query("search"))))
 	fromDateStr := c.Query("fromDate")
 	toDateStr := c.Query("toDate")
 
@@ -413,7 +413,7 @@ func GetNotesForContact(c *gin.Context) {
 		return
 	}
 
-	search := strings.ToLower(strings.TrimSpace(c.Query("search")))
+	search := services.NormalizeSearchTerm(strings.ToLower(strings.TrimSpace(c.Query("search"))))
 	fromDateStr := c.Query("fromDate")
 	toDateStr := c.Query("toDate")
 

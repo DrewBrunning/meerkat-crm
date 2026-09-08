@@ -55,6 +55,15 @@ func ApplyRecordToContact(c *Contact, r *contactmodel.Record, photoDir string) {
 		return
 	}
 
+	// I18N-02 (issue #485): canonicalize incoming text to Unicode NFC at this
+	// single Record->Contact boundary before any flat projection or Card
+	// assignment happens, so every ingress path (REST create/update, VCF/
+	// JSContact import, CardDAV put/reconcile, merge) stores one canonical
+	// byte form. NormalizeRecord returns a copy — the caller's Record keeps
+	// its original bytes. See contactmodel/normalize.go for the full
+	// rationale and the field-by-field scope.
+	r = contactmodel.NormalizeRecord(r)
+
 	card := r.Card
 	proj := contactmodel.DeriveProjection(r)
 

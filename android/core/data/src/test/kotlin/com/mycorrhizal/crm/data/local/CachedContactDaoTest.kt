@@ -86,6 +86,44 @@ class CachedContactDaoTest {
     }
 
     @Test
+    fun `searchFts is accent- and case-insensitive for Latin under unicode61`() = runBlocking {
+        // I18N-02 (issue #485): the mirror tokenizer is unicode61 (schema v18),
+        // so offline search agrees with the server's FTS5 — "garcia" finds
+        // "García", matching the server's documented Latin accent/case fold.
+        dao.upsertAll(
+            listOf(
+                testContact(1, "García Ruiz"),
+                testContact(2, "José"),
+                testContact(3, "Müller"),
+            ),
+        )
+
+        assertEquals(1, dao.searchFts("garcia").size)
+        assertEquals(1, dao.searchFts("GARCÍA").size)
+        assertEquals(1, dao.searchFts("jose").size)
+        assertEquals(1, dao.searchFts("MÜLLER").size)
+        assertEquals("García Ruiz", dao.searchFts("garcia")[0].fn)
+    }
+
+    @Test
+    fun `searchFts inherits the documented non-folds of unicode61`() = runBlocking {
+        // The server's deliberate non-folds (docs/development/unicode-search.md)
+        // must hold offline too: German ß is not ss, Turkish dotless ı is not i.
+        dao.upsertAll(
+            listOf(
+                testContact(1, "Straße"),
+                testContact(2, "Istanbul"),
+                testContact(3, "İstanbul"),
+            ),
+        )
+
+        assertEquals(1, dao.searchFts("straße").size)
+        assertEquals(0, dao.searchFts("strasse").size)
+        assertEquals(2, dao.searchFts("istanbul").size) // ASCII I row + dotted-İ row both fold to i
+        assertEquals(0, dao.searchFts("\u0131stanbul").size) // dotless ı stays distinct
+    }
+
+    @Test
     fun `searchFts matches via the FTS mirror with prefix semantics`() = runBlocking {
         dao.upsertAll(
             listOf(

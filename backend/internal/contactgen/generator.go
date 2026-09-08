@@ -858,12 +858,21 @@ func DirectoryResource(t *rapid.T) contactmodel.Resource {
 }
 
 // Record draws a random neutral contact: Card + envelope + passthrough.
+//
+// The returned record is NFC-canonicalized (contactmodel.NormalizeRecord)
+// before returning: since I18N-02 (issue #485) the write boundary normalizes
+// every stored contact to NFC, so a record the property suites then persist
+// must already be in storage form, or the populate round-trip comparisons
+// fail on the (deliberately NFD) unicodeText samples. The NFD->NFC cross-
+// encoding behavior itself is exercised by the dedicated Unicode tests, which
+// write NFD bytes straight to the columns; the property corpus mirrors what a
+// real ingress produces.
 func Record(t *rapid.T) *contactmodel.Record {
-	return &contactmodel.Record{
+	return contactmodel.NormalizeRecord(&contactmodel.Record{
 		Card:        Card(t),
 		Envelope:    Envelope(t),
 		Passthrough: Passthrough(t),
-	}
+	})
 }
 
 // Records draws n generated records with distinct card UIDs, suitable for

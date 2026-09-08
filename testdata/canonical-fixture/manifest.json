@@ -450,12 +450,12 @@
     },
     {
       "name": "test07_duplicate_keywords",
-      "comment": "TEST-07 (issue #435) shrunk counterexample, persisted: duplicate keywords. JSContact's boolean-set keywords collapsed them without a warn; the round-trip property found it and the jscontact adapter now warns.",
+      "comment": "TEST-07 (issue #435) shrunk counterexample, persisted: duplicate keywords. JSContact's boolean-set keywords collapsed them without a warn; the round-trip property found it and the jscontact adapter now warns. The keywords were once the NFD spelling e+U+0301tude; I18N-02 (issue #485) canonicalizes stored text to NFC on write, so the corpus carries the canonical spelling and the NFD-variant round-trip is covered by the normalize tests (contactmodel/normalize_test.go).",
       "card": {
         "uid": "10000000-0000-4000-8000-000000000014",
         "kind": "individual",
         "name": { "components": [{ "kind": "given", "value": "Ruth" }] },
-        "keywords": ["e\u0301tude", "e\u0301tude"]
+        "keywords": ["étude", "étude"]
       }
     },
     {

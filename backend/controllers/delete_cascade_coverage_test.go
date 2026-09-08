@@ -162,6 +162,7 @@ var declaredCascadeCoverage = map[string]cascadeBucket{
 	"notes_fts_idx":          exempt,
 	// --- exempt: infrastructure / operational, no user-data parent --------
 	"alert_states":              exempt, // alerting state (issue #427/#428), no user FK
+	"data_backfills":            exempt, // one-shot maintenance-backfill ledger (issue #485), no user FK, no user data
 	"data_encryption_keys":      exempt, // at-rest DEK envelope (issue #380), no user FK
 	"job_executions":            exempt, // scheduler bookkeeping, no user FK
 	"job_runs":                  exempt, // background-job run history (issue #391), admin-only, retention-purged
