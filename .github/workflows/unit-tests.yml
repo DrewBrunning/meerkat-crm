@@ -117,6 +117,17 @@ jobs:
         working-directory: backend
         run: go run ./cmd/depexceptions
 
+      # MAINT-01 (issue #490): the deprecation register (docs/deprecations.md)
+      # promises that nothing on a covered surface is removed before its
+      # window — at least one minor release and at least 90 days — has fully
+      # elapsed, and that every deprecation is recorded before it ships. Same
+      # job as the two gates above, for the same reason: it runs on every
+      # backend PR and on the nightly full-suite run, so an over-window entry
+      # surfaces within a day even with no PR activity.
+      - name: Verify deprecation register
+        working-directory: backend
+        run: go run ./cmd/deprecations
+
       # DOC-04 (issue #489): the docs structure gate. docscheck verifies that
       # every internal link/anchor and repo-file reference in docs/ resolves,
       # that operator-facing command blocks do not assume a toolchain their

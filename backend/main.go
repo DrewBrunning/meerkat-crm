@@ -508,6 +508,12 @@ func main() {
 		logger.Fatal().Err(err).Strs("proxies", cfg.TrustedProxies).Msg("Failed to set trusted proxies")
 	}
 
+	// MAINT-01 (issue #490): emit the RFC 8594 Deprecation/Sunset/Link headers
+	// for any deprecated /api/v1 endpoint, method, or query parameter. Runs
+	// globally but only ever matches an /api/v1 route, and is inert until
+	// docs/deprecations.md has a row — see middleware/deprecation.go.
+	r.Use(middleware.DeprecationHeaders())
+
 	// Inject db and cfg into context
 	r.Use(func(c *gin.Context) {
 		c.Set("db", db)
