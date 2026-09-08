@@ -59,12 +59,6 @@ object LocalDatabaseSchemaFixtures {
             "`lastname` TEXT, `primaryEmail` TEXT, `primaryPhone` TEXT, `phonesNormalized` TEXT, `org` TEXT, " +
             "content=`cached_contacts`)"
 
-    /** The I18N-02 v18 shape: `cached_contacts_fts` recreated with `tokenize=unicode61`. */
-    private const val CACHED_CONTACTS_FTS_UNICODE61 =
-        "CREATE VIRTUAL TABLE `cached_contacts_fts` USING FTS4(`fn` TEXT, `firstname` TEXT, " +
-            "`lastname` TEXT, `primaryEmail` TEXT, `primaryPhone` TEXT, `phonesNormalized` TEXT, `org` TEXT, " +
-            "content=`cached_contacts`, tokenize=unicode61)"
-
     /** Every table that is identical across v13 through v16 — written once, shared by all four. */
     private fun createUnchangedTables(db: SQLiteDatabase) {
         db.execSQL(
