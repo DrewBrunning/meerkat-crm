@@ -179,13 +179,18 @@ func TestFullInstallUpgrade(t *testing.T) {
 
 			// database.InitDB is only the migration half of boot. main.go then
 			// runs the post-migration startup jobs — the at-rest encryption
-			// backfill (#380) and the audit hash-chain backfill (#381) — which
-			// rewrite real pre-existing rows. A migration-only upgrade test
-			// cannot see one of those jobs fail against real data: the
-			// at-rest backfill's UPDATE of audit_events.before_snapshot (both
-			// encrypted at rest AND behind the append-only immutability
-			// trigger) crash-looped every used instance's upgrade until it
-			// learned to drop that trigger around its writes.
+			// backfill (#380), the Unicode NFC normalization backfill (#485),
+			// and the audit hash-chain backfill (#381) — which rewrite real
+			// pre-existing rows. A migration-only upgrade test cannot see one
+			// of those jobs fail against real data: the at-rest backfill's
+			// UPDATE of audit_events.before_snapshot (both encrypted at rest
+			// AND behind the append-only immutability trigger) crash-looped
+			// every used instance's upgrade until it learned to drop that
+			// trigger around its writes. The NFC backfill (v0.6.11, migration
+			// 000052) is the newest job of this shape — it rewrites contact
+			// cards through the model save path, appending audit rows, with
+			// encryption armed and the trigger live — so it belongs in the
+			// same guard.
 			verifyStartupBackfills(t, db)
 		})
 	}
@@ -194,12 +199,15 @@ func TestFullInstallUpgrade(t *testing.T) {
 // verifyStartupBackfills runs the post-migration startup jobs against an
 // upgraded install in the exact order main.go runs them after database.InitDB
 // (at-rest backfill first, so the audit chain hashes the decrypted
-// before_snapshot), and asserts each succeeds against the fixture's real
-// pre-existing rows — audit history is seeded by seedMigrationScopeData — that
-// the encrypted-at-rest audit snapshot round-trips, that the append-only
-// audit_events trigger is enforcing again afterwards, and that the hash chain
-// verifies. It is the end-to-end regression guard for a startup backfill that
-// collides with a table invariant.
+// before_snapshot; then the Unicode NFC backfill, which rewrites contact cards
+// through the model save path with encryption already armed; then the audit
+// hash-chain recompute, which links the audit rows the NFC saves appended),
+// and asserts each succeeds against the fixture's real pre-existing rows —
+// audit history is seeded by seedMigrationScopeData — that the encrypted-at-rest
+// audit snapshot round-trips, that the append-only audit_events trigger is
+// enforcing again afterwards, and that the hash chain verifies. It is the
+// end-to-end regression guard for a startup backfill that collides with a
+// table invariant.
 func verifyStartupBackfills(t *testing.T, db *gorm.DB) {
 	t.Helper()
 
@@ -214,8 +222,25 @@ func verifyStartupBackfills(t *testing.T, db *gorm.DB) {
 
 	require.NoError(t, atrest.Backfill(db),
 		"the at-rest backfill must encrypt pre-existing rows without tripping a table invariant")
+
+	// Unicode NFC normalization backfill (#485, v0.6.11 / migration 000052).
+	// Runs after at-rest encryption is armed (it reads and rewrites the
+	// decrypted cards) and before the audit chain recompute (its model saves
+	// append audit rows the recompute then links). This is the assertion the
+	// suite was missing: the newest startup backfill of the crash-loop-prone
+	// shape, exercised against real pre-existing contact rows with the
+	// append-only audit_events trigger live.
+	nfcStats, err := services.NormalizeContactRecordsToNFC(db)
+	require.NoError(t, err,
+		"the Unicode NFC backfill must rewrite pre-existing contact cards without tripping a table invariant")
+	require.NotNil(t, nfcStats)
+	require.False(t, nfcStats.AlreadyDone,
+		"the data_backfills ledger must be empty on a fresh upgrade, so the backfill actually runs")
+	require.Positive(t, nfcStats.ContactsScanned,
+		"the upgraded fixture has contacts, so the backfill must scan at least one row")
+
 	require.NoError(t, models.RecomputeAuditChain(db),
-		"the audit hash-chain backfill must succeed after the at-rest backfill")
+		"the audit hash-chain backfill must succeed after the at-rest and NFC backfills")
 
 	// The seeded plaintext audit snapshot is now ciphertext at rest and
 	// decrypts back through the serializer.
@@ -246,7 +271,15 @@ func verifyStartupBackfills(t *testing.T, db *gorm.DB) {
 
 	// A second boot's jobs are a no-op and still leave the invariants intact.
 	require.NoError(t, atrest.Backfill(db))
+	secondNFC, err := services.NormalizeContactRecordsToNFC(db)
+	require.NoError(t, err)
+	require.True(t, secondNFC.AlreadyDone,
+		"the data_backfills ledger short-circuits the NFC backfill on the second boot")
 	require.NoError(t, models.RecomputeAuditChain(db))
+
+	gaps, err = models.VerifyAuditChain(db)
+	require.NoError(t, err)
+	require.Empty(t, gaps, "the audit hash chain must still verify after a second boot's jobs")
 }
 
 // assertPreMigrationBackupRestorable is issue #451 action 5: the mandatory
