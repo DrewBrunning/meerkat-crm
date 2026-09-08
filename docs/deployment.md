@@ -69,8 +69,9 @@ Set these variables in `.env` when running over HTTPS:
 One deployment can host several independent users, each with their own contacts, graph,
 integrations, and settings. This is a supported `1.0.0` configuration and cross-user
 isolation is tested against every route — see
-[Supported configuration](supported-configuration.md) for the isolation guarantee, the
-per-user vs per-instance split, and exactly what an admin can and cannot see.
+[Supported versions → The deployment shape](supported-versions.html#the-deployment-shape)
+for the isolation guarantee, the per-user vs per-instance split, the registration
+behaviour, and exactly what an admin can and cannot see.
 
 **If more than one person will use the instance, set `DISABLE_REGISTRATION=true`** and
 create each account yourself from the admin panel (Settings → Admin). The first account
