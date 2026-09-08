@@ -52,7 +52,7 @@ func GetContactBriefing(c *gin.Context) {
 		return
 	}
 
-	briefing, err := buildContactBriefing(db, userID, &contact, time.Now())
+	briefing, err := buildContactBriefing(db, userID, &contact, reminderNow(c))
 	if err != nil {
 		apperrors.AbortWithError(c, apperrors.ErrDatabase("Failed to compose contact briefing").WithError(err))
 		return

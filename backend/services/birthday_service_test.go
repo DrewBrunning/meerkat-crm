@@ -234,3 +234,245 @@ func TestGetUpcomingBirthdays_LeapDayBirthdayReachableThroughThePreselect(t *tes
 		assert.Empty(t, birthdays, "a leap-day birthday the day after its leap-year occurrence is not upcoming")
 	})
 }
+
+// --- DATE-02 (issue #483): pathological date battery -------------------------
+//
+// Every case here runs at an explicitly injected instant (never time.Now) so
+// the suite passes on any calendar day. The rules asserted are the ones
+// written down in docs/adrs/0015-temporal-semantics.md (Rule 6 = 29 February
+// advances to 1 March in a non-leap year; Rule 2 = date-only values are never
+// zone-converted; "next occurrence" wraps forward a year).
+
+// TestDaysUntilBirthday_LeapDayFullMatrix exercises the whole 29-Feb
+// neighbourhood for both the full and the year-less stored form: before, on,
+// and after the occurrence in leap and non-leap years, plus the century
+// non-leap year 2100.
+func TestDaysUntilBirthday_LeapDayFullMatrix(t *testing.T) {
+	for _, stored := range []string{"2000-02-29", "--02-29"} {
+		stored := stored
+		t.Run(stored, func(t *testing.T) {
+			t.Run("Feb 28 of a leap year is one day before", func(t *testing.T) {
+				now := time.Date(2024, 2, 28, 0, 0, 0, 0, time.UTC)
+				assert.Equal(t, 1, DaysUntilBirthday(stored, now), "the real 29-Feb exists in 2024, so it is tomorrow from Feb 28")
+			})
+			t.Run("Feb 29 of a leap year is today", func(t *testing.T) {
+				now := time.Date(2024, 2, 29, 0, 0, 0, 0, time.UTC)
+				assert.Equal(t, 0, DaysUntilBirthday(stored, now))
+			})
+			t.Run("Feb 28 of a non-leap year is one day before the Mar 1 celebration", func(t *testing.T) {
+				now := time.Date(2025, 2, 28, 0, 0, 0, 0, time.UTC)
+				assert.Equal(t, 1, DaysUntilBirthday(stored, now), "2025 has no Feb 29; the celebration advances to Mar 1")
+			})
+			t.Run("Mar 1 of a non-leap year is the celebration day", func(t *testing.T) {
+				now := time.Date(2025, 3, 1, 0, 0, 0, 0, time.UTC)
+				assert.Equal(t, 0, DaysUntilBirthday(stored, now))
+			})
+			t.Run("Mar 1 of a leap year is not the occurrence day", func(t *testing.T) {
+				now := time.Date(2024, 3, 1, 0, 0, 0, 0, time.UTC)
+				// The 2024-02-29 occurrence was yesterday; the next one
+				// (wrapped to 2025, an advance-to-Mar-1 year) is 365 days out.
+				assert.Equal(t, 365, DaysUntilBirthday(stored, now))
+			})
+			t.Run("Mar 2 of a non-leap year points at the following Mar 1", func(t *testing.T) {
+				now := time.Date(2025, 3, 2, 0, 0, 0, 0, time.UTC)
+				assert.Equal(t, 364, DaysUntilBirthday(stored, now))
+			})
+			t.Run("century non-leap year 2100 celebrates on Mar 1", func(t *testing.T) {
+				assert.Equal(t, 1, DaysUntilBirthday(stored, time.Date(2100, 2, 28, 0, 0, 0, 0, time.UTC)))
+				assert.Equal(t, 0, DaysUntilBirthday(stored, time.Date(2100, 3, 1, 0, 0, 0, 0, time.UTC)))
+			})
+			t.Run("leap years divisible by 400 keep Feb 29", func(t *testing.T) {
+				assert.Equal(t, 0, DaysUntilBirthday(stored, time.Date(2000, 2, 29, 0, 0, 0, 0, time.UTC)))
+				assert.Equal(t, 1, DaysUntilBirthday(stored, time.Date(2000, 2, 28, 0, 0, 0, 0, time.UTC)))
+			})
+		})
+	}
+}
+
+// TestDaysUntilBirthday_DayBeforeOnAfter marches a fixed birthday across the
+// day-before / day-of / day-after boundaries — where off-by-one lives — for a
+// mid-month date and the two year-boundary dates (31 Dec, 1 Jan).
+func TestDaysUntilBirthday_DayBeforeOnAfter(t *testing.T) {
+	t.Run("mid-month birthday", func(t *testing.T) {
+		today := time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC)
+		assert.Equal(t, 1, DaysUntilBirthday("1990-06-16", today))
+		assert.Equal(t, 0, DaysUntilBirthday("1990-06-15", today))
+		// Day after: the next occurrence is ~a year out (2026 is not a leap year).
+		assert.Equal(t, 364, DaysUntilBirthday("1990-06-14", today))
+	})
+
+	t.Run("Jan 1 birthday across the year boundary", func(t *testing.T) {
+		assert.Equal(t, 2, DaysUntilBirthday("--01-01", time.Date(2025, 12, 30, 0, 0, 0, 0, time.UTC)))
+		assert.Equal(t, 1, DaysUntilBirthday("--01-01", time.Date(2025, 12, 31, 0, 0, 0, 0, time.UTC)))
+		assert.Equal(t, 0, DaysUntilBirthday("--01-01", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)))
+		assert.Equal(t, 364, DaysUntilBirthday("--01-01", time.Date(2026, 1, 2, 0, 0, 0, 0, time.UTC)), "after Jan 1 the next occurrence is next Jan 1 (364 days, 2026 non-leap)")
+	})
+
+	t.Run("Dec 31 birthday across the year boundary", func(t *testing.T) {
+		assert.Equal(t, 1, DaysUntilBirthday("1990-12-31", time.Date(2026, 12, 30, 0, 0, 0, 0, time.UTC)))
+		assert.Equal(t, 0, DaysUntilBirthday("1990-12-31", time.Date(2026, 12, 31, 0, 0, 0, 0, time.UTC)))
+		assert.Equal(t, 364, DaysUntilBirthday("1990-12-31", time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)), "checked on Jan 1 the next Dec 31 is 364 days out (2027 non-leap)")
+	})
+}
+
+// TestDaysUntilBirthday_EpochFarPastFarFuture pins that only the stored
+// month/day participates in the next-occurrence arithmetic: a birth year in the
+// 1800s, the year 0000, or a far-future year like 9999 must not change the
+// count (there is no zone conversion and no age arithmetic — DATE-01 Rule 3).
+// The count is identical to a year-less --MM-DD with the same month/day.
+func TestDaysUntilBirthday_EpochFarPastFarFuture(t *testing.T) {
+	today := time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC)
+	// Same month/day everywhere: "today".
+	assert.Equal(t, 0, DaysUntilBirthday("1800-06-15", today), "a birth year in the 1800s does not change the count")
+	assert.Equal(t, 0, DaysUntilBirthday("0000-06-15", today), "year 0000 is not special")
+	assert.Equal(t, 0, DaysUntilBirthday("9999-06-15", today), "a far-future year does not change the count")
+	assert.Equal(t, 0, DaysUntilBirthday("--06-15", today))
+
+	// The count to the next occurrence of a year-less style month/day.
+	assert.Equal(t, 1, DaysUntilBirthday("1800-06-16", today))
+	assert.Equal(t, 364, DaysUntilBirthday("9999-06-14", today), "the stored 9999 year is ignored; only Jun 14 matters")
+
+	// At the epoch (1970-01-01): counts to mid- and end-of-1970.
+	epoch := time.Date(1970, 1, 1, 0, 0, 0, 0, time.UTC)
+	assert.Equal(t, 165, DaysUntilBirthday("1800-06-15", epoch), "Jan 1 -> Jun 15 1970 is 165 days")
+	assert.Equal(t, 364, DaysUntilBirthday("9999-12-31", epoch), "Jan 1 -> Dec 31 1970 is 364 days (1970 non-leap)")
+}
+
+// TestDaysUntilBirthday_AbsentAndGarbageNeverBecomeJan1YearZero asserts the
+// empty / absent / malformed cases from DATE-01: nothing here may silently
+// resolve to a fake "1 January year zero" (or to 0 / "today"). Malformed and
+// too-short values keep the 999 sentinel; the one lexical-but-out-of-range
+// month/day a hand-rolled parser could map wrongly (1990-99-99, --13-40) also
+// lands on 999 because time.Parse range-checks the month/day substrings.
+func TestDaysUntilBirthday_AbsentAndGarbageNeverBecomeJan1YearZero(t *testing.T) {
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	for name, bday := range map[string]string{
+		"empty string":      "",
+		"whitespace":        "   ",
+		"year only":         "1990",
+		"partial year":      "--03",
+		"month 13 day 40":   "1990-13-40",
+		"yearless month 13": "--13-40",
+		"month 99":          "1990-99-99",
+		"non numeric":       "--ab-cd",
+		"trailing dash":     "1990-01-",
+	} {
+		assert.Equal(t, 999, DaysUntilBirthday(bday, now), "%q must keep the 999 sentinel, never become a date", name)
+	}
+
+	// Even on the most dangerous day of the year for a Jan-1 accident (Jan 1
+	// itself), an empty/garbage birthday is NOT "today".
+	for _, bday := range []string{"", "1990", "1990-99-99"} {
+		assert.Equal(t, 999, DaysUntilBirthday(bday, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)), "%q on Jan 1", bday)
+	}
+
+	// A real 0000-01-01 stored value computes to the genuine next Jan 1, not to
+	// an automatic 0: checked mid-2026 the next occurrence is Jan 1 2027, 200
+	// days out (Jun 15 2026 -> Jan 1 2027).
+	assert.Equal(t, 200, DaysUntilBirthday("0000-01-01", time.Date(2026, 6, 15, 0, 0, 0, 0, time.UTC)))
+}
+
+// TestGetUpcomingBirthdays_ExcludesAbsentBirthdays pins that null and empty
+// birthday values are filtered by the query (they must never surface as
+// "1 January year zero" or a 999-sentinel row).
+func TestGetUpcomingBirthdays_ExcludesAbsentBirthdays(t *testing.T) {
+	db, _ := setupRouter()
+	user := models.User{Username: "absent-bday-user", Password: "password123", Email: "absent@example.com"}
+	require.NoError(t, db.Create(&user).Error)
+
+	now := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	require.NoError(t, db.Create(&models.Contact{UserID: user.ID, Firstname: "NoBirthdayAtAll", Archived: false}).Error)
+	require.NoError(t, db.Create(&models.Contact{UserID: user.ID, Firstname: "EmptyBirthday", Birthday: "", Archived: false}).Error)
+	real := models.Contact{UserID: user.ID, Firstname: "Real", Birthday: "--01-05", Archived: false}
+	require.NoError(t, db.Create(&real).Error)
+
+	birthdays, err := GetUpcomingBirthdays(db, user.ID, now)
+	require.NoError(t, err)
+	require.Len(t, birthdays, 1, "only the real birthday may surface")
+	assert.Equal(t, real.ID, birthdays[0].ContactID)
+}
+
+// TestDaysUntilBirthday_DSTTruncationRegression is the DATE-02 fix pin: the
+// days-until count must be whole *calendar days* between two local midnights,
+// never a truncation of absolute elapsed hours. Across a US spring-forward the
+// two local midnights bracketing the transition are 23 absolute hours apart, so
+// truncation reported a Mar 9 birthday as "today" on Mar 8 (0 instead of 1).
+func TestDaysUntilBirthday_DSTTruncationRegression(t *testing.T) {
+	ny, err := time.LoadLocation("America/New_York")
+	require.NoError(t, err)
+
+	// Spring forward 2026: Sunday Mar 8, 02:00 EST -> 03:00 EDT.
+	t.Run("birthday the day after the spring-forward is tomorrow, not today", func(t *testing.T) {
+		transitionDay := time.Date(2026, 3, 8, 12, 0, 0, 0, ny) // EDT, transition already happened
+		assert.Equal(t, 1, DaysUntilBirthday("2000-03-09", transitionDay), "Mar 8 -> Mar 9 spans the 23-hour transition day")
+	})
+	t.Run("two days out across the gap", func(t *testing.T) {
+		before := time.Date(2026, 3, 7, 12, 0, 0, 0, ny) // EST, the day before the transition
+		assert.Equal(t, 2, DaysUntilBirthday("2000-03-09", before))
+	})
+	t.Run("same-day stays today across the transition", func(t *testing.T) {
+		transitionDay := time.Date(2026, 3, 8, 12, 0, 0, 0, ny)
+		assert.Equal(t, 0, DaysUntilBirthday("2000-03-08", transitionDay))
+	})
+	t.Run("fall-back day does not regress", func(t *testing.T) {
+		// Fall back 2026: Sunday Nov 1, 02:00 EDT -> 01:00 EST. A day across
+		// the fold is 25 absolute hours, which truncation already handled; the
+		// rounding fix must not change it.
+		foldDay := time.Date(2026, 11, 1, 12, 0, 0, 0, ny) // EST
+		assert.Equal(t, 1, DaysUntilBirthday("2000-11-02", foldDay))
+		assert.Equal(t, 0, DaysUntilBirthday("2000-11-01", foldDay))
+	})
+}
+
+// TestDaysUntilBirthday_ZoneDecidesTodayNotStoredValue pins DATE-01 Rule 2 /
+// Rule 4 at the service boundary: the SAME instant, carried in two different
+// zones, selects a different "today" calendar day, and the stored --MM-DD value
+// is never shifted — only which day is "today" changes. This is the exact
+// mechanism by which the digest and the birthdays list could disagree with each
+// other before DATE-02 aligned every surface to the reminder zone.
+func TestDaysUntilBirthday_ZoneDecidesTodayNotStoredValue(t *testing.T) {
+	kiritimati, err := time.LoadLocation("Pacific/Kiritimati") // UTC+14, no DST
+	require.NoError(t, err)
+	ny, err := time.LoadLocation("America/New_York") // UTC-4 in March (EDT)
+	require.NoError(t, err)
+
+	instant := time.Date(2026, 3, 14, 23, 30, 0, 0, time.UTC)
+
+	// In New York it is still Mar 14 19:30, so the Mar 15 birthday is tomorrow.
+	assert.Equal(t, 1, DaysUntilBirthday("--03-15", instant.In(ny)))
+	// In Kiritimati the same instant is Mar 15 13:30, so it is today.
+	assert.Equal(t, 0, DaysUntilBirthday("--03-15", instant.In(kiritimati)))
+}
+
+// TestGetUpcomingBirthdays_ZoneSelectsMembership is the DB-level sibling of
+// TestDaysUntilBirthday_ZoneDecidesTodayNotStoredValue: a stored --03-14
+// birthday is "today" (and therefore in the fetch window) in New York on the
+// fixed instant, but already a year out (outside the window) in Kiritimati,
+// where the same instant is Mar 15.
+func TestGetUpcomingBirthdays_ZoneSelectsMembership(t *testing.T) {
+	db, _ := setupRouter()
+	user := models.User{Username: "zone-member-user", Password: "password123", Email: "zonemember@example.com"}
+	require.NoError(t, db.Create(&user).Error)
+	require.NoError(t, db.Create(&models.Contact{UserID: user.ID, Firstname: "Boundary", Birthday: "--03-14", Archived: false}).Error)
+
+	kiritimati, err := time.LoadLocation("Pacific/Kiritimati")
+	require.NoError(t, err)
+	ny, err := time.LoadLocation("America/New_York")
+	require.NoError(t, err)
+	instant := time.Date(2026, 3, 14, 23, 30, 0, 0, time.UTC)
+
+	t.Run("New York: Mar 14 is today, birthday is in the window", func(t *testing.T) {
+		birthdays, err := GetUpcomingBirthdays(db, user.ID, instant.In(ny))
+		require.NoError(t, err)
+		require.Len(t, birthdays, 1)
+		assert.Equal(t, 0, DaysUntilBirthday(birthdays[0].Birthday, instant.In(ny)))
+		assert.Equal(t, "--03-14", birthdays[0].Birthday, "the stored value round-trips unchanged")
+	})
+
+	t.Run("Kiritimati: the same instant is Mar 15, birthday has wrapped out of the window", func(t *testing.T) {
+		birthdays, err := GetUpcomingBirthdays(db, user.ID, instant.In(kiritimati))
+		require.NoError(t, err)
+		assert.Empty(t, birthdays)
+	})
+}

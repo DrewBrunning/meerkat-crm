@@ -118,13 +118,16 @@ func isLeapYear(year int) bool {
 // leap-day advance rule — a stored 29-Feb in a non-leap now.Year() becomes
 // 1 March, so the count is "days until the celebration (1 Mar)", and returns 0
 // on 1 March itself. Always forward-looking (never negative); malformed or
-// year-less-too-short strings return the 999 sentinel.
+// year-less-too-short strings return the 999 sentinel. A value is never
+// zone-converted — now.Location() decides which calendar day is "today", and
+// the stored month/day is placed into it verbatim (Rule 2).
 //
-// Caveat (DATE-02 / issue #483 territory): the final "absolute hours / 24"
-// truncation is not DST-safe across a spring-forward, where two local
-// midnights are 23 absolute hours apart — cadence_service.go's
-// calendarDaysBetween documents the rounding sibling for the same hazard.
-// The day-boundary comparisons here all use now.Location().
+// The count is DST-safe: both instants are local midnights in now.Location(),
+// and calendarDaysBetween rounds the elapsed absolute hours to whole calendar
+// days instead of truncating — across a spring-forward two local midnights are
+// 23 absolute hours apart, and truncation would silently report a birthday the
+// day after the transition as "today". Fixed in DATE-02 (issue #483);
+// calendarDaysBetween documents the same rounding for the cadence sibling.
 func DaysUntilBirthday(birthday string, now time.Time) int {
 	if len(birthday) < 7 {
 		return 999
@@ -149,5 +152,5 @@ func DaysUntilBirthday(birthday string, now time.Time) int {
 		birthdayThisYear = birthdayThisYear.AddDate(1, 0, 0)
 	}
 
-	return int(birthdayThisYear.Sub(today).Hours() / 24)
+	return calendarDaysBetween(today, birthdayThisYear)
 }
