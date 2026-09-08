@@ -72,11 +72,13 @@ func Scale(m *canonicalfixture.Manifest, targetContacts int) (*canonicalfixture.
 }
 
 // scaleSalted is Scale with an explicit UID-derivation salt. An empty salt
-// reproduces Scale's historical output byte-for-byte (the migration path and
-// the scale-testing.md row-count table depend on that); a non-empty salt —
-// used by the PERF-01 profile catalogue (profiles.go) to key each user's
-// contacts distinctly — changes every regenerated card UID while leaving every
-// data field untouched.
+// reproduces Scale's historical *shape* — same contact/row counts and every
+// non-uid field identical (the migration path and the scale-testing.md
+// row-count table depend on that); it does NOT reproduce the literal uid
+// strings byte-for-byte any more, since issue #868 changed regeneratedUID's
+// version/variant bits. A non-empty salt — used by the PERF-01 profile
+// catalogue (profiles.go) to key each user's contacts distinctly — changes
+// every regenerated card UID while leaving every data field untouched.
 func scaleSalted(m *canonicalfixture.Manifest, targetContacts int, salt string) (*canonicalfixture.Manifest, error) {
 	blocks := (targetContacts + len(m.Contacts) - 1) / len(m.Contacts)
 
@@ -129,18 +131,38 @@ func newRewriterSalted(m *canonicalfixture.Manifest, block int, salt string) *re
 	return rw
 }
 
-// regeneratedUID deterministically derives a new RFC 4122 v5 UUID for block b,
-// contact index i (optionally namespaced by salt). Distinct per
-// (salt, block, index), so the partial unique index idx_contacts_vcard_uid_user
-// (WHERE deleted_at IS NULL) accepts every scaled contact under one user, and
-// two users generated with different salts never collide. An empty salt keeps
-// the historical derivation string so Scale's output is byte-stable.
+// regeneratedUID deterministically derives a v4-*shaped* UUID for block b,
+// contact index i (optionally namespaced by salt). It is not a real random
+// v4 UUID: the 128 bits come from a SHA-1 derivation (RFC 4122 v5's
+// construction) so the result stays a pure function of (salt, block, index),
+// then the version nibble and variant bits are overwritten to make the
+// string parse as v4. That's required because every API DTO that accepts a
+// contact vcard_uid validates it with go-playground/validator's `uuid4` tag
+// (RelationshipEdgeInput, CircleMemberInput, HouseholdMemberInput,
+// ContactTagInput, ContactShareInput, BulkContactOperationInput, ...) — a
+// real v5 UUID, which is what this function produced before issue #868,
+// fails that check, so seeded contacts could never be used as the source or
+// target of an edge/membership/tag/share/bulk operation in a test. A
+// production contact's vcard_uid is a genuine random v4 from BeforeCreate,
+// so this only affects generated fixtures.
+//
+// Distinct per (salt, block, index), so the partial unique index
+// idx_contacts_vcard_uid_user (WHERE deleted_at IS NULL) accepts every scaled
+// contact under one user, and two users generated with different salts never
+// collide. An empty salt keeps the historical derivation key string, but note
+// that issue #868 changed the version/variant bits of every uid this function
+// emits — Scale's output is no longer byte-for-byte identical to its
+// pre-#868 output (nothing committed depends on the literal uid strings; see
+// the issue for the audit of every largedata consumer).
 func regeneratedUID(salt string, block, index int) string {
 	key := fmt.Sprintf("largedata/block/%d/contact/%d", block, index)
 	if salt != "" {
 		key = fmt.Sprintf("largedata/%s/block/%d/contact/%d", salt, block, index)
 	}
-	return uuid.NewSHA1(uuid.Nil, []byte(key)).String()
+	u := uuid.NewSHA1(uuid.Nil, []byte(key))
+	u[6] = (u[6] & 0x0f) | 0x40 // version 4
+	u[8] = (u[8] & 0x3f) | 0x80 // variant RFC 4122
+	return u.String()
 }
 
 // name re-keys a manifest contact name to this block.
