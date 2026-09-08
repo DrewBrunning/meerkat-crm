@@ -117,22 +117,81 @@ made from `1.0.0`. The isolation guarantee, in terms you can evaluate before
 accepting an account on someone else's instance:
 
 - Every account's data is separated at the query layer: every table carries a
-  `user_id` and every request is scoped to the authenticated user. There are no
-  cross-account references, and the separation is tested
-  (`TestProfileMultiUserIsolation`). Contacts, relationships, notes, activities,
-  reminders, photos and attachments of one user are invisible to another.
+  `user_id`, every request is scoped to the authenticated user, and the graph
+  entities keyed by a contact UID rather than directly by `user_id`
+  (relationship edges, circle/household/tag memberships, custom field values,
+  sync links) are resolved with **both** clauses so naming another user's
+  contact UID does not reach it. There are no cross-account references. The
+  separation is enforced mechanically, not by review alone:
+  `backend/routes/authorization_matrix_test.go` probes **every registered
+  route** with a "user B → user A's resource" persona and fails CI on a route
+  that is unscoped or has no declared authorization row; `backend/cmd/bolacheck`
+  is the companion cross-account sweep; `TestProfileMultiUserIsolation` checks a
+  populated multi-user dataset has no cross-user rows. Contacts, relationships,
+  notes, activities, reminders, life events, custom fields, integrations,
+  photos and attachments of one user are invisible to another.
 - **What the admin can see.** The operator has an **admin** role that can
   create, edit, and delete user accounts, reset a second factor, and trigger
   maintenance jobs (backup/restore drills, search-index rebuilds, integrity
   checks, diagnostics). That is the whole of it: **the admin role cannot read
   another user's contacts, notes, or activities through the application** —
-  there is no API for it. (This is the answer issue #371 established.)
+  there is no API for it. This is the answer issue #371 established, and it is a
+  *tested* property: in `authorization_matrix_test.go` the `admin` persona gets
+  the same `404`/`403` as any other non-owner on every non-admin item route,
+  never a `2xx`.
 - **What the admin inevitably can see anyway.** The person who runs the host
   has the filesystem, the database file, and the backups — no self-hosted
   application can prevent that, and it is a deployment decision, not a product
   guarantee. Decide whom you host for accordingly.
 - **What other users can see.** Usernames are visible to every user on the same
   instance (they must be, for the sharing model to work); no other data is.
+- **The one sanctioned cross-user path is contact sharing.** A user picks one
+  of their contacts, chooses which sections to include, and the server freezes a
+  filtered snapshot addressed to another user, who accepts or declines. It is
+  always sender-initiated, and `private` / `secret` items are included only on
+  explicit opt-in (issue #555).
+
+### What is per-user versus per-instance
+
+| Per-user (private to the account) | Per-instance (shared) |
+|---|---|
+| Contacts and everything hung off them — notes, activities, reminders, life events, preferences, gifts, custom field **values**, photos, attachments | The single SQLite database file and its one writer |
+| The relationship graph — edges, circles, households, tags, and their memberships | The in-process `gocron` scheduler. It fires once per interval; the work inside a tick (cadence, CardDAV/CalDAV sync, reach-out scanning) iterates over **all** users, so its cost scales with user count independently of any one user's data volume |
+| Custom **field definitions** (each user defines their own) | `REMINDER_TIME` / `REMINDER_TIMEZONE` — one clock for the whole deployment |
+| Integrations and their stored credentials + cached remote data; notification channels and registered devices | IP-based auth rate limiters; OIDC configuration; outbound email transport |
+| Account settings, language, API tokens, 2FA secret and recovery codes | `JWT_SECRET_KEY`, `COOKIE_*`, `FRONTEND_URL`, the uploaded-files directory, the admin role |
+| Full-text search rows and audit-trail rows (both carry `user_id`) | Operator backups — they contain every user's data; the app deliberately cannot expire them |
+
+### Registration
+
+`POST /api/v1/register`, as implemented in
+`backend/controllers/user_controller.go`:
+
+| | |
+|---|---|
+| **Default** | Open — anyone who can reach the instance can create an account. |
+| **`DISABLE_REGISTRATION=true`** | Registration returns `403` with `code: registration_disabled`. Existing users still log in; an admin can still create accounts. |
+| **First account** | Automatically an admin (set when the user table is empty). |
+| **Every later account** | A normal user. `is_admin` in the request body is ignored — the input DTO excludes it (no mass assignment). |
+| **Protections** | Auth rate-limited; minimum-client-version enforced; optional [HIBP](https://haveibeenpwned.com/) breached-password check when `HIBP_CHECK_ENABLED=true`. |
+| **SSO** | With OIDC configured, `OIDC_AUTO_PROVISION=true` creates an account on first SSO login; otherwise an unmatched SSO user must be registered first. |
+
+Admins can also create accounts directly from the admin panel
+(`POST /api/v1/admin/users`). These behaviours are covered by tests in
+`backend/controllers/user_controller_test.go`.
+
+**Intended scale.** Mycorrhizal CRM is designed for a **small group of
+operator-vetted accounts** — a household, or a handful of people the operator
+knows and chooses to host. The isolation guarantee protects against accident and
+curiosity between people who broadly trust each other; the resource limits
+(issue #415) are calibrated for that, not for defending a shared instance
+against its own account holders. Running an instance open to arbitrary strangers
+is possible — the guarantee still holds and is still tested — but it puts the
+operator in the position of data controller for people they have never met (see
+[Privacy](privacy.md)). **For any instance with more than one user, run with
+`DISABLE_REGISTRATION=true`** and create each account deliberately from the
+admin panel. Mycorrhizal CRM is MIT-licensed: how you run your instance is
+ultimately your call, and this is a recommendation, not a restriction.
 
 ## Version-support lifecycle
 

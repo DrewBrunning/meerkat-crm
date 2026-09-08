@@ -10,7 +10,7 @@ longer than we need?* — and records the answer.
 |---|---|
 | **Last updated** | 2026-08-27 (issues [#510](https://github.com/DrewBrunning/mycorrhizal-crm/issues/510), [#621](https://github.com/DrewBrunning/mycorrhizal-crm/issues/621)) |
 | **Scope** | Backend (Go/Gin + SQLite), CardDAV/CalDAV server role, structured + access logs, operator backups, Android offline mirror, browser storage. |
-| **Companion docs** | `data-retention-lifecycle.md` (retention/deletion, cited here rather than repeated), `asvs-l2.md` V7 (logging) / V8 (data protection), `deployment-baseline.md` (operator boundary), `../privacy.md` (the plain-language operator/adopter summary). |
+| **Companion docs** | `data-retention-lifecycle.md` (retention/deletion, cited here rather than repeated), `asvs-l2.md` V7 (logging) / V8 (data protection), `deployment-baseline.md` (operator boundary), `../privacy.md` (the plain-language operator/adopter summary), `../supported-versions.md` "The deployment shape" (the multi-user isolation guarantee and admin-capability statement, issue [#558](https://github.com/DrewBrunning/mycorrhizal-crm/issues/558)). |
 | **Method** | Schema walked table-by-table from `backend/database/migrations/*.up.sql`; logs checked against **real captured output**, not by reading the logging code (see [How this was verified](#how-this-was-verified)). |
 
 ## Why this review exists
@@ -226,7 +226,8 @@ viewed from the data subject's side rather than the account owner's.
 
 ## 7. Operator responsibilities (multi-user)
 
-Stated in full, for adopters, in [`../privacy.md`](../privacy.md). In brief: with more than one
+Stated in full, for adopters, in [`../privacy.md`](../privacy.md) and
+[`../supported-versions.md`](../supported-versions.md) ("The deployment shape"). In brief: with more than one
 user on an instance, the operator holds **other users' relationship data and their notes about
 third parties twice removed from the operator**. The software does not discharge the controller's
 duties for them — it provides scoping, per-user deletion, export, and a `sensitivity` filter, and

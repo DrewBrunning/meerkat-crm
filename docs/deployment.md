@@ -64,6 +64,21 @@ Set these variables in `.env` when running over HTTPS:
 | `JWT_SECRET_KEY` | Generate with `openssl rand -base64 32`; the server refuses to start with the `.env.example` placeholder or a weak secret |
 
 
+## Multi-user instances
+
+One deployment can host several independent users, each with their own contacts, graph,
+integrations, and settings. This is a supported `1.0.0` configuration and cross-user
+isolation is tested against every route — see
+[Supported versions → The deployment shape](supported-versions.html#the-deployment-shape)
+for the isolation guarantee, the per-user vs per-instance split, the registration
+behaviour, and exactly what an admin can and cannot see.
+
+**If more than one person will use the instance, set `DISABLE_REGISTRATION=true`** and
+create each account yourself from the admin panel (Settings → Admin). The first account
+registered on a fresh instance is automatically an admin. Open self-service registration
+is fine for a single-user instance and for a small group you fully trust; it is not the
+setting the abuse controls are tuned for.
+
 ## Single Sign-On (OIDC)
 
 Mycorrhizal CRM supports SSO via any OpenID Connect provider (Keycloak, Google, Authentik, Authelia, etc.). When enabled, a **Sign in with provider** button appears on the login page.

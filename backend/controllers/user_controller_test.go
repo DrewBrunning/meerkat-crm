@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"mycorrhizal/config"
+	"mycorrhizal/internal/dbtest"
 	"mycorrhizal/middleware"
 	"mycorrhizal/models"
 	"mycorrhizal/services"
@@ -20,6 +21,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 const (
@@ -1180,4 +1182,103 @@ func TestUpdateDateFormat_RequiresAuth(t *testing.T) {
 	router.ServeHTTP(w, req)
 
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+// --- registration behaviour (issue #558: "registration behaviour is documented
+// and tested") ------------------------------------------------------------------
+//
+// These use the real migrated schema (dbtest, per CLAUDE.md backend trap #1)
+// because they assert on the persisted users.is_admin column and on the row
+// count, not just the HTTP status.
+
+func newRegisterRouter(t *testing.T, cfg *config.Config) (*gorm.DB, *gin.Engine) {
+	t.Helper()
+	gin.SetMode(gin.ReleaseMode)
+
+	db := dbtest.New(t)
+
+	router := gin.New()
+	router.Use(func(c *gin.Context) {
+		c.Set("db", db)
+		c.Set("cfg", *cfg)
+		c.Next()
+	})
+	router.POST("/register", middleware.ValidateJSONMiddleware(&models.UserRegistrationInput{}), RegisterUser(cfg))
+	return db, router
+}
+
+func postRegister(t *testing.T, router *gin.Engine, in models.UserRegistrationInput) *httptest.ResponseRecorder {
+	t.Helper()
+	body, _ := json.Marshal(in)
+	req, _ := http.NewRequest("POST", "/register", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+func TestRegisterUser_RegistrationDisabled(t *testing.T) {
+	db, router := newRegisterRouter(t, &config.Config{RegistrationDisabled: true})
+
+	w := postRegister(t, router, models.UserRegistrationInput{
+		Username: "blocked",
+		Email:    "blocked@example.com",
+		Password: strongPassword,
+	})
+
+	assert.Equal(t, http.StatusForbidden, w.Code)
+
+	var resp map[string]map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, "registration_disabled", resp["error"]["code"])
+
+	var count int64
+	require.NoError(t, db.Model(&models.User{}).Count(&count).Error)
+	assert.Equal(t, int64(0), count, "a disabled registration must not create a user row")
+}
+
+func TestRegisterUser_FirstUserBecomesAdmin(t *testing.T) {
+	db, router := newRegisterRouter(t, &config.Config{})
+
+	w := postRegister(t, router, models.UserRegistrationInput{
+		Username: "founder",
+		Email:    "founder@example.com",
+		Password: strongPassword,
+	})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+
+	var user models.User
+	require.NoError(t, db.Where("username = ?", "founder").First(&user).Error)
+	assert.True(t, user.IsAdmin, "the first registered account must be an admin")
+}
+
+func TestRegisterUser_SubsequentUsersAreNotAdmin(t *testing.T) {
+	db, router := newRegisterRouter(t, &config.Config{})
+
+	require.Equal(t, http.StatusCreated, postRegister(t, router, models.UserRegistrationInput{
+		Username: "first", Email: "first@example.com", Password: strongPassword,
+	}).Code)
+
+	w := postRegister(t, router, models.UserRegistrationInput{
+		Username: "second", Email: "second@example.com", Password: strongPasswordAlt,
+	})
+	require.Equal(t, http.StatusCreated, w.Code, w.Body.String())
+
+	var first, second models.User
+	require.NoError(t, db.Where("username = ?", "first").First(&first).Error)
+	require.NoError(t, db.Where("username = ?", "second").First(&second).Error)
+	assert.True(t, first.IsAdmin, "the first registered account must be an admin")
+	assert.False(t, second.IsAdmin, "every account after the first must be a normal user")
+
+	// The registration DTO must not let a caller grant itself admin.
+	body := []byte(`{"username":"sneaky","email":"sneaky@example.com","password":"` + strongPasswordAnother + `","is_admin":true}`)
+	req, _ := http.NewRequest("POST", "/register", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+
+	var sneaky models.User
+	require.NoError(t, db.Where("username = ?", "sneaky").First(&sneaky).Error)
+	assert.False(t, sneaky.IsAdmin, "is_admin in the registration body must be ignored (no mass assignment)")
 }
