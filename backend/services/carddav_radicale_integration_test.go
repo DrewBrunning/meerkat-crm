@@ -162,6 +162,14 @@ func referenceServerDivergences(serverID string) []serverDivergence {
 		return []serverDivergence{
 			{name: "celine", reason: "rejected by Radicale: exported card carries two N properties (RFC 9554 §3.3 alternative-name ALTID); vobject refuses >1 N"},
 			{name: "bob", concepts: "adr;photo", reason: "vobject re-serializes on output: inline data: PHOTO truncated at the first ';' and ADR components beyond the seven RFC 6350 slots (apartment, floor) dropped"},
+			// I18N-01 (issue #484): compound-surname and extended-granularity
+			// address personas hit the same vobject-only-knows-RFC-6350 wall as
+			// bob. Radicale stores the 4.0 card otherwise verbatim (KIND,
+			// LANGUAGE, ADR CC/TZ all survive), so the divergence is confined to
+			// the component counts vobject truncates.
+			{name: "carmen", concepts: "name.surname2", reason: "vobject re-serializes on output: N truncated to the five RFC 6350 components, dropping the RFC 9554 6th (secondary surname)"},
+			{name: "joao", concepts: "name.surname2", reason: "vobject re-serializes on output: N truncated to the five RFC 6350 components, dropping the RFC 9554 6th (secondary surname)"},
+			{name: "somchai", concepts: "adr", reason: "vobject re-serializes on output: ADR components beyond the seven RFC 6350 slots (subdistrict, district) dropped"},
 		}
 	case "baikal", "nextcloud":
 		// The accepted-card divergences are byte-identical between Baikal and
@@ -186,6 +194,27 @@ func referenceServerDivergences(serverID string) []serverDivergence {
 			{name: "test07_empty_note_with_params", concepts: "kind;name.full;note;prodid", reason: "Sabre VObject 3.0 downgrade: an empty NOTE carrying parameters is dropped by VObject"},
 			{name: "test07_multi_grammatical_gender", concepts: "gramgender;kind;name.full;prodid;pt.vcard", reason: "Sabre VObject 3.0 downgrade: GRAMGENDER survives only as passthrough"},
 			{name: "test07_timestamped_birthday", concepts: "kind;name.full;prodid", reason: "Sabre VObject 3.0 downgrade; name.full derived from FN"},
+
+			// I18N-01 (issue #484): every international persona carries KIND,
+			// per-record LANGUAGE and an ADR with a CC + per-address TZ param —
+			// all 4.0-only, so the Sabre VObject 3.0 downgrade drops the ADR
+			// CC/TZ from the structured value and lands LANGUAGE in passthrough,
+			// exactly the ada/hugo pattern. name.full survives (their FN matches
+			// the recomposed components). carmen/joao additionally lose the
+			// RFC 9554 N 6th component (secondary surname); naoki's ADR has no
+			// TZ in the fixture, so it has no adr.tz divergence.
+			{name: "naoki", concepts: "adr;kind;language;prodid;pt.vcard", reason: "Sabre VObject 3.0 downgrade: KIND/LANGUAGE 4.0-only (LANGUAGE lands in passthrough), ADR CC dropped, prodid added"},
+			{name: "wei", concepts: "adr;adr.tz;kind;language;prodid;pt.vcard", reason: "Sabre VObject 3.0 downgrade: KIND/LANGUAGE 4.0-only (LANGUAGE lands in passthrough), ADR CC/TZ params dropped, prodid added"},
+			{name: "minjun", concepts: "adr;adr.tz;kind;language;prodid;pt.vcard", reason: "Sabre VObject 3.0 downgrade: KIND/LANGUAGE 4.0-only (LANGUAGE lands in passthrough), ADR CC/TZ params dropped, prodid added"},
+			{name: "layla", concepts: "adr;adr.tz;kind;language;prodid;pt.vcard", reason: "Sabre VObject 3.0 downgrade: KIND/LANGUAGE 4.0-only (LANGUAGE lands in passthrough), ADR CC/TZ params dropped, prodid added"},
+			{name: "yael", concepts: "adr;adr.tz;kind;language;prodid;pt.vcard", reason: "Sabre VObject 3.0 downgrade: KIND/LANGUAGE 4.0-only (LANGUAGE lands in passthrough), ADR CC/TZ params dropped, prodid added"},
+			{name: "bjork", concepts: "adr;adr.tz;kind;language;prodid;pt.vcard", reason: "Sabre VObject 3.0 downgrade: KIND/LANGUAGE 4.0-only (LANGUAGE lands in passthrough), ADR CC/TZ params dropped, prodid added"},
+			{name: "carmen", concepts: "adr;adr.tz;kind;language;name.surname2;prodid;pt.vcard", reason: "Sabre VObject 3.0 downgrade: KIND/LANGUAGE 4.0-only (LANGUAGE lands in passthrough), ADR CC/TZ params dropped, N truncated to five RFC 6350 components dropping the RFC 9554 6th (secondary surname), prodid added"},
+			{name: "joao", concepts: "adr;adr.tz;kind;language;name.surname2;prodid;pt.vcard", reason: "Sabre VObject 3.0 downgrade: KIND/LANGUAGE 4.0-only (LANGUAGE lands in passthrough), ADR CC/TZ params dropped, N truncated to five RFC 6350 components dropping the RFC 9554 6th (secondary surname), prodid added"},
+			{name: "jan", concepts: "adr;adr.tz;kind;language;prodid;pt.vcard", reason: "Sabre VObject 3.0 downgrade: KIND/LANGUAGE 4.0-only (LANGUAGE lands in passthrough), ADR CC/TZ params dropped, prodid added"},
+			{name: "somchai", concepts: "adr;adr.tz;kind;language;prodid;pt.vcard", reason: "Sabre VObject 3.0 downgrade: KIND/LANGUAGE 4.0-only (LANGUAGE lands in passthrough), ADR CC/TZ params and the RFC 9554 extended components (subdistrict, district) dropped, prodid added"},
+			{name: "priya", concepts: "adr;adr.tz;kind;language;prodid;pt.vcard", reason: "Sabre VObject 3.0 downgrade: KIND/LANGUAGE 4.0-only (LANGUAGE lands in passthrough), ADR CC/TZ params dropped, prodid added"},
+			{name: "aoife", concepts: "adr;adr.tz;kind;language;prodid;pt.vcard", reason: "Sabre VObject 3.0 downgrade: KIND/LANGUAGE 4.0-only (LANGUAGE lands in passthrough), ADR CC/TZ params dropped, prodid added"},
 		}
 		if serverID == "baikal" {
 			// eve is ACCEPTED by Baikal but its BDAY (no value-type) survives
