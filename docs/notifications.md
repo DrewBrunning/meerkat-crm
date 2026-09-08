@@ -6,7 +6,7 @@ has_children: false
 
 # Notifications
 
-Reminders can reach you through four channels. Email is configured on the server; ntfy, Gotify and browser push are configured per user, under **Settings → Notifications**, because each user has their own topic, token and devices.
+Reminders can reach you through four channels. Email is configured on the server; ntfy, Gotify and browser push are configured per user, under **Settings → Notifications**, because each user has their own topic, token and devices. For who owns what when a channel breaks, how to recognize a failure, and how to diagnose it, see [Integrations: ownership, diagnostics, and what breaks](integration-ownership.md).
 
 | Channel | Configured where | What you need |
 |---|---|---|

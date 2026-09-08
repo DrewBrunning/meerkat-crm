@@ -78,7 +78,7 @@ jobs:
   docs-citations:
     permissions:
       contents: read
-    name: Security-doc citations
+    name: Docs & security-doc citations
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -116,6 +116,19 @@ jobs:
       - name: Verify dependency-exception ledger freshness
         working-directory: backend
         run: go run ./cmd/depexceptions
+
+      # DOC-04 (issue #489): the docs structure gate. docscheck verifies that
+      # every internal link/anchor and repo-file reference in docs/ resolves,
+      # that operator-facing command blocks do not assume a toolchain their
+      # audience does not have, that the operator supported-versions page and
+      # the DOC-03 integration-ownership page have not drifted from the code
+      # (issues #486 / #488), and that deploy-smoke CI still runs the bring-up
+      # command getting-started.md documents. Deliberately unconditional, like
+      # citecheck above: a PR that edits only docs/ would never exercise a
+      # path-gated check, and .github/filters.yaml maps docs/** to nothing.
+      - name: Verify docs structure (links, commands, drift)
+        working-directory: backend
+        run: go run ./cmd/docscheck
 
   # Issue #630: the backend test suite is split into parallel legs
   # (`backend-tests` matrix) so `controllers` and `services` — each ~20 min

@@ -50,8 +50,8 @@ docs/security/asvs-l2.md | `backend/middleware/security_headers.go:23` | backend
 docs/security/asvs-l2.md | `docker/nginx.conf:19` | docker/nginx.conf  # the nosniff add_header
 docs/security/asvs-l2.md | `docker/nginx.conf:21` | docker/nginx.conf  # the CSP add_header, cited for frame-ancestors 'none'
 docs/security/asvs-l2.md | `RegisterPage.tsx:134` | frontend/src/RegisterPage.tsx  # the type="password" input; row says "masked inputs"
-docs/security/asvs-l2.md | `docs/deployment.md:32` | docs/deployment.md  # the TLS-at-the-reverse-proxy sentence; row is about trust boundaries
-docs/security/masvs-l1.md | `docs/deployment.md:32` | docs/deployment.md  # same sentence, cited from the Android threat-model context
+docs/security/asvs-l2.md | `docs/deployment.md:35` | docs/deployment.md  # the TLS-at-the-reverse-proxy sentence; row is about trust boundaries
+docs/security/masvs-l1.md | `docs/deployment.md:35` | docs/deployment.md  # same sentence, cited from the Android threat-model context
 
 # --- Rows whose keywords are sibling test filenames, not the cited test -------
 docs/security/asvs-l2.md | `circle_controller_test.go:182` | backend/controllers/circle_controller_test.go  # lands on TestAddCircleMemberRejectsContactFromAnotherUser; the row's other words are sibling test filenames
