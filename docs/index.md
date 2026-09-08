@@ -21,6 +21,8 @@ The name comes from mycorrhiza, the symbiotic network fungi form with plant root
 
 - [GitHub Repository](https://github.com/DrewBrunning/mycorrhizal-crm)
 - [Privacy & data minimization](privacy.md)
+- [Supported versions — what this runs on, and what "supported" means](supported-versions.md)
+- [Integrations — ownership, diagnostics, and what breaks if one is down](integration-ownership.md)
 - [Upgrade compatibility & supported-upgrade floor](upgrade-compatibility.md)
 - [Service-worker updates & the recovery page](service-worker-updates.md)
 - [Field compatibility matrix (DATA-01)](data-01-field-compatibility-matrix.md)

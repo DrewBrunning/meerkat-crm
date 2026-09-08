@@ -176,11 +176,27 @@ can't be fixed within its window gets a time-bounded entry in
 `docs/security/dependency-exceptions.ignore` — deliberately a different shape from this repo's other,
 permanent ignore-list-with-justification files (`.trivyignore`, `.grype.yml`, etc.), since this one
 must expire. `cd backend && go run ./cmd/depexceptions` fails on a malformed entry or one whose
-`expires` date has passed; it runs alongside `citecheck` in `unit-tests.yml`'s `backend-checks` job
-(every backend PR, plus the nightly full-suite run), so an expired exception surfaces without needing
+`expires` date has passed; it runs alongside `citecheck` in `unit-tests.yml`'s `docs-citations` job
+(every PR, plus the nightly full-suite run), so an expired exception surfaces without needing
 new PR activity to trip over it. A dependency bump that raises this project's own supported-runtime
 minimum (`docs/development/supported-runtime-matrix.md`, issue #472) is a breaking change under
 MAINT-02, not a routine merge — the policy page ties the two together.
+
+**Operator docs structure (DOC-01/03/04, issues #486/#488/#489):** the operator-facing half of the
+supported-runtime and integration matrices is `docs/supported-versions.md` (what this runs on, what
+"supported" means, the deployment shape + isolation guarantee) and
+`docs/integration-ownership.md` (per-integration ownership, failure symptoms, diagnostics, and
+data-on-removal). `cd backend && go run ./cmd/docscheck` is the structural gate over both and over
+the whole `docs/` site: every internal link/anchor and repo-file reference resolves, operator
+command blocks don't assume a toolchain their audience lacks (issue #461's `go run` for a Docker
+operator is the canonical regression), the operator versions page and the engineering matrix state
+the same floors, every `integrations.Registry()` row has a `docs/integration-ownership.md` section
+(add one with the integration's `<a id>` or the build fails), and deploy-smoke CI runs the exact
+bring-up command `getting-started.md` documents. It runs unconditionally in the same
+`docs-citations` job as citecheck/depexceptions precisely because `.github/filters.yaml` maps
+`docs/**` to nothing and a docs-only PR would otherwise never exercise a path-gated check. When you
+move a file or rename a heading/page that any doc links to, docscheck is the tripwire — update the
+link or the tool fails on the PR.
 
 Android instrumented E2E (issue #238): the suite in `android/app/src/androidTest` drives the real app
 against the real `docker-compose.test.yml` backend on an emulator/device — login → list → detail →

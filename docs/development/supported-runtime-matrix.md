@@ -9,9 +9,13 @@ COMPAT-01 (issue #472) produced this matrix and wired the two rows that can be m
 enforced (`browserslist`, `engines`) into the real build/CI. COMPAT-02 (issue #473) adds the CI
 jobs that build/test at every row's stated minimum — see "Minimum-version CI coverage" below —
 plus below-floor jobs proving an unsupported version fails clearly rather than something
-silently broken. It does not publish an operator-facing page — that is DOC-01 (issue #486),
-which is expected to summarize this table for `docs/deployment.md`'s audience rather than
-duplicate it. The dependency-*upgrade policy* (how/when a floor is allowed to move) is
+silently broken. The operator-facing half is published as
+[../supported-versions.md](../supported-versions.md) (DOC-01, issue #486): what this runs on,
+what "supported" means (tested in CI vs expected-to-work vs unsupported), what happens on an
+unsupported version, and the supported deployment shape — it summarizes this table for
+`docs/getting-started.md` / `docs/deployment.md`'s audience rather than duplicating it, and a
+structural check (`cmd/docscheck`, DOC-04 issue #489) fails until the two stay in agreement. The
+dependency-*upgrade policy* (how/when a floor is allowed to move) is
 COMPAT-03 (issue #474) and [breaking-change-policy.md](../breaking-change-policy.md)
 (MAINT-02, issue #491) — raising any row below is a breaking change under that policy, not a
 routine edit. This table states what the *server* requires to run; the
