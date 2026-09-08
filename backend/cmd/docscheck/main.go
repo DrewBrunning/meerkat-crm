@@ -125,7 +125,7 @@ func checkLinks(root string) []string {
 	docsDir := filepath.Join(root, "docs")
 	files := listMarkdown(docsDir)
 	for _, rel := range files {
-		body, err := os.ReadFile(filepath.Join(docsDir, rel))
+		body, err := os.ReadFile(filepath.Join(docsDir, rel)) // #nosec G304 -- rel comes from the filepath.Walk over docs/, never request input
 		if err != nil {
 			// # pragma: no cover — the file was listed by the walk above, so a
 			// read failure is a racing deletion, not a normal state.
@@ -397,6 +397,8 @@ func blankInlineCode(text string) string {
 // headingIDs returns every anchor id a rendered .md page will carry: a
 // kramdown auto-id for each heading plus any literal <a id="..."> markers.
 func headingIDs(path string) map[string]bool {
+	// #nosec G304 -- path is built by the caller from docs/ walk results or
+	// resolved link targets, never request input.
 	body, err := os.ReadFile(path)
 	if err != nil {
 		return nil
@@ -582,6 +584,7 @@ var operatorDocs = []string{
 func checkCommandBlocks(root string) []string {
 	var findings []string
 	for _, rel := range operatorDocs {
+		// #nosec G304 -- rel is from the fixed operatorDocs list, never request input
 		body, err := os.ReadFile(filepath.Join(root, "docs", filepath.FromSlash(rel)))
 		if err != nil {
 			continue
@@ -710,10 +713,12 @@ var operatorFloors = []struct {
 }
 
 func checkSupportedVersionsDrift(root string) []string {
+	// #nosec G304 -- root is the repo root from findRepoRoot, the leaf is a constant
 	matrix, err := os.ReadFile(filepath.Join(root, "docs", "development", "supported-runtime-matrix.md"))
 	if err != nil {
 		return []string{"supported-versions drift: cannot read docs/development/supported-runtime-matrix.md: " + err.Error()}
 	}
+	// #nosec G304 -- root is the repo root from findRepoRoot, the leaf is a constant
 	page, err := os.ReadFile(filepath.Join(root, "docs", "supported-versions.md"))
 	if err != nil {
 		return []string{"supported-versions drift: operator page docs/supported-versions.md missing: " + err.Error()}
@@ -738,6 +743,7 @@ func checkSupportedVersionsDrift(root string) []string {
 // ---------------------------------------------------------------------------
 
 func checkIntegrationOwnership(root string) []string {
+	// #nosec G304 -- root is the repo root from findRepoRoot, the leaf is a constant
 	doc, err := os.ReadFile(filepath.Join(root, "docs", "integration-ownership.md"))
 	if err != nil {
 		return []string{"integration-ownership: operator page docs/integration-ownership.md missing (issue #488): " + err.Error()}
@@ -759,10 +765,12 @@ func checkIntegrationOwnership(root string) []string {
 
 func checkCICommandBinding(root string) []string {
 	var findings []string
+	// #nosec G304 -- root is the repo root from findRepoRoot, the leaf is a constant
 	gettingStarted, err := os.ReadFile(filepath.Join(root, "docs", "getting-started.md"))
 	if err == nil && !strings.Contains(string(gettingStarted), "docker compose up -d --build") {
 		findings = append(findings, "docs/getting-started.md no longer contains the bring-up command `docker compose up -d --build` that deploy-smoke CI runs")
 	}
+	// #nosec G304 -- root is the repo root from findRepoRoot, the leaf is a constant
 	deployment, err := os.ReadFile(filepath.Join(root, "docs", "deployment.md"))
 	if err == nil {
 		dt := string(deployment)
@@ -770,6 +778,7 @@ func checkCICommandBinding(root string) []string {
 			findings = append(findings, "docs/deployment.md no longer documents the upgrade command pair `docker compose pull` + `docker compose up -d`")
 		}
 	}
+	// #nosec G304 -- root is the repo root from findRepoRoot, the leaf is a constant
 	workflow, err := os.ReadFile(filepath.Join(root, ".github", "workflows", "deploy-smoke.yml"))
 	if err == nil && !strings.Contains(string(workflow), "docker compose up -d --build") {
 		findings = append(findings, "deploy-smoke.yml no longer runs the bring-up command `docker compose up -d --build` documented in docs/getting-started.md (issue #489)")
