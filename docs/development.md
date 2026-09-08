@@ -12,4 +12,5 @@ Mycorrhizal CRM is a two-service application: a Go REST API and a React SPA. Bot
 - [Backend](development/backend.md) — setup, conventions, adding endpoints, migrations
 - [Frontend](development/frontend.md) — setup, conventions, hooks, translations
 - [Testing](development/testing.md) — unit, integration, and E2E tests
+- [Pen-test & demo environment](development/pentest-environment.md) — one command for a seeded, multi-user instance
 - [Contributing](development/contributing.md) — workflow, code style, pull requests
