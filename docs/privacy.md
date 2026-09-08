@@ -61,6 +61,10 @@ controller — and the controller for everyone else's data on that instance too.
 - **Usernames are visible to every other user on the same instance** (this is needed for sharing
   a contact with another user). Email addresses and everything else are not.
 
+[Supported configuration](supported-configuration.md) states the cross-user isolation guarantee in
+full, along with the per-user vs per-instance split and the registration recommendation for a
+multi-user instance.
+
 ## Deleting a person
 
 When you delete a contact, the contact and everything attached to it is hidden immediately and

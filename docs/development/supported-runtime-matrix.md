@@ -17,7 +17,9 @@ COMPAT-03 (issue #474) and [breaking-change-policy.md](../breaking-change-policy
 routine edit. This table states what the *server* requires to run; the
 [client/server compatibility policy](../client-compatibility-policy.md) (ANDROID-01, issue
 #478) is the client-facing counterpart — what server versions require of the Android app and
-web client talking to them.
+web client talking to them. It covers supported *versions*; the supported **deployment
+shape** — multi-user-per-instance, the cross-user isolation guarantee, and what an admin
+can see — is [`supported-configuration.md`](../supported-configuration.md) (issue #558).
 
 | Component | Minimum | Why |
 |---|---|---|

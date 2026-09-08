@@ -36,7 +36,7 @@ fresh instance (issue #450).
 | `SMTP_FROM_EMAIL` | Sender e-mail address for SMTP |
 | `SMTP_USE_TLS` | Set to `true` for implicit TLS (port 465); otherwise STARTTLS is used |
 | `CARDDAV_ENABLED` | When set to `true` the application acts as a CardDAV server which allows contacts to be synced with your phone |
-| `DISABLE_REGISTRATION` | When set to `true`, new user registration is disabled (existing users can still log in). Default is `false` |
+| `DISABLE_REGISTRATION` | When set to `true`, new user registration is disabled (existing users can still log in). Default is `false`. **Recommended for any multi-user instance** — see [Supported configuration](supported-configuration.md) |
 | `DATA_PATH` | Host directory where the database file should be stored |
 | `PHOTOS_PATH` | Host directory where the contact photos should be stored |
 | `JWT_EXPIRY_HOURS` | Token expiry, i.e. after how many hours you will need to sign into the application again. Default is 96 hours (4 days) |
@@ -59,6 +59,8 @@ The backend process runs as a non-root user (default UID/GID 1001), and a startu
 
 When running Mycorrhizal CRM you can access the application under the specified port (default is `7300`). 
 To get started you need to register a user. The first user will automatically receive administrator rights and therefore be able to access the admin panel in the settings menu.
+
+If you plan to host other people on this instance, read [Supported configuration](supported-configuration.md) first: it states the cross-user isolation guarantee, what an admin can and cannot see, and why a multi-user instance should run with `DISABLE_REGISTRATION=true`.
 
 ## Backup
 
