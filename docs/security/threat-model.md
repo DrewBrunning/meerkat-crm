@@ -84,10 +84,10 @@ Each actor sits on a boundary, is neutralized by a control, and is verified by a
 | Unauthenticated network attacker | browser→API | authz middleware, TLS, rate limiting, security headers | `asvs-l2.md` V2, V9, V14.4; issues #371/#551, #373, #374, #368, #369 |
 | Authenticated ordinary user (BOLA/IDOR) | API | `user_id`/`VCardUID` scoping | `asvs-l2.md` V4.2.1/API1; exhaustive route × six-persona matrix, issue #371/#551 |
 | Compromised authenticated session | browser→API | `TokenVersion` revocation, httpOnly cookie, CSRF mitigation | `asvs-l2.md` V3.3.3, V4.2.2; issues #372, #392, #419 |
-| Malicious/misconfigured CardDAV client | sync→API | CardDAV Basic auth, per-user collections | **gap** — the #371/#551 persona matrix covers cookie-JWT actors only, not a CardDAV Basic-auth credential or a `carddav`-scoped API token; tracked in issue [#566](https://github.com/DrewBrunning/mycorrhizal-crm/issues/566) |
+| Malicious/misconfigured CardDAV client | sync→API | CardDAV Basic auth, per-user collections | `asvs-l2.md` API5; issue #566 — `backend/routes/authorization_matrix_credentials_test.go` extends the persona matrix to a CardDAV/CalDAV Basic-auth credential (401 on every `/api/v1/*` route; DAV surface reaches only its own collections) and a `carddav`-scoped API token (403 on every REST route), with the same completeness guard |
 | Malicious imported vCard/JSContact | import parser→DB | parser validation, fuzzing, hostile-input neutralization | issues #375, #376, `controllers/hostile_input_e2e_test.go` |
 | Malicious attachment | →filesystem | magic-byte validation, randomized names, SSRF-safe proxy | issue #375, `asvs-l2.md` V12.2.1/V12.3.2 |
-| Malicious API client | →API | token scopes, rate limiting | issues #371/#551, #413, #415; scope-enforcement gap shares issue #566 |
+| Malicious API client | →API | token scopes, rate limiting | issues #371/#551, #413, #415; `carddav`-scope vs `full`-scope REST enforcement pinned by `backend/routes/authorization_matrix_credentials_test.go` (issue #566) |
 | Compromised external integration | →integrations | SSRF dialer, fail-secure | `asvs-l2.md` V5.2.6/API7; issues #373, #465, #366 |
 | Compromised host/container | →host | non-root, minimal caps, hardening; backups made unreachable to the app's own uid by off-host architecture (write-new-only in the app is a bug barrier only) | `asvs-l2.md` V1.2.1, V1.14.5, P5; issues #362, #417, #505 |
 | Filesystem access to deployment (stolen disk) | →filesystem | field-level at-rest encryption | `asvs-l2.md` V6.1.1/P4, issue #380 |
@@ -210,9 +210,11 @@ must remain host-only rather than prefix-locked while plain-HTTP LAN deployments
   (root detection, certificate pinning), two reversed (screenshot prevention, tapjacking protection).
 - `asvs-l2.md`'s V1.1.2, V1.1.4, and V6.1.1 rows cite this doc instead of re-deriving trust-boundary or
   threat-modeling detail.
-- The two open gaps found while drafting this doc are tracked, not just noted: sync-path hostile input
-  (issue #512) and the CardDAV/API-token persona gap in the authorization matrix (issue #566). If either
-  closes, update its row in the Actors × trust boundaries table above.
+- Of the two gaps found while drafting this doc, one remains open: sync-path hostile input (issue #512).
+  The CardDAV/API-token persona gap in the authorization matrix (issue #566) is closed —
+  `backend/routes/authorization_matrix_credentials_test.go` now covers the CardDAV Basic-auth and
+  `carddav`/`full`-scoped API-token personas, and its row above cites the test. If #512 closes, update
+  its row in the Actors × trust boundaries table above.
 - A design change that adds a new trust boundary (a new integration, a new sync direction, a new client)
   updates this doc in the same PR — the same "living document" convention `asvs-l2.md` already holds
   itself to.
