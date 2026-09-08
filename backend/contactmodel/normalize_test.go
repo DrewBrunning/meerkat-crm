@@ -65,6 +65,9 @@ func richRecord() *Record {
 			}},
 			PersonalInfo: []PersonalInfo{{ID: "pi1", Kind: "hobby", Value: "Skið", Level: "high"}},
 			SpeakToAs: &SpeakToAs{
+				GrammaticalGenders: []GrammaticalGender{
+					{ID: "gg1", Value: "feminine", Language: "is"},
+				},
 				Pronouns: []Pronouns{{ID: "pr1", Pronouns: "hún/hana", Contexts: []string{"private"}}},
 			},
 			Notes: []Note{{
@@ -200,6 +203,23 @@ func TestNormalizeRecord_PreservesIdentityURIsAndOpaqueData(t *testing.T) {
 func TestNormalizeRecord_NilSafe(t *testing.T) {
 	if NormalizeRecord(nil) != nil {
 		t.Fatal("NormalizeRecord(nil) must return nil")
+	}
+}
+
+// TestNormalizeRecord_NilNestedPointersIsASafeNoOp covers the nil-Name and
+// nil-SpeakToAs branches (a bare Record{Envelope: ...} with no Card sections).
+func TestNormalizeRecord_NilNestedPointersIsASafeNoOp(t *testing.T) {
+	out := NormalizeRecord(&Record{})
+	if out.Card.Name != nil || out.Card.SpeakToAs != nil {
+		t.Fatalf("nil nested pointers must stay nil: %+v", out)
+	}
+	withGender := &Record{Card: Card{
+		SpeakToAs: &SpeakToAs{
+			GrammaticalGenders: []GrammaticalGender{{ID: "g", Value: "feminine", Language: "de"}},
+		},
+	}}
+	if got := NormalizeRecord(withGender).Card.SpeakToAs.GrammaticalGenders[0].Value; got != "feminine" {
+		t.Fatalf("grammatical-gender token changed: %q", got)
 	}
 }
 

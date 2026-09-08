@@ -180,3 +180,93 @@ func TestNormalizeContactsToNFC_MissingLedgerFailsClosed(t *testing.T) {
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "data_backfills", fmt.Sprintf("got: %v", err))
 }
+
+// TestNormalizeContactsToNFC_EdgeBranches covers the branches the happy-path
+// tests cannot: a nil db handle, a wholly empty contacts table, and the three
+// failure exits (page query, save rollback atomicity, completion-record
+// insert).
+func TestNormalizeContactsToNFC_EdgeBranches(t *testing.T) {
+	t.Run("nil db is a no-op", func(t *testing.T) {
+		stats, err := NormalizeContactRecordsToNFC(nil)
+		require.NoError(t, err)
+		require.NotNil(t, stats)
+	})
+
+	t.Run("empty contacts table completes and records the ledger", func(t *testing.T) {
+		db := newSearchDB(t) // no contacts
+		stats, err := NormalizeContactRecordsToNFC(db)
+		require.NoError(t, err)
+		require.Zero(t, stats.ContactsScanned)
+		require.Zero(t, stats.ContactsNormalized)
+
+		second, err := NormalizeContactRecordsToNFC(db)
+		require.NoError(t, err)
+		require.True(t, second.AlreadyDone)
+	})
+
+	t.Run("page query failure errors loudly", func(t *testing.T) {
+		db := newSearchDB(t)
+		require.NoError(t, db.Exec("DROP TABLE contacts").Error) // Raw page query now has nothing to scan
+		_, err := NormalizeContactRecordsToNFC(db)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "page ids", fmt.Sprintf("got: %v", err))
+	})
+
+	t.Run("save failure rolls the page back atomically", func(t *testing.T) {
+		db := newSearchDB(t)
+		user := newUnicodeUser(t, db, "nfcbfatomic")
+		legacy := seedLegacyNFDContact(t, db, user.ID, "Jos\u0065\u0301", "P\u0065\u0301rez", "atomic@example.com")
+
+		// Block every UPDATE to contacts — the normalize save must fail and the
+		// page transaction (including the NFD->NFC rewrite) must roll back whole.
+		require.NoError(t, db.Exec("CREATE TRIGGER block_contact_save BEFORE UPDATE ON contacts BEGIN SELECT RAISE(ABORT, 'blocked'); END").Error)
+		_, err := NormalizeContactRecordsToNFC(db)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "save contact", fmt.Sprintf("got: %v", err))
+
+		var stored models.Contact
+		require.NoError(t, db.Unscoped().First(&stored, legacy.ID).Error)
+		assert.Equal(t, "Jos\u0065\u0301", stored.Firstname, "the aborted page must leave the NFD row untouched")
+		require.NoError(t, db.Exec("DROP TRIGGER block_contact_save").Error)
+	})
+
+	t.Run("unreadable card fails the page load loudly", func(t *testing.T) {
+		db := newSearchDB(t)
+		user := newUnicodeUser(t, db, "nfcbfbadcard")
+		c := seedLegacyNFDContact(t, db, user.ID, "Jos\u0065\u0301", "Q", "badcard@example.com")
+		require.NoError(t, db.Exec("UPDATE contacts SET card = '{not valid json' WHERE id = ?", c.ID).Error)
+
+		_, err := NormalizeContactRecordsToNFC(db)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "load page", fmt.Sprintf("got: %v", err))
+	})
+
+	t.Run("completion-record failure leaves rows normalized and errors", func(t *testing.T) {
+		db := newSearchDB(t)
+		user := newUnicodeUser(t, db, "nfcbfcomplete")
+		c := seedLegacyNFDContact(t, db, user.ID, "Jos\u0065\u0301", "P\u0065\u0301rez", "complete@example.com")
+
+		// Page work commits; only the final ledger INSERT fails. The backfill must
+		// error (the operator re-runs it) while the already-normalized rows stay
+		// normalized — the idempotent re-run covers the rest.
+		require.NoError(t, db.Exec("CREATE TRIGGER block_ledger_insert BEFORE INSERT ON data_backfills BEGIN SELECT RAISE(ABORT, 'blocked'); END").Error)
+		_, err := NormalizeContactRecordsToNFC(db)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "record completion", fmt.Sprintf("got: %v", err))
+		require.NoError(t, db.Exec("DROP TRIGGER block_ledger_insert").Error)
+
+		var stored models.Contact
+		require.NoError(t, db.First(&stored, c.ID).Error)
+		assert.Equal(t, "José", stored.Firstname, "page work before the ledger failure must be committed")
+
+		// Re-run now unblocked completes the ledger (no rows to rewrite — the
+		// page already committed), and a third run short-circuits on it.
+		stats, err := NormalizeContactRecordsToNFC(db)
+		require.NoError(t, err)
+		require.False(t, stats.AlreadyDone)
+		require.Zero(t, stats.ContactsNormalized)
+		third, err := NormalizeContactRecordsToNFC(db)
+		require.NoError(t, err)
+		require.True(t, third.AlreadyDone)
+	})
+}

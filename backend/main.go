@@ -271,8 +271,8 @@ func main() {
 	// encryption is armed (the card columns are encrypted when armed) and
 	// before the audit hash chain recompute below, so the audit rows this
 	// maintenance write appends are covered by the re-linked chain.
-	if _, err := services.NormalizeContactRecordsToNFC(db); err != nil {
-		logger.Fatal().Err(err).Msg("Failed to backfill Unicode NFC normalization")
+	if _, err := services.NormalizeContactRecordsToNFC(db); err != nil { // # pragma: no cover — main() startup wiring; the backfill itself is covered by services/unicode_nfc_backfill_test.go
+		logger.Fatal().Err(err).Msg("Failed to backfill Unicode NFC normalization") // # pragma: no cover — log.Fatal terminates the process
 	}
 
 	// T18 audit hash chain (issue #381): backfill hash/prev_hash for any rows
