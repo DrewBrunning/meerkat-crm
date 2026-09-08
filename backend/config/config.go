@@ -867,6 +867,12 @@ func (c *Config) GetReminderLocation() *time.Location {
 
 // ValidateOrPanic validates the configuration and panics with detailed error message if invalid
 func (c *Config) ValidateOrPanic() {
+	// MAINT-01 (issue #490): a deprecated configuration variable keeps working,
+	// unchanged, for its whole window; the only change is this WARN naming its
+	// replacement. Emitted before validation so it shows even on a boot that
+	// then panics. Empty today — see deprecatedEnvVars.
+	checkDeprecatedEnvVars(os.LookupEnv, func(msg string) { log.Println(msg) })
+
 	errors := c.Validate()
 	if len(errors) > 0 {
 		log.Println("❌ Configuration validation failed:")
@@ -880,4 +886,30 @@ func (c *Config) ValidateOrPanic() {
 		panic("Configuration validation failed")
 	}
 	log.Println("✓ Configuration validated successfully")
+}
+
+// deprecatedEnvVar records one retired configuration variable: the release it
+// was deprecated in, and the variable that replaces it.
+type deprecatedEnvVar struct {
+	Replacement string
+	Since       string
+}
+
+// deprecatedEnvVars is the configuration half of the MAINT-01 (issue #490)
+// runtime signal — the counterpart to the `config`-surface rows in
+// docs/deprecations.md. Every entry here has a register row. The map is empty
+// until the first configuration variable is deprecated; the first one to be
+// deprecated adds its entry in the same change that adds its register row.
+var deprecatedEnvVars = map[string]deprecatedEnvVar{}
+
+// checkDeprecatedEnvVars emits one WARN per *set* deprecated variable, naming
+// its replacement — an unset deprecated variable produces nothing. lookup and
+// warn are injected so the behavior is unit-testable without touching the
+// process environment or the logger.
+func checkDeprecatedEnvVars(lookup func(string) (string, bool), warn func(string)) {
+	for name, d := range deprecatedEnvVars {
+		if _, set := lookup(name); set {
+			warn(fmt.Sprintf("WARN: %s is deprecated (since %s); use %s instead", name, d.Since, d.Replacement))
+		}
+	}
 }
