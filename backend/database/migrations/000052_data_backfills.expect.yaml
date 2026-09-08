@@ -1,0 +1,17 @@
+# MIG-03 (issue #438) expectation file for migration 000052.
+#
+# This migration intentionally changes NO stored bytes: it only creates the
+# data_backfills completion-ledger table. The Unicode NFC rewrite it enables
+# (issue #485, I18N-02) runs as an idempotent Go startup backfill —
+# services.NormalizeContactRecordsToNFC — because SQL cannot express Unicode
+# normalization and the contacts.card/crm/passthrough columns are AES-GCM-
+# encrypted at rest when armed. That Go backfill rewrites stored bytes without
+# changing meaning; it is exercised by the backfill's own tests
+# (services/unicode_nfc_backfill_test.go), which assert row counts are
+# preserved, the rewrite is NFC, and the FTS index stays consistent.
+#
+# The "nothing changes" default therefore holds for this migration's SQL: no
+# cell declarations are needed. See backend/database/migrations/
+# EXPECTATION-FILES.md.
+migration: "000052_data_backfills"
+changes: []

@@ -6,7 +6,7 @@ has_children: false
 
 # Contact Sync (CardDAV)
 
-The built-in CardDAV server allows you to synchronize your contacts with your mobile device or computer (e.g. Apple Contacts in iPhone macOS Contacts or on Android with a third-party CardDAV client like DAVx⁵).
+The built-in CardDAV server allows you to synchronize your contacts with your mobile device or computer (e.g. Apple Contacts in iPhone macOS Contacts or on Android with a third-party CardDAV client like DAVx⁵). This page is the *served* direction — your instance's contacts going *out* to your devices. The *subscription* direction — pulling contacts **in** from someone else's CardDAV server — is the "CardDAV contact sync" integration; who owns it when it breaks and how to diagnose it is in [Integrations: ownership, diagnostics, and what breaks](integration-ownership.md#carddav).
 
 Enable CardDAV by setting the `CARDDAV_ENABLED` environment variable to `true`.  Once enabled, the CardDAV server runs alongside the web interface. A standard discovery endpoint is available at `/.well-known/carddav` for automatic configuration.
 

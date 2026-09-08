@@ -7,6 +7,15 @@ nav_order: 2
 
 ## Installation
 
+### System requirements
+
+Mycorrhizal CRM runs on Linux (`x86_64` or `arm64`) under Docker (Engine
+`>= 23.0` with Compose V2). Browsers: a current Chrome/Edge/Firefox, or
+Safari/iOS `16.4+`. The Android app requires Android 8.0+ (`minSdk 26`). The
+database directory **must be on local disk** — never a network filesystem.
+See [Supported versions](supported-versions.html) for the full statement,
+including what "supported" means and what happens on an unsupported version.
+
 ### Docker compose
 
 Mycorrhizal CRM ships as a single all-in-one image that bundles the frontend and backend into one container, built locally from source via the repository's `Dockerfile` (no published registry image is required).
@@ -14,7 +23,10 @@ Mycorrhizal CRM ships as a single all-in-one image that bundles the frontend and
 Clone the repository, copy the [sample docker compose file](https://github.com/DrewBrunning/mycorrhizal-crm/blob/main/docker-compose.yml) as well as [sample env file](https://github.com/DrewBrunning/mycorrhizal-crm/blob/main/.env.example) and rename the env file to `.env`.
 
 After adjusting the environment variables as needed you can run:
-```docker compose up -d --build```
+
+```sh
+docker compose up -d --build
+```
 
 These steps are exercised on every infra change (and nightly) by the
 `deploy-smoke` CI job, which follows this page from an empty state and then runs

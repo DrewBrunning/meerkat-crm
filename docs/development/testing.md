@@ -514,7 +514,7 @@ warned about. Two directions:
 
    | Server | Container | Layout | Divergence register |
    |---|---|---|---|
-   | Radicale | `tomsquest/docker-radicale` (digest-pinned) | `/<user>/contacts/` | vobject: `celine` rejected (multi-N ALTID), `bob` photo/ADR mangled |
+   | Radicale | `tomsquest/docker-radicale` (digest-pinned) | `/<user>/contacts/` | vobject: `celine` rejected (multi-N ALTID); vobject truncates N/ADR to their RFC 6350 component counts, so `bob` photo/ADR is mangled and the I18N personas lose the RFC 9554 additions (`carmen`/`joao` secondary surname, `somchai` subdistrict/district) — per-contact pinned |
    | Baikal | `ckulka/baikal` | `/dav.php/addressbooks/<user>/contacts/` | Sabre VObject serves vCard 3.0: the 4.0-only concepts land in passthrough (per-contact pinned) |
    | Nextcloud | `nextcloud:stable` | `/remote.php/dav/addressbooks/users/<user>/contacts/` | same as Baikal, plus `eve` rejected (BDAY re-validated as iCalendar datetime) |
    | DAViCal | — | — | not run: the only image (`janlo/davical`) is a legacy Debian-stretch build whose provisioning (SCRAM-incompatible libpq, no headless user/collection creation) is unpinnable. Covered structurally by the Sabre-family analysis via Baikal/Nextcloud. |

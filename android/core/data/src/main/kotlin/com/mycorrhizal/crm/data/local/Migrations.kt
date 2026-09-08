@@ -99,11 +99,40 @@ val MIGRATION_16_17: Migration = object : Migration(startVersion = 16, endVersio
 }
 
 /**
- * The [AppDatabase] schema version. A `const val` (rather than a bare `17` in the `@Database`
+ * I18N-02 (issue #485): switches `cached_contacts_fts` to the `unicode61`
+ * tokenizer so offline search matches the server's (see [CachedContactFts]'s
+ * doc comment). Only the virtual table changes — the content table and every
+ * other table are untouched, so a hand-written migration keeps this out of the
+ * destructive path (whose cost here, as ever, is `pending_interactions`).
+ *
+ * FTS4 virtual tables cannot change their tokenizer in place, so the mirror is
+ * dropped and recreated with `tokenize=unicode61`, then rebuilt from
+ * `cached_contacts`' current rows via the FTS `'rebuild'` command (a fresh
+ * external-content FTS table starts with an empty index). Room's own migration
+ * pipeline drops and recreates every `@Fts4` entity's sync triggers around
+ * every registered migration automatically (`RoomOpenDelegate.onPreMigrate`/
+ * `onPostMigrate`), so the new table gets its content-sync triggers back and
+ * the search stays populated after the hop.
+ */
+val MIGRATION_17_18: Migration = object : Migration(startVersion = 17, endVersion = 18) {
+    override fun migrate(connection: SQLiteConnection) {
+        connection.execSQL("DROP TABLE IF EXISTS `cached_contacts_fts`")
+        connection.execSQL(
+            "CREATE VIRTUAL TABLE IF NOT EXISTS `cached_contacts_fts` USING FTS4(" +
+                "`fn` TEXT, `firstname` TEXT, `lastname` TEXT, `primaryEmail` TEXT, " +
+                "`primaryPhone` TEXT, `phonesNormalized` TEXT, `org` TEXT, " +
+                "content=`cached_contacts`, tokenize=unicode61)",
+        )
+        connection.execSQL("INSERT INTO `cached_contacts_fts`(`cached_contacts_fts`) VALUES('rebuild')")
+    }
+}
+
+/**
+ * The [AppDatabase] schema version. A `const val` (rather than a bare `18` in the `@Database`
  * annotation) so [MigrationVersionCoverageTest] can read the exact same value the annotation
  * compiles with, instead of a second, independently-maintained copy of the number.
  */
-const val CURRENT_VERSION: Int = 17
+const val CURRENT_VERSION: Int = 18
 
 /**
  * Issue #480: the lowest [AppDatabase] version this repo has any evidence of shipping.
@@ -126,6 +155,7 @@ val REGISTERED_MIGRATIONS: List<Migration> = listOf(
     MIGRATION_14_15,
     MIGRATION_15_16,
     MIGRATION_16_17,
+    MIGRATION_17_18,
 )
 
 /**

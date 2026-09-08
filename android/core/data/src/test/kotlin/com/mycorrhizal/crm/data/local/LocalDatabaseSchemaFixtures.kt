@@ -189,4 +189,16 @@ object LocalDatabaseSchemaFixtures {
                 "PRIMARY KEY(`id`))",
         )
     }
+
+    /**
+     * The ANDROID-02 v17 shape (post [MIGRATION_16_17]): v16 plus
+     * `pending_interactions.idempotencyKey` — but the FTS mirror still uses the
+     * `simple` tokenizer, which is what a real v17 install upgrading to v18 has
+     * on disk. This is the "before" database for the v17→v18 hop. Does not set
+     * `db.version`.
+     */
+    fun createV17Tables(db: SQLiteDatabase) {
+        createV16Tables(db)
+        db.execSQL("ALTER TABLE `pending_interactions` ADD COLUMN `idempotencyKey` TEXT")
+    }
 }

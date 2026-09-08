@@ -20,8 +20,11 @@ rather than only in a forum answer.
 The backend logs a startup warning if it detects a known network-filesystem type under the
 database path, but that detection cannot cover every case (see
 [the supported runtime matrix](development/supported-runtime-matrix.md) for what it does and does
-not catch, plus every other supported-version floor for this project). Photos and attachments have
-no such constraint — see [Backups](#backups) below for where each piece of data lives.
+not catch). Photos and attachments have no such constraint — see [Backups](#backups) below for where
+each piece of data lives. The rest of what this software runs on — host/architecture, Docker and
+Compose floors, browsers, Android, and the supported deployment shape — is stated for operators in
+[Supported versions](supported-versions.html), which summarizes the same matrix rather than
+restating it.
 
 ## How the Docker Setup Works
 
@@ -324,6 +327,7 @@ copied — the failure is silent until someone opens that attachment. `make back
 attachment and profile-photo row against the files present, regardless of who copied them.
 
 ```sh
+# from a checkout of this repo (run inside backend/); the Docker image has no Go toolchain
 SQLITE_DB_PATH=/backups/mycorrhizal.db PROFILE_PHOTO_DIR=/backups/photos \
   ATTACHMENTS_DIR=/backups/attachments make backup-verify
 ```

@@ -18,6 +18,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"golang.org/x/text/unicode/norm"
 	"gorm.io/gorm"
 )
 
@@ -860,8 +861,18 @@ func NormalizeGender(input string) string {
 	}
 }
 
-// DetectDuplicate checks for existing contacts matching the given fields
+// DetectDuplicate checks for existing contacts matching the given fields.
+//
+// The name/email comparisons are byte keys (SQLite LOWER + LOWER(param)), so
+// the incoming values are NFC-folded here before they reach those keys —
+// the duplicate-detection half of I18N-02 (issue #485): an NFD spelling must
+// match an NFC-stored spelling. (Stored data is NFC by the write boundary;
+// this makes the detector robust to any caller that has not already gone
+// through ApplyRecordToContact.)
 func DetectDuplicate(db *gorm.DB, userID uint, firstname, lastname, email, phone string) *models.DuplicateMatch {
+	firstname = norm.NFC.String(firstname)
+	lastname = norm.NFC.String(lastname)
+	email = norm.NFC.String(email)
 	var existing models.Contact
 
 	// Priority 1: Email match (if email provided)
@@ -1470,10 +1481,10 @@ func contactsMatchWithinBatch(a, b *models.Contact) bool {
 		}
 	}
 
-	aFN := strings.ToLower(strings.TrimSpace(a.Firstname))
-	aLN := strings.ToLower(strings.TrimSpace(a.Lastname))
-	bFN := strings.ToLower(strings.TrimSpace(b.Firstname))
-	bLN := strings.ToLower(strings.TrimSpace(b.Lastname))
+	aFN := strings.ToLower(norm.NFC.String(strings.TrimSpace(a.Firstname)))
+	aLN := strings.ToLower(norm.NFC.String(strings.TrimSpace(a.Lastname)))
+	bFN := strings.ToLower(norm.NFC.String(strings.TrimSpace(b.Firstname)))
+	bLN := strings.ToLower(norm.NFC.String(strings.TrimSpace(b.Lastname)))
 	if aFN != "" && aLN != "" && aFN == bFN && aLN == bLN {
 		return true
 	}

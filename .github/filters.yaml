@@ -123,6 +123,13 @@ differential:
 # (backend/services/fake_carddav_server_test.go + carddav_roundtrip_test.go)
 # runs on every backend change via the backend filter — this gate is only for
 # the real-server complement.
+#
+# The suite stages EVERY non-soft-deleted contact in the TEST-02 canonical
+# manifest onto the real servers, so a persona-only change to the fixture (or
+# its Go loader) changes what the divergence register must pin — issue #852,
+# where I18N-01 grew the manifest without the register and this gate could not
+# see it because the fixture package was not listed here and the job is skipped
+# on main pushes.
 carddav:
   - '.github/workflows/carddav-e2e.yml'
   - '.github/scripts/carddav-reference/**'
@@ -134,6 +141,8 @@ carddav:
   - 'backend/services/fake_carddav_server_test.go'
   - 'backend/services/carddav_roundtrip_test.go'
   - 'backend/services/carddav_radicale_integration_test.go'
+  - 'backend/internal/canonicalfixture/**'
+  - 'testdata/canonical-fixture/**'
 
 # reference-clients (issue #681, TEST-09 direction 1): the scheduled job that
 # drives a REAL third-party client (vdirsyncer) against OUR server. Same
@@ -143,6 +152,10 @@ reference-clients:
   - '.github/scripts/carddav-reference/**'
   - 'backend/carddav/**'
   - 'backend/services/carddav_vdirsyncer_integration_test.go'
+  # Same reason as the carddav filter: this suite stages the whole TEST-02
+  # canonical manifest, so a persona-only fixture change must run it (#852).
+  - 'backend/internal/canonicalfixture/**'
+  - 'testdata/canonical-fixture/**'
 
 workflows:
   - '.github/**'

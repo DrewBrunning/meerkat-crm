@@ -50,6 +50,39 @@ still restores those from the routine three-piece backup
 Upgrading is unattended; that is exactly why the supported range is bounded and
 why the refusal cases below fail loudly instead of best-effort.
 
+### The client side of an upgrade
+
+Upgrading the server does not, by itself, require anyone to update their
+clients. Backward compatibility is the norm here: **a server upgrade never
+breaks an existing client until the server explicitly declares a floor**, and
+shipping a floor is a deliberate, documented, breaking event — not a side
+effect of a routine upgrade. The full statement, including the supported
+server×client combinations, is the [client/server compatibility
+policy](client-compatibility-policy.md) (ANDROID-01, issue #478); this section
+is the operator-facing summary:
+
+- **Web client.** Nothing to do. Every user's next page load fetches the
+  current build through the service worker; the app handles asset-skew and a
+  stale-`/health`-contract window itself (prompting or force-reloading the tab
+  as needed). See [Service-worker updates](service-worker-updates.md) for the
+  mechanics and the `/_recovery.html` escape hatch.
+- **Android app.** A newer server keeps working with older app releases until
+  the server declares a floor. If a future server release does raise
+  `MIN_CLIENT_VERSION` above the app someone is running, that app shows a
+  blocking **"Update required"** screen at the next login and cannot proceed
+  until updated — it does not fail mid-sync or corrupt anything. There is
+  currently **no floor declared** (the supported combinations table in the
+  policy has a single row: every released client works with every released
+  server), so today an upgrade needs no app update.
+- **What to do when the release notes say otherwise.** The only case an
+  operator acts on is a server release whose notes declare a new client floor —
+  a MAINT-02 breaking change that ships through the deprecation process, never
+  silently. Then update the Android app before (or promptly after) the server;
+  the app's own "Update required" screen is the signal that matters. A *newer*
+  app on an *older* server is a separate, non-breaking direction: the app hides
+  or disables features the older server does not have (see the policy's
+  "newer client, older server" section).
+
 ### Known defect — upgrading into v0.6.1–v0.6.8 with existing audit history
 
 **Affected:** a direct upgrade from **≤ v0.6.0** to any of **v0.6.1 – v0.6.8**
@@ -74,7 +107,7 @@ the new version and not dirty — this is a startup-job failure, not a
 migration-state refusal, so none of the four refusal states below describe it.
 
 **Recovery.** [migration-recovery.md → At-rest backfill vs. the audit-events
-trigger](../operations/migration-recovery.md#at-rest-backfill-vs-the-audit-events-trigger):
+trigger](operations/migration-recovery.md#at-rest-backfill-vs-the-audit-events-trigger):
 roll back to the pre-migration snapshot and wait for v0.6.9, or — to stay on the
 upgraded release — drop the `audit_events_no_update` trigger for one successful
 boot and let startup recreate it.
@@ -158,10 +191,10 @@ that snapshot is the only rollback point.
 
 | State | Behavior | Operator action |
 |---|---|---|
-| Sub-floor schema (below `000031`) | **Refuse**, print the two-step message above, exit | Two-step through `v0.6.0`, or the documented bridge — see the [below-the-floor section](../operations/migration-recovery.md#below-the-floor) |
-| Dirty schema | **Refuse** (`ErrDirtyMigration`): a migration started and did not finish, so the schema state is unknown | Restore the pre-migration backup and start again — see the [dirty-schema section](../operations/migration-recovery.md#dirty-schema). Only after verifying the schema actually matches the named version, `make migrate-force` (prompted, operator-only) — never automatic |
-| Schema ahead of the binary | **Refuse** (`ErrSchemaAheadOfBinary`): the database knows migrations this binary does not, meaning a rollback is in progress | Deploy a binary that knows the newer migration, or restore the backup taken before the newer release ran — see the [ahead-of-the-binary section](../operations/migration-recovery.md#schema-ahead-of-the-binary) |
-| Pre-migration backup target unwritable | **Refuse** (`ErrPreMigrationBackupFailed`): pending migrations exist but the mandatory snapshot could not be written; the database is untouched | Make the backup directory writable, or set `MYCORRHIZAL_PRE_MIGRATION_BACKUP_DIR` to a writable path, then start again — see [The pre-migration backup](../operations/migration-recovery.md#the-pre-migration-backup) |
+| Sub-floor schema (below `000031`) | **Refuse**, print the two-step message above, exit | Two-step through `v0.6.0`, or the documented bridge — see the [below-the-floor section](operations/migration-recovery.md#below-the-floor) |
+| Dirty schema | **Refuse** (`ErrDirtyMigration`): a migration started and did not finish, so the schema state is unknown | Restore the pre-migration backup and start again — see the [dirty-schema section](operations/migration-recovery.md#dirty-schema). Only after verifying the schema actually matches the named version, `make migrate-force` (prompted, operator-only) — never automatic |
+| Schema ahead of the binary | **Refuse** (`ErrSchemaAheadOfBinary`): the database knows migrations this binary does not, meaning a rollback is in progress | Deploy a binary that knows the newer migration, or restore the backup taken before the newer release ran — see the [ahead-of-the-binary section](operations/migration-recovery.md#schema-ahead-of-the-binary) |
+| Pre-migration backup target unwritable | **Refuse** (`ErrPreMigrationBackupFailed`): pending migrations exist but the mandatory snapshot could not be written; the database is untouched | Make the backup directory writable, or set `MYCORRHIZAL_PRE_MIGRATION_BACKUP_DIR` to a writable path, then start again — see [The pre-migration backup](operations/migration-recovery.md#the-pre-migration-backup) |
 
 ### Dirty schema — interrupted migration
 

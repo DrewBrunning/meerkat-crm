@@ -40,7 +40,7 @@ scope for L1 — but the ignore-list is explicit rather than silent.
 
 **Defends against:** an on-path attacker (rogue Wi-Fi AP, compromised router, malicious CA) presenting
 a valid-but-wrong certificate for the operator's domain. **Costs:** every user runs their own
-**self-hosted** server (`docs/deployment.md:32`) with a certificate the app cannot know in advance —
+**self-hosted** server (`docs/deployment.md:35`) with a certificate the app cannot know in advance —
 frequently self-signed or issued by an internal/private CA the user set up themselves, rotated on
 whatever schedule that user chooses. A pin the app ships with would be wrong for essentially every
 install on day one, and a pin computed from the first-seen cert (trust-on-first-use) is a materially
