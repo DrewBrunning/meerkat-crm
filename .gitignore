@@ -32,6 +32,8 @@ backend/mycorrhizal
 backend/main
 # `go build ./cmd/perfbench` run from backend/ writes ./perfbench there.
 backend/perfbench
+# likewise `go build ./cmd/pentestseed` (issue #849).
+backend/pentestseed
 # `go build ./...` (or plain `go build .`) run from inside a cmd/<tool>/
 # directory writes a same-named binary there — caught once for loadsmoke
 # (issue #262), added generally so the next cmd/ tool doesn't repeat it.
@@ -42,6 +44,7 @@ backend/cmd/*/loadsmoke
 backend/cmd/*/bolacheck
 backend/cmd/*/schemagate
 backend/cmd/*/deploysmoke
+backend/cmd/*/pentestseed
 
 # Go specific
 *.test

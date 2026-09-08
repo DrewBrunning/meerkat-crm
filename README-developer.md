@@ -132,6 +132,15 @@
 - Results (`*-benchmarkData.json` + Perfetto traces) land under `android/macrobenchmark/build/outputs/`.
 - CI runs it via the `android-macrobenchmark` job in [.github/workflows/android-tests.yml](.github/workflows/android-tests.yml) — same emulator + backend as `android-e2e`, same triggers (nightly / manual dispatch / path-gated push to `main`, never on a PR), `continue-on-error` so a red run never blocks. The trace/JSON is kept as a run artifact.
 
+**Pen-test / demo environment (issue #849)**
+- A one-command, reproducible instance of the shipped image pre-populated with realistic multi-user data (contacts, relationships, notes, activities, mixed sensitivities, soft-deletes, duplicates) — every seeded user a working login, one an admin, credentials written to the data volume. For hands-on penetration testing and for documentation screenshots.
+  ```bash
+  docker compose -f docker-compose.pentest.yml up -d --build --wait
+  docker compose -f docker-compose.pentest.yml exec mycorrhizal cat /app/data/credentials.json
+  docker compose -f docker-compose.pentest.yml down -v   # wipe
+  ```
+- `PENTEST_PROFILE=demo|smoke|typical|large` selects dataset size (default `demo`: one user, 27 contacts, screenshot-ready). Data is generated fresh from the drift-gated canonical manifest, so it stays current with the schema. Full runbook: [docs/development/pentest-environment.md](docs/development/pentest-environment.md).
+
 **DAST (OWASP ZAP, issue #368)**
 - Dynamic application security testing: boots the real all-in-one image (`docker-compose.test.yml`), then runs OWASP ZAP against it — an authenticated API scan seeded from [backend/openapi.yaml](backend/openapi.yaml) (via a minted `full`-scope API token handed to ZAP as a bearer header) plus an active scan of the SPA and the CardDAV/CalDAV discovery surface.
 - The scan definition lives in [zap/zap-dast.yaml](zap/zap-dast.yaml); the pass/fail policy lives in [backend/cmd/zapgate](backend/cmd/zapgate) plus the ignore-list [zap/dast.ignore](zap/dast.ignore) (same "ignore-list with justification" shape as `android/.mobsf` and `docker/cis-hardening.ignore`).
