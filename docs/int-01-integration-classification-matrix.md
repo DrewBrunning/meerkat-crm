@@ -127,6 +127,22 @@ carry no user-supplied URL, so there is no dialer to guard — the next reader s
 *why*, instead of assuming every outbound call is dial-guarded. An `unguarded` row
 would be a known gap with a named fix; there are none today.
 
+### Operator posture (issue #870)
+
+The `guarded-when-enabled` rows are only guarded when the operator opts in. The
+default (off) assumes a **trusted LAN** where webhooks and integrations
+legitimately target private hosts. On a deployment reachable from the internet, or
+one hosting accounts the operator does not vet, that set must be switched on —
+`WEBHOOK_BLOCK_PRIVATE_URLS`, `CALDAV_BLOCK_PRIVATE_URLS`,
+`IMMICH_BLOCK_PRIVATE_URLS`, `PAPERLESS_BLOCK_PRIVATE_URLS`,
+`SEAFILE_BLOCK_PRIVATE_URLS`, `WEBDAV_BLOCK_PRIVATE_URLS`,
+`MONICA_BLOCK_PRIVATE_URLS`, `OIDC_BLOCK_PRIVATE_URLS` all `true`. With them off,
+the app-layer guard is inactive and only a network egress policy stands between an
+authenticated user's integration URL and an internal or cloud-metadata address
+(`169.254.169.254`). Operator checklist: the "SSRF hardening" row in
+`docs/security/deployment-baseline.md`; `.env.example` groups the flags under
+"SSRF hardening".
+
 ## Per-integration detail
 
 Each integration states its concrete required behavior for all seven failure modes
