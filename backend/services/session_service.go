@@ -126,7 +126,7 @@ func PurgeExpiredSessionsScheduled(db *gorm.DB) {
 	}
 	defer func() {
 		if err := releaseJobLock(db, models.JobNameSessionPurge, true); err != nil {
-			logger.Error().Err(err).Msg("session purge: failed to release job lock")
+			logger.Error().Err(err).Msg("session purge: failed to release job lock") // # pragma: no cover — releaseJobLock only errors on a failing store
 		}
 	}()
 

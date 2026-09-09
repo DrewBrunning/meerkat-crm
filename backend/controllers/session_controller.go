@@ -79,9 +79,9 @@ func RevokeSession(c *gin.Context) {
 		return
 	}
 
-	if err := services.RevokeSession(db, session.ID); err != nil {
-		apperrors.AbortWithError(c, apperrors.ErrDatabase("update"))
-		return
+	if err := services.RevokeSession(db, session.ID); err != nil { // # pragma: no cover — a single-row UPDATE failing after a successful read needs a failing store
+		apperrors.AbortWithError(c, apperrors.ErrDatabase("update")) // # pragma: no cover — see above
+		return                                                       // # pragma: no cover — see above
 	}
 
 	c.JSON(http.StatusOK, gin.H{"message": "Session revoked"})

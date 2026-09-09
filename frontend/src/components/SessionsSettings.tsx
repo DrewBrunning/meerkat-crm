@@ -54,7 +54,9 @@ export default function SessionsSettings() {
     setBusyId(session.id);
     try {
       await revokeSession(session.id);
-      showSuccess(session.current ? t('sessions.revokeCurrentSuccess') : t('sessions.revokeSuccess'));
+      showSuccess(
+        session.current ? t('sessions.revokeCurrentSuccess') : t('sessions.revokeSuccess'),
+      );
       await refresh();
     } catch (err) {
       showError(err instanceof Error ? err.message : t('sessions.revokeError'));

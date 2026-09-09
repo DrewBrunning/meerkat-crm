@@ -356,6 +356,20 @@ func TestValidate_JWTExpiryHours(t *testing.T) {
 	assert.True(t, hasFieldError(errs, "JWT_EXPIRY_HOURS"), "negative expiry should error")
 }
 
+func TestValidate_SessionIdleTimeoutHours(t *testing.T) {
+	cfg := validConfig() // SessionIdleTimeoutHours defaults to 0 (disabled)
+	assert.False(t, hasFieldError(cfg.Validate(), "SESSION_IDLE_TIMEOUT_HOURS"), "0 is valid (disabled)")
+
+	cfg.SessionIdleTimeoutHours = 12
+	assert.False(t, hasFieldError(cfg.Validate(), "SESSION_IDLE_TIMEOUT_HOURS"), "a value under the JWT ceiling is valid")
+
+	cfg.SessionIdleTimeoutHours = -1
+	assert.True(t, hasFieldError(cfg.Validate(), "SESSION_IDLE_TIMEOUT_HOURS"), "negative should error")
+
+	cfg.SessionIdleTimeoutHours = cfg.JWTExpiryHours + 1
+	assert.True(t, hasFieldError(cfg.Validate(), "SESSION_IDLE_TIMEOUT_HOURS"), "above the JWT absolute ceiling should error")
+}
+
 func TestValidate_Timeouts(t *testing.T) {
 	cfg := validConfig()
 	cfg.ReadTimeout = 0

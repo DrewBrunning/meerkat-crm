@@ -41,10 +41,18 @@ func seedCtrlSession(t *testing.T, db *gorm.DB, userID uint, id string) {
 }
 
 func sessionRouter(db *gorm.DB, userID uint, sid string) *gin.Engine {
+	return sessionRouterOpts(db, &userID, sid)
+}
+
+// sessionRouterOpts builds the /sessions router; a nil userID omits the
+// context value entirely, so the handlers' currentUserID !ok branch runs.
+func sessionRouterOpts(db *gorm.DB, userID *uint, sid string) *gin.Engine {
 	r := gin.New()
 	r.Use(func(c *gin.Context) {
 		c.Set("db", db)
-		c.Set("userID", userID)
+		if userID != nil {
+			c.Set("userID", *userID)
+		}
 		if sid != "" {
 			c.Set("sessionID", sid)
 		}
@@ -86,6 +94,25 @@ func TestListSessions_ScopedToUserWithCurrentFlag(t *testing.T) {
 	assert.False(t, byID["a-phone"].Current)
 }
 
+// An API-token caller has a userID but no session row, so currentSessionID
+// falls back to "" and no row is flagged current.
+func TestListSessions_NoCurrentSessionForAPITokenCaller(t *testing.T) {
+	db, a, _ := sessionCtrlEnv(t)
+	seedCtrlSession(t, db, a, "a-desktop")
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/sessions", nil)
+	sessionRouter(db, a, "").ServeHTTP(w, req) // "" -> sessionID not set in context
+
+	require.Equal(t, http.StatusOK, w.Code)
+	var body struct {
+		Sessions []models.SessionResponse `json:"sessions"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	require.Len(t, body.Sessions, 1)
+	assert.False(t, body.Sessions[0].Current)
+}
+
 func TestRevokeSession_OwnSessionOK_OtherUserIs404(t *testing.T) {
 	db, a, b := sessionCtrlEnv(t)
 	seedCtrlSession(t, db, a, "a-phone")
@@ -108,6 +135,40 @@ func TestRevokeSession_OwnSessionOK_OtherUserIs404(t *testing.T) {
 	var bLaptop models.Session
 	require.NoError(t, db.First(&bLaptop, "id = ?", "b-laptop").Error)
 	assert.Nil(t, bLaptop.RevokedAt)
+}
+
+func TestSessionEndpoints_RequireAuthAndSurfaceDBErrors(t *testing.T) {
+	db, a, _ := sessionCtrlEnv(t)
+	seedCtrlSession(t, db, a, "a-desktop")
+
+	// --- no userID in context -> currentUserID !ok -> 401 on every endpoint ---
+	noAuth := sessionRouterOpts(db, nil, "")
+	for _, tc := range []struct{ method, path string }{
+		{http.MethodGet, "/sessions"},
+		{http.MethodDelete, "/sessions"},
+		{http.MethodDelete, "/sessions/a-desktop"},
+	} {
+		w := httptest.NewRecorder()
+		req, _ := http.NewRequest(tc.method, tc.path, nil)
+		noAuth.ServeHTTP(w, req)
+		assert.Equal(t, http.StatusUnauthorized, w.Code, "%s %s", tc.method, tc.path)
+	}
+
+	// --- a dead DB -> the query/update error branches -> 500 ---
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+	dead := sessionRouter(db, a, "a-desktop")
+
+	wList := httptest.NewRecorder()
+	reqList, _ := http.NewRequest(http.MethodGet, "/sessions", nil)
+	dead.ServeHTTP(wList, reqList)
+	assert.Equal(t, http.StatusInternalServerError, wList.Code)
+
+	wAll := httptest.NewRecorder()
+	reqAll, _ := http.NewRequest(http.MethodDelete, "/sessions", nil)
+	dead.ServeHTTP(wAll, reqAll)
+	assert.Equal(t, http.StatusInternalServerError, wAll.Code)
 }
 
 func TestRevokeOtherSessions_KeepsCurrentRevokesRest(t *testing.T) {

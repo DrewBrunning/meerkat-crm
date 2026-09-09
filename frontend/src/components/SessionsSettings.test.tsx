@@ -103,9 +103,12 @@ test('revoking a session calls the API and refetches', async () => {
   await waitFor(() => expect(getHandler).toHaveBeenCalledTimes(2));
 });
 
-test('"log out all other devices" is shown only when there is another session', async () => {
+test('"log out all other devices" revokes the rest and refetches', async () => {
+  const getHandler = vi.fn(() => twoSessions);
+  const delAllHandler = vi.fn(() => ({ message: 'Other sessions revoked', revoked: 1 }));
   mockFetchByUrl({
-    'GET /sessions': () => ({ sessions: [twoSessions.sessions[0]] }),
+    'GET /sessions': getHandler,
+    'DELETE /sessions': delAllHandler,
   });
 
   render(
@@ -114,6 +117,96 @@ test('"log out all other devices" is shown only when there is another session', 
     </SnackbarProvider>,
   );
 
-  await waitFor(() => expect(screen.getByText('Firefox on Linux')).toBeInTheDocument());
-  expect(screen.queryByText('Log out all other devices')).not.toBeInTheDocument();
+  await waitFor(() => expect(screen.getByText('Safari on iPhone')).toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: 'Log out all other devices' }));
+
+  await waitFor(() => expect(delAllHandler).toHaveBeenCalledTimes(1));
+  await waitFor(() => expect(getHandler).toHaveBeenCalledTimes(2));
+  expect(await screen.findByText('1 other session revoked')).toBeInTheDocument();
+});
+
+test('the button is hidden and the unknown-device fallback shows for a lone session', async () => {
+  mockFetchByUrl({
+    'GET /sessions': () => ({
+      sessions: [{ ...twoSessions.sessions[0], user_agent: '', ip: '' }],
+    }),
+  });
+
+  render(
+    <SnackbarProvider>
+      <SessionsSettings />
+    </SnackbarProvider>,
+  );
+
+  await waitFor(() => expect(screen.getByText('Unknown device')).toBeInTheDocument());
+  expect(
+    screen.queryByRole('button', { name: 'Log out all other devices' }),
+  ).not.toBeInTheDocument();
+});
+
+test('shows an error alert when the list fails to load', async () => {
+  mockFetchByUrl({
+    'GET /sessions': () => ({ ok: false, body: { error: 'sessions are down' } }),
+  });
+
+  render(
+    <SnackbarProvider>
+      <SessionsSettings />
+    </SnackbarProvider>,
+  );
+
+  // The refresh() catch branch surfaces the failure as an inline Alert.
+  expect(await screen.findByText('sessions are down')).toBeInTheDocument();
+  expect(screen.queryByText('Active sessions')).toBeInTheDocument(); // card still renders
+});
+
+test('renders the empty state when there are no sessions', async () => {
+  mockFetchByUrl({ 'GET /sessions': () => ({ sessions: [] }) });
+
+  render(
+    <SnackbarProvider>
+      <SessionsSettings />
+    </SnackbarProvider>,
+  );
+
+  expect(await screen.findByText('No active sessions')).toBeInTheDocument();
+});
+
+test('surfaces a snackbar error when revoking fails', async () => {
+  mockFetchByUrl({
+    'GET /sessions': () => twoSessions,
+    'DELETE /sessions/sid-phone': () => ({ ok: false, body: { error: 'nope' } }),
+  });
+
+  render(
+    <SnackbarProvider>
+      <SessionsSettings />
+    </SnackbarProvider>,
+  );
+
+  await waitFor(() => expect(screen.getByText('Safari on iPhone')).toBeInTheDocument());
+  const phoneRow = screen.getByText('Safari on iPhone').closest('tr') as HTMLElement;
+  fireEvent.click(within(phoneRow).getByRole('button', { name: 'Revoke' }));
+
+  expect(await screen.findByRole('alert')).toBeInTheDocument();
+  // the row is still there — the failure didn't wipe the list
+  expect(screen.getByText('Safari on iPhone')).toBeInTheDocument();
+});
+
+test('surfaces a snackbar error when "log out others" fails', async () => {
+  mockFetchByUrl({
+    'GET /sessions': () => twoSessions,
+    'DELETE /sessions': () => ({ ok: false, body: { error: 'nope' } }),
+  });
+
+  render(
+    <SnackbarProvider>
+      <SessionsSettings />
+    </SnackbarProvider>,
+  );
+
+  await waitFor(() => expect(screen.getByText('Safari on iPhone')).toBeInTheDocument());
+  fireEvent.click(screen.getByRole('button', { name: 'Log out all other devices' }));
+
+  expect(await screen.findByRole('alert')).toBeInTheDocument();
 });

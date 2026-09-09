@@ -154,6 +154,28 @@ func TestAuthMiddleware_JWTWithoutSidClaimRejected(t *testing.T) {
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
 
+// Issue #866: a token whose `sid` names no row (e.g. the row was purged, or
+// the token was minted against a different database) is rejected.
+func TestAuthMiddleware_JWTWithUnknownSidRejected(t *testing.T) {
+	db, router := setupAuthTestRouter()
+
+	var user models.User
+	db.First(&user)
+
+	w := jwtRequest(router, signJWT(t, jwt.MapClaims{
+		"user_id":       user.ID,
+		"username":      user.Username,
+		"token_version": user.TokenVersion,
+		"sid":           "sess-that-does-not-exist",
+		"exp":           time.Now().Add(time.Hour).Unix(),
+	}))
+
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+	var body map[string]string
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
+	assert.Equal(t, "Session expired, please sign in again", body["error"])
+}
+
 // Issue #866: the logout path revokes the session row; the very next request
 // with the same (otherwise valid, unexpired) token must fail.
 func TestAuthMiddleware_JWTRejectedAfterSessionRevoked(t *testing.T) {

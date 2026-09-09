@@ -204,7 +204,7 @@ func TouchSession(db *gorm.DB, sid string, at time.Time) {
 	go func(sid string) {
 		if err := db.Model(&models.Session{}).Where("id = ?", sid).
 			Update("last_seen_at", at).Error; err != nil {
-			logger.Logger.Warn().Err(err).Str("session_id", sid).Msg("Failed to update session last_seen_at")
+			logger.Logger.Warn().Err(err).Str("session_id", sid).Msg("Failed to update session last_seen_at") // # pragma: no cover — background best-effort write; only a failing store trips this
 		}
 	}(sid)
 }

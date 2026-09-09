@@ -86,6 +86,28 @@ func TestIssueSession_MintsRowAndTokenCarryingSid(t *testing.T) {
 	assert.Equal(t, uid, s.UserID)
 }
 
+func TestCreateSession_ClosedDBErrors(t *testing.T) {
+	db, uid := newSessionDB(t)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	_, err = CreateSession(db, uid, sessionCfg(), "", "")
+	assert.Error(t, err)
+}
+
+func TestIssueSession_PropagatesCreateError(t *testing.T) {
+	db, uid := newSessionDB(t)
+	var user models.User
+	require.NoError(t, db.First(&user, uid).Error)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	_, err = IssueSession(db, user, sessionCfg(), "", "")
+	assert.Error(t, err)
+}
+
 func TestRevokeSession_SetsRevokedAtOnceAndIsIdempotent(t *testing.T) {
 	db, uid := newSessionDB(t)
 	id, err := CreateSession(db, uid, sessionCfg(), "", "")

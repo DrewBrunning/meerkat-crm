@@ -84,8 +84,8 @@ func SessionIDFromToken(tokenString string, cfg *config.Config) string {
 	token, err := parser.Parse(tokenString, func(t *jwt.Token) (any, error) {
 		return []byte(cfg.JWTSecretKey), nil
 	})
-	if token == nil {
-		return ""
+	if token == nil { // # pragma: no cover — jwt.Parse yields a non-nil token even on a malformed string in this version; defensive
+		return "" // # pragma: no cover — see above
 	}
 	// An expired-but-otherwise-valid token still yields its claims here; only
 	// a signature/format failure leaves them untrustworthy.
@@ -93,8 +93,8 @@ func SessionIDFromToken(tokenString string, cfg *config.Config) string {
 		return ""
 	}
 	claims, ok := token.Claims.(jwt.MapClaims)
-	if !ok {
-		return ""
+	if !ok { // # pragma: no cover — jwt.Parse always constructs MapClaims; defensive, mirrors AuthMiddleware
+		return "" // # pragma: no cover — see above
 	}
 	sid, _ := claims["sid"].(string)
 	return sid
