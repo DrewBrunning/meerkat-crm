@@ -143,6 +143,10 @@ var steps = []step{
 	{"search-contact", (*smokeRun).searchContact},
 	{"export", (*smokeRun).exportAndReadBack},
 	{"refetch-fields", (*smokeRun).refetchAndAssertFields},
+	// Exercises the shipped nginx layer specifically — no Go test in this repo
+	// sees nginx (httptest hits the Gin router directly), so a proxy-config
+	// regression is invisible everywhere else.
+	{"wellknown-discovery", (*smokeRun).wellKnownDiscoveryRelative}, // issue #865
 }
 
 // checkHealth asserts the three-endpoint health surface (issue #421) reports
@@ -436,6 +440,55 @@ func (r *smokeRun) exportAndReadBack() error {
 		}
 		if !bytes.Contains(body, []byte(smokeSurname)) {
 			return fmt.Errorf("GET %s: export does not contain %q: %s", ex.path, smokeSurname, truncate(body, 400))
+		}
+	}
+	return nil
+}
+
+// wellKnownDiscoveryRelative pins issue #865: the CardDAV/CalDAV .well-known
+// discovery redirects were emitted by nginx with the default
+// absolute_redirect, which builds the Location from the Host header and
+// nginx's own listen port — leaking the internal :8080 and handing real
+// clients (arriving over https on the published port) a URL they cannot
+// follow. A relative Location resolves against the request URI and carries
+// neither.
+func (r *smokeRun) wellKnownDiscoveryRelative() error {
+	// A client that does not follow redirects, so the 301 itself is readable.
+	noRedirect := &http.Client{
+		Jar:     r.client.Jar,
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	for _, wk := range []struct{ path, want string }{
+		{"/.well-known/carddav", "/carddav/"},
+		{"/.well-known/caldav", "/caldav/"},
+	} {
+		req, err := http.NewRequest(http.MethodGet, r.baseURL+wk.path, nil)
+		if err != nil {
+			return fmt.Errorf("build request for %s: %w", wk.path, err)
+		}
+		resp, err := noRedirect.Do(req)
+		if err != nil {
+			return fmt.Errorf("GET %s: %w", wk.path, err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusMovedPermanently {
+			return fmt.Errorf("GET %s: status %d, want 301", wk.path, resp.StatusCode)
+		}
+		loc := resp.Header.Get("Location")
+		if loc == "" {
+			return fmt.Errorf("GET %s: 301 with no Location header", wk.path)
+		}
+		if strings.Contains(loc, ":8080") {
+			return fmt.Errorf("GET %s: Location %q discloses the internal port — nginx absolute_redirect must be off (issue #865)", wk.path, loc)
+		}
+		if strings.HasPrefix(loc, "http://") || strings.HasPrefix(loc, "https://") {
+			return fmt.Errorf("GET %s: Location %q is absolute; a relative Location avoids the scheme/port leak (issue #865)", wk.path, loc)
+		}
+		if loc != wk.want {
+			return fmt.Errorf("GET %s: Location %q, want %q", wk.path, loc, wk.want)
 		}
 	}
 	return nil

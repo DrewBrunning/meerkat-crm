@@ -164,6 +164,10 @@ func (s *stubServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	case r.Method == http.MethodGet && p == "/api/v1/export":
 		s.export(w, "export-bundle-code", "export-bundle-noname", "=== CONTACTS ===\nID,Lastname\n1,"+smokeSurname+"\n")
+	case r.Method == http.MethodGet && p == "/.well-known/carddav":
+		s.wellKnown(w, "/carddav/")
+	case r.Method == http.MethodGet && p == "/.well-known/caldav":
+		s.wellKnown(w, "/caldav/")
 	default:
 		s.t.Errorf("stub: unexpected request %s %s", r.Method, p)
 		w.WriteHeader(http.StatusNotFound)
@@ -300,6 +304,23 @@ func (s *stubServer) export(w http.ResponseWriter, codeFault, nonameFault, okBod
 	}
 }
 
+// wellKnown models an nginx .well-known discovery 301 (issue #865). The happy
+// path emits a relative Location; the faults model the internal-port leak and
+// a non-redirect response.
+func (s *stubServer) wellKnown(w http.ResponseWriter, target string) {
+	switch s.fault {
+	case "wellknown-port-leak":
+		w.Header().Set("Location", "http://localhost:8080"+target)
+		w.WriteHeader(http.StatusMovedPermanently)
+	case "wellknown-not-301":
+		w.Header().Set("Location", target)
+		w.WriteHeader(http.StatusOK)
+	default:
+		w.Header().Set("Location", target)
+		w.WriteHeader(http.StatusMovedPermanently)
+	}
+}
+
 func (s *stubServer) refetch(w http.ResponseWriter) {
 	switch s.fault {
 	case "refetch-code":
@@ -391,6 +412,8 @@ func TestRun_StepFailures(t *testing.T) {
 		{"export-jscontact-noname", "export"},
 		{"export-bundle-code", "export"},
 		{"export-bundle-noname", "export"},
+		{"wellknown-port-leak", "wellknown-discovery"},
+		{"wellknown-not-301", "wellknown-discovery"},
 		{"refetch-code", "refetch-fields"},
 		{"refetch-garbage", "refetch-fields"},
 		{"refetch-noname", "refetch-fields"},
