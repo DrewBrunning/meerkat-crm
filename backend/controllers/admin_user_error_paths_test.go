@@ -270,8 +270,8 @@ func TestDeleteUserAttachmentFiles_LogsStoredPathErrors(t *testing.T) {
 	assert.True(t, os.IsNotExist(err), "the valid stored name must still be removed")
 }
 
-func TestDeleteUser_LastAdminCountError(t *testing.T) {
-	// The last-admin guard's count query failing must 500 before any delete.
+func TestDeleteUser_UserLookupError(t *testing.T) {
+	// A DB failure while loading the target user must 500 before any delete.
 	db := dbtest.New(t)
 	actor := models.User{Username: "countadmin", Password: "password123!A", Email: "countadmin@example.com"}
 	require.NoError(t, db.Create(&actor).Error)
