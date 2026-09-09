@@ -466,6 +466,8 @@ func TestDeliverWebhookConnectionErrorSchedulesRetry(t *testing.T) {
 
 	assert.Nil(t, delivery.StatusCode, "a transport-level failure never gets a status code")
 	require.NotNil(t, delivery.Error)
+	assert.Equal(t, genericDeliveryTransportError, *delivery.Error,
+		"the stored transport error must be generic, not the raw dial error (issue #869)")
 	require.NotNil(t, delivery.NextRetryAt)
 }
 
@@ -484,6 +486,8 @@ func TestDeliverWebhookMalformedURLSchedulesRetry(t *testing.T) {
 
 	assert.Nil(t, delivery.StatusCode)
 	require.NotNil(t, delivery.Error)
+	assert.Equal(t, genericDeliveryInvalidURL, *delivery.Error,
+		"the http.NewRequest error branch must store a generic string, not the raw URL parse error (issue #869)")
 	require.NotNil(t, delivery.NextRetryAt)
 }
 
@@ -684,5 +688,9 @@ func TestTestWebhookDeliveryRecordsFailureOnUnreachableURL(t *testing.T) {
 
 	assert.Nil(t, delivery.StatusCode)
 	require.NotNil(t, delivery.Error)
+	// The /test endpoint echoes this string straight back to the caller, so it
+	// must not name the dialed host:port or say "connection refused" (#869).
+	assert.Equal(t, genericDeliveryTransportError, *delivery.Error)
+	assert.NotContains(t, *delivery.Error, "127.0.0.1")
 	assert.Equal(t, "test", delivery.EventType)
 }
