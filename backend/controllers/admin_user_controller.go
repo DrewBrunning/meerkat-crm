@@ -481,6 +481,13 @@ func UpdateUser(c *gin.Context) {
 		if _, err := services.RevokeAllDeviceGrants(db, user.ID); err != nil {
 			log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after admin password reset") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
 		}
+		// Issue #866: revoke the server-side session rows alongside the
+		// token_version bump so an admin takeover response ends them at the
+		// row level too (this admin is not the reset user, so nothing is
+		// re-issued — the user logs in fresh).
+		if _, err := services.RevokeAllSessions(db, user.ID); err != nil {
+			log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke sessions after admin password reset") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
+		}
 	}
 
 	// T18 audit: admin user edit, with the security-relevant deltas spelled
@@ -580,6 +587,10 @@ func ResetUserTwoFactor(c *gin.Context) {
 	// gone, so remembered devices must re-enroll under the new posture.
 	if _, err := services.RevokeAllDeviceGrants(db, user.ID); err != nil {
 		log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after 2FA reset") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
+	}
+	// Issue #866: an admin 2FA reset revokes the server-side session rows too.
+	if _, err := services.RevokeAllSessions(db, user.ID); err != nil {
+		log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke sessions after 2FA reset") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
 	}
 
 	// Issue #592 audit: admin-initiated 2FA reset, attributed to the acting
@@ -767,6 +778,12 @@ func DeleteUser(c *gin.Context) {
 		// Delete device grants (issue #722) — the biometric-login credentials
 		// die with the account, exactly like API tokens.
 		if err := tx.Where("user_id = ?", userID).Delete(&models.DeviceGrant{}).Error; err != nil {
+			return err
+		}
+
+		// Delete session rows (issue #866) — hard delete; the FK is ON DELETE
+		// CASCADE but the manual enumeration is the convention (backend trap #6).
+		if err := tx.Where("user_id = ?", userID).Delete(&models.Session{}).Error; err != nil {
 			return err
 		}
 

@@ -71,6 +71,7 @@ import NextcloudSettings from './components/NextcloudSettings';
 import NotificationSettings from './components/NotificationSettings';
 import PaperlessSettings from './components/PaperlessSettings';
 import SeafileSettings from './components/SeafileSettings';
+import SessionsSettings from './components/SessionsSettings';
 import TwoFactorSettings from './components/TwoFactorSettings';
 import WebhooksSettings from './components/WebhooksSettings';
 import { useSnackbar } from './context/SnackbarContext';
@@ -604,6 +605,9 @@ export default function SettingsPage() {
 
       {/* N8: TOTP two-factor auth */}
       <TwoFactorSettings />
+
+      {/* Issue #866: active-session inventory */}
+      <SessionsSettings />
 
       <WebhooksSettings />
 

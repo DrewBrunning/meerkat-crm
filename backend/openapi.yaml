@@ -7011,6 +7011,93 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
 
+  # --- Sessions (issue #866) ---
+  /sessions:
+    get:
+      summary: List the current account's active sessions
+      operationId: listSessions
+      description: |
+        Issue #866: one row per interactive login (password, 2FA, OIDC,
+        device-grant exchange) that is still active — not revoked, not past
+        its absolute expiry. The `current` flag marks the session making the
+        request. Used by the "active sessions" management surface (ASVS 3.3.4).
+      responses:
+        "200":
+          description: The account's active sessions, newest activity first.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SessionResponse"
+        "401":
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    delete:
+      summary: Revoke every other session ("log out everywhere else")
+      operationId: revokeOtherSessions
+      description: |
+        Issue #866: revokes all of the caller's sessions except the one making
+        the request. Server-side revocation is immediate — a revoked session's
+        next request 401s (ASVS 3.3.4).
+      responses:
+        "200":
+          description: Other sessions revoked.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                  revoked:
+                    type: integer
+                    description: How many previously-active sessions were revoked.
+        "401":
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /sessions/{id}:
+    delete:
+      summary: Revoke one session
+      operationId: revokeSession
+      description: |
+        Issue #866: ends a single session by id. Revoking the current session
+        is equivalent to logging out this device. Scoped to the caller — a
+        session id belonging to another account is a 404.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: Session revoked (also returned if it was already revoked).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/MessageResponse"
+        "401":
+          description: Not authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: No such session for this account.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
   # --- Webhooks ---
   /webhooks:
     get:
@@ -12531,6 +12618,17 @@ components:
         - type: object
           properties:
             token: { type: string, description: "The plaintext token, shown only once." }
+    SessionResponse:
+      type: object
+      description: One active server-side session (issue #866).
+      properties:
+        id: { type: string, description: "Opaque session id; the value also carried in the JWT 'sid' claim. Target for DELETE /sessions/{id}." }
+        created_at: { type: string, format: date-time }
+        last_seen_at: { type: string, format: date-time, description: "Last authenticated request on this session (throttled to ~1/min)." }
+        expires_at: { type: string, format: date-time, description: "Absolute expiry — created_at + JWT_EXPIRY_HOURS." }
+        user_agent: { type: string, description: "User-Agent captured at login; display only." }
+        ip: { type: string, description: "Client IP captured at login; display only." }
+        current: { type: boolean, description: "True for the session making this request." }
     DeviceGrantInput:
       type: object
       properties:

@@ -492,6 +492,9 @@ func buildTable(s seeded) map[string]authzRow {
 		"POST /api/v1/api-tokens/revoke-all": {class: classProtected},
 		"DELETE /api/v1/api-tokens/:id":      {class: classItem, probe: "/api/v1/api-tokens/" + fabricatedNum},
 		"POST /api/v1/api-tokens/:id/rotate": {class: classItem, probe: "/api/v1/api-tokens/" + fabricatedNum + "/rotate"},
+		"GET /api/v1/sessions":               {class: classProtected},
+		"DELETE /api/v1/sessions":            {class: classProtected},
+		"DELETE /api/v1/sessions/:id":        {class: classItem, probe: "/api/v1/sessions/" + fabricatedNum},
 
 		// --- device grants (issue #722, the server half of biometric login) --
 		"GET /api/v1/auth/device/grants":             {class: classProtected},
@@ -663,7 +666,7 @@ func TestAuthorizationMatrix(t *testing.T) {
 	// --- mint tokens --------------------------------------------------------
 	tokens := map[persona]string{}
 	mint := func(u models.User) string {
-		tok, err := services.GenerateToken(u, cfg)
+		tok, err := services.IssueSession(db, u, cfg, "", "")
 		require.NoError(t, err)
 		return tok
 	}

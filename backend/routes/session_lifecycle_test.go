@@ -126,9 +126,11 @@ func seedUser(t *testing.T, db *gorm.DB, username, password string, isAdmin bool
 	return u
 }
 
-func mintToken(t *testing.T, cfg *config.Config, u models.User) string {
+func mintToken(t *testing.T, db *gorm.DB, cfg *config.Config, u models.User) string {
 	t.Helper()
-	tok, err := services.GenerateToken(u, cfg)
+	// issue #866: IssueSession also writes the server-side session row that
+	// AuthMiddleware now requires, so tests exercise the real login path.
+	tok, err := services.IssueSession(db, u, cfg, "", "")
 	require.NoError(t, err)
 	return tok
 }
@@ -211,7 +213,7 @@ func TestSessionLifecycle_ChangePasswordRevokesPriorSessions(t *testing.T) {
 	db, router, cfg := lifecycleEnv(t)
 	user := seedUser(t, db, lifecycleUsername(t), lifecyclePassword, false)
 
-	oldToken := mintToken(t, cfg, user)
+	oldToken := mintToken(t, db, cfg, user)
 	require.Equal(t, http.StatusOK, probe(t, router, oldToken))
 
 	w := doJSON(t, router, http.MethodPost, "/api/v1/users/change-password", oldToken, map[string]string{
@@ -222,14 +224,21 @@ func TestSessionLifecycle_ChangePasswordRevokesPriorSessions(t *testing.T) {
 
 	// The pre-change token is dead; a freshly minted one still works.
 	assert.Equal(t, http.StatusUnauthorized, probe(t, router, oldToken))
-	assert.Equal(t, http.StatusOK, probe(t, router, mintToken(t, cfg, reloadUser(t, db, user.ID))))
+	assert.Equal(t, http.StatusOK, probe(t, router, mintToken(t, db, cfg, reloadUser(t, db, user.ID))))
+
+	// Issue #866: the change also revoked the server-side session row, not
+	// only bumped token_version — the pre-change row carries a revoked_at.
+	var revoked int64
+	require.NoError(t, db.Model(&models.Session{}).
+		Where("user_id = ? AND revoked_at IS NOT NULL", user.ID).Count(&revoked).Error)
+	assert.GreaterOrEqual(t, revoked, int64(1), "the prior session row is marked revoked")
 }
 
 func TestSessionLifecycle_PasswordResetRevokesPriorSessions(t *testing.T) {
 	db, router, cfg := lifecycleEnv(t)
 	user := seedUser(t, db, lifecycleUsername(t), lifecyclePassword, false)
 
-	oldToken := mintToken(t, cfg, user)
+	oldToken := mintToken(t, db, cfg, user)
 	require.Equal(t, http.StatusOK, probe(t, router, oldToken))
 
 	// Seed a pending reset token the way RequestPasswordReset would, then drive
@@ -250,39 +259,63 @@ func TestSessionLifecycle_PasswordResetRevokesPriorSessions(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, "password-reset/confirm: %s", w.Body.String())
 
 	assert.Equal(t, http.StatusUnauthorized, probe(t, router, oldToken))
-	assert.Equal(t, http.StatusOK, probe(t, router, mintToken(t, cfg, reloadUser(t, db, user.ID))))
+	assert.Equal(t, http.StatusOK, probe(t, router, mintToken(t, db, cfg, reloadUser(t, db, user.ID))))
 }
 
 func TestSessionLifecycle_TOTPEnableRevokesPriorSessions(t *testing.T) {
 	db, router, cfg := lifecycleEnv(t)
 	user := seedUser(t, db, lifecycleUsername(t), lifecyclePassword, false)
 
-	oldToken := mintToken(t, cfg, user)
+	oldToken := mintToken(t, db, cfg, user)
 	require.Equal(t, http.StatusOK, probe(t, router, oldToken))
 
 	enableTwoFactor(t, router, oldToken)
 
 	assert.Equal(t, http.StatusUnauthorized, probe(t, router, oldToken))
-	assert.Equal(t, http.StatusOK, probe(t, router, mintToken(t, cfg, reloadUser(t, db, user.ID))))
+	assert.Equal(t, http.StatusOK, probe(t, router, mintToken(t, db, cfg, reloadUser(t, db, user.ID))))
 }
 
 func TestSessionLifecycle_TOTPDisableRevokesPriorSessions(t *testing.T) {
 	db, router, cfg := lifecycleEnv(t)
 	user := seedUser(t, db, lifecycleUsername(t), lifecyclePassword, false)
 
-	oldToken := mintToken(t, cfg, user)
+	oldToken := mintToken(t, db, cfg, user)
 	require.Equal(t, http.StatusOK, probe(t, router, oldToken))
 	secret, _ := enableTwoFactor(t, router, oldToken)
 
 	// Enabling bumped TokenVersion; mint a fresh session to drive the disable.
-	enabledToken := mintToken(t, cfg, reloadUser(t, db, user.ID))
+	enabledToken := mintToken(t, db, cfg, reloadUser(t, db, user.ID))
 	require.Equal(t, http.StatusOK, probe(t, router, enabledToken))
 
 	w := doJSON(t, router, http.MethodPost, "/api/v1/users/2fa/disable", enabledToken, map[string]string{"code": totpCode(t, secret)})
 	require.Equal(t, http.StatusOK, w.Code, "disable: %s", w.Body.String())
 
 	assert.Equal(t, http.StatusUnauthorized, probe(t, router, enabledToken))
-	assert.Equal(t, http.StatusOK, probe(t, router, mintToken(t, cfg, reloadUser(t, db, user.ID))))
+	assert.Equal(t, http.StatusOK, probe(t, router, mintToken(t, db, cfg, reloadUser(t, db, user.ID))))
+}
+
+// Issue #866 (pen-test #860 F-6): POST /logout must revoke *this device's*
+// server-side session row so a token copied before logout stops working — but
+// only that device's, not every session for the user.
+func TestSessionLifecycle_LogoutRevokesThisDeviceOnly(t *testing.T) {
+	db, router, cfg := lifecycleEnv(t)
+	user := seedUser(t, db, lifecycleUsername(t), lifecyclePassword, false)
+
+	deviceA := mintToken(t, db, cfg, user)
+	deviceB := mintToken(t, db, cfg, user)
+	require.Equal(t, http.StatusOK, probe(t, router, deviceA))
+	require.Equal(t, http.StatusOK, probe(t, router, deviceB))
+
+	// /logout reads the sid from the auth_token *cookie*, not a bearer header.
+	req, _ := http.NewRequest(http.MethodPost, "/api/v1/logout", nil)
+	req.AddCookie(&http.Cookie{Name: "auth_token", Value: deviceA})
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code, "logout: %s", w.Body.String())
+
+	// The replayed pre-logout token is now rejected; the other device is not.
+	assert.Equal(t, http.StatusUnauthorized, probe(t, router, deviceA))
+	assert.Equal(t, http.StatusOK, probe(t, router, deviceB))
 }
 
 func TestSessionLifecycle_AdminPasswordResetRevokesPriorSessions(t *testing.T) {
@@ -290,8 +323,8 @@ func TestSessionLifecycle_AdminPasswordResetRevokesPriorSessions(t *testing.T) {
 	admin := seedUser(t, db, lifecycleUsername(t)+"-admin", lifecyclePassword, true)
 	target := seedUser(t, db, lifecycleUsername(t)+"-target", lifecyclePassword, false)
 
-	adminToken := mintToken(t, cfg, admin)
-	targetToken := mintToken(t, cfg, target)
+	adminToken := mintToken(t, db, cfg, admin)
+	targetToken := mintToken(t, db, cfg, target)
 	require.Equal(t, http.StatusOK, probe(t, router, targetToken))
 
 	w := doJSON(t, router, http.MethodPatch, "/api/v1/admin/users/"+strconv.FormatUint(uint64(target.ID), 10), adminToken, map[string]string{
@@ -300,7 +333,7 @@ func TestSessionLifecycle_AdminPasswordResetRevokesPriorSessions(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, "admin password reset: %s", w.Body.String())
 
 	assert.Equal(t, http.StatusUnauthorized, probe(t, router, targetToken))
-	assert.Equal(t, http.StatusOK, probe(t, router, mintToken(t, cfg, reloadUser(t, db, target.ID))))
+	assert.Equal(t, http.StatusOK, probe(t, router, mintToken(t, db, cfg, reloadUser(t, db, target.ID))))
 }
 
 // Issue #413: an admin password reset is the operator-side response to a
@@ -313,8 +346,8 @@ func TestSessionLifecycle_AdminPasswordResetRevokesAPITokens(t *testing.T) {
 	admin := seedUser(t, db, lifecycleUsername(t)+"-admin", lifecyclePassword, true)
 	target := seedUser(t, db, lifecycleUsername(t)+"-target", lifecyclePassword, false)
 
-	adminToken := mintToken(t, cfg, admin)
-	targetToken := mintToken(t, cfg, target)
+	adminToken := mintToken(t, db, cfg, admin)
+	targetToken := mintToken(t, db, cfg, target)
 
 	w := doJSON(t, router, http.MethodPost, "/api/v1/api-tokens", targetToken, map[string]string{"name": "target-script"})
 	require.Equal(t, http.StatusCreated, w.Code, "create api-token: %s", w.Body.String())
@@ -339,7 +372,7 @@ func TestSessionLifecycle_RevokedAPITokenIsRejectedImmediately(t *testing.T) {
 	db, router, cfg := lifecycleEnv(t)
 	user := seedUser(t, db, lifecycleUsername(t), lifecyclePassword, false)
 
-	session := mintToken(t, cfg, user)
+	session := mintToken(t, db, cfg, user)
 
 	w := doJSON(t, router, http.MethodPost, "/api/v1/api-tokens", session, map[string]string{"name": "revoke-me"})
 	require.Equal(t, http.StatusCreated, w.Code, "create api-token: %s", w.Body.String())
@@ -367,7 +400,7 @@ func TestSessionLifecycle_RevokeAllAPITokensRejectsImmediately(t *testing.T) {
 	db, router, cfg := lifecycleEnv(t)
 	user := seedUser(t, db, lifecycleUsername(t), lifecyclePassword, false)
 
-	session := mintToken(t, cfg, user)
+	session := mintToken(t, db, cfg, user)
 
 	w := doJSON(t, router, http.MethodPost, "/api/v1/api-tokens", session, map[string]string{"name": "one"})
 	require.Equal(t, http.StatusCreated, w.Code, "create api-token 1: %s", w.Body.String())
@@ -402,7 +435,7 @@ func TestSessionLifecycle_RotatedAPITokenReplacesOldOne(t *testing.T) {
 	db, router, cfg := lifecycleEnv(t)
 	user := seedUser(t, db, lifecycleUsername(t), lifecyclePassword, false)
 
-	session := mintToken(t, cfg, user)
+	session := mintToken(t, db, cfg, user)
 
 	w := doJSON(t, router, http.MethodPost, "/api/v1/api-tokens", session, map[string]string{"name": "rotate-me"})
 	require.Equal(t, http.StatusCreated, w.Code, "create api-token: %s", w.Body.String())
@@ -433,7 +466,7 @@ func TestSessionLifecycle_SoftDeletedUserCannotAuthenticate(t *testing.T) {
 	db, router, cfg := lifecycleEnv(t)
 	user := seedUser(t, db, lifecycleUsername(t), lifecyclePassword, false)
 
-	oldToken := mintToken(t, cfg, user)
+	oldToken := mintToken(t, db, cfg, user)
 	require.Equal(t, http.StatusOK, probe(t, router, oldToken))
 
 	// Soft-delete the account (the "disabled" persona). No API endpoint does
@@ -443,20 +476,20 @@ func TestSessionLifecycle_SoftDeletedUserCannotAuthenticate(t *testing.T) {
 	// Neither a pre-delete token nor a freshly minted one may authenticate:
 	// AuthMiddleware's user lookup misses the soft-deleted row.
 	assert.Equal(t, http.StatusUnauthorized, probe(t, router, oldToken))
-	assert.Equal(t, http.StatusUnauthorized, probe(t, router, mintToken(t, cfg, user)))
+	assert.Equal(t, http.StatusUnauthorized, probe(t, router, mintToken(t, db, cfg, user)))
 }
 
 func TestSessionLifecycle_RecoveryCodeRegenerationInvalidatesPriorCodes(t *testing.T) {
 	db, router, cfg := lifecycleEnv(t)
 	user := seedUser(t, db, lifecycleUsername(t), lifecyclePassword, false)
 
-	oldToken := mintToken(t, cfg, user)
+	oldToken := mintToken(t, db, cfg, user)
 	require.Equal(t, http.StatusOK, probe(t, router, oldToken))
 	secret, oldCodes := enableTwoFactor(t, router, oldToken)
 	require.Len(t, oldCodes, 10)
 
 	// Enabling bumped TokenVersion; mint a fresh session to drive regeneration.
-	enabledToken := mintToken(t, cfg, reloadUser(t, db, user.ID))
+	enabledToken := mintToken(t, db, cfg, reloadUser(t, db, user.ID))
 	w := doJSON(t, router, http.MethodPost, "/api/v1/users/2fa/recovery-codes/regenerate", enabledToken, map[string]string{"code": totpCode(t, secret)})
 	require.Equal(t, http.StatusOK, w.Code, "regenerate: %s", w.Body.String())
 	var resp struct {

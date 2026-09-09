@@ -6462,6 +6462,61 @@
     },
     {
       "method": "GET",
+      "path": "/sessions",
+      "parameters": null,
+      "responses": [
+        {
+          "status": "200",
+          "schema": "object"
+        },
+        {
+          "status": "401",
+          "schema": "ref:Error"
+        }
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/sessions",
+      "parameters": null,
+      "responses": [
+        {
+          "status": "200",
+          "schema": "object"
+        },
+        {
+          "status": "401",
+          "schema": "ref:Error"
+        }
+      ]
+    },
+    {
+      "method": "DELETE",
+      "path": "/sessions/{id}",
+      "parameters": [
+        {
+          "name": "id",
+          "in": "path",
+          "required": true
+        }
+      ],
+      "responses": [
+        {
+          "status": "200",
+          "schema": "ref:MessageResponse"
+        },
+        {
+          "status": "401",
+          "schema": "ref:Error"
+        },
+        {
+          "status": "404",
+          "schema": "ref:Error"
+        }
+      ]
+    },
+    {
+      "method": "GET",
       "path": "/tags",
       "parameters": [
         {
@@ -15439,6 +15494,46 @@
       "properties": [
         {
           "name": "vcard_uid",
+          "type": "string",
+          "required": false
+        }
+      ]
+    },
+    {
+      "name": "SessionResponse",
+      "properties": [
+        {
+          "name": "created_at",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "current",
+          "type": "boolean",
+          "required": false
+        },
+        {
+          "name": "expires_at",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "id",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "ip",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "last_seen_at",
+          "type": "string",
+          "required": false
+        },
+        {
+          "name": "user_agent",
           "type": "string",
           "required": false
         }

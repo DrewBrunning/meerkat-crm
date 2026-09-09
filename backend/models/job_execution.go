@@ -86,6 +86,11 @@ const (
 	// idempotency_keys rows past their (short) TTL window (issue #459, CON-04).
 	JobNameIdempotencyKeyPurge = "idempotency_key_purge"
 
+	// JobNameSessionPurge is the job name for the periodic removal of sessions
+	// rows past their absolute expiry (plus a grace window) and long-revoked
+	// rows (issue #866).
+	JobNameSessionPurge = "session_purge"
+
 	// JobNameAlertEval is the job name for the scheduled alert evaluator that
 	// detects failure/recovery transitions on the tracked subsystems and
 	// notifies on them (issue #428).

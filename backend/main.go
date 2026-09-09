@@ -383,6 +383,16 @@ func main() {
 	s.Every(6).Hours().Do(recoverJob(db, models.JobNameIdempotencyKeyPurge, models.JobTriggerScheduled, idempotencyKeyPurgeTask))
 	go safeGo(db, models.JobNameIdempotencyKeyPurge, models.JobTriggerInitial, idempotencyKeyPurgeTask)
 
+	// Purge expired / long-revoked session rows (issue #866). Not disablable —
+	// an expired session row has no recovery value. Job-lock guarded against
+	// multi-instance double-purge.
+	sessionPurgeTask := func() error {
+		services.PurgeExpiredSessionsScheduled(db)
+		return nil
+	}
+	s.Every(6).Hours().Do(recoverJob(db, models.JobNameSessionPurge, models.JobTriggerScheduled, sessionPurgeTask))
+	go safeGo(db, models.JobNameSessionPurge, models.JobTriggerInitial, sessionPurgeTask)
+
 	// Emit overdue-cadence webhooks daily (T19). Job-lock guarded so a
 	// multi-instance deploy does not double-fire. Reports the number emitted.
 	cadenceOverdueTask := func() (int, error) { return services.ProcessOverdueCadences(db, *cfg) }

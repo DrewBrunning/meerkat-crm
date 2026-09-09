@@ -110,6 +110,7 @@ var declaredCascadeCoverage = map[string]cascadeBucket{
 	"reach_out_cursors":      goCascadeUser,
 	"recovery_codes":         goCascadeUser,
 	"seafile_configs":        goCascadeUser,
+	"sessions":               goCascadeUser,
 	"tags":                   goCascadeUser,
 	"users":                  goCascadeUser,
 	"webdav_configs":         goCascadeUser,

@@ -443,6 +443,14 @@ func RegisterRoutes(router *gin.Engine, cfg *config.Config, db *gorm.DB, oidcPro
 			protected.DELETE("/api-tokens/:id", controllers.RevokeApiToken)
 			protected.POST("/api-tokens/:id/rotate", controllers.RotateApiToken)
 
+			// Issue #866: active-session inventory. List this account's live
+			// sessions, revoke one by id (revoking the current one == logout
+			// this device), or revoke every other session ("log out
+			// everywhere else"). ASVS 3.3.4.
+			protected.GET("/sessions", controllers.ListSessions)
+			protected.DELETE("/sessions", controllers.RevokeOtherSessions)
+			protected.DELETE("/sessions/:id", controllers.RevokeSession)
+
 			// Issue #722: device grants (the server half of fully biometric
 			// login) — enrolled by the authenticated caller, listed so a user
 			// can see what's signed in, and revoked individually or all at
