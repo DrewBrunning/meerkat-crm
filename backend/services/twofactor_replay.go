@@ -45,6 +45,9 @@ func ValidateTOTPStep(secret, code string) (step int64, ok bool) {
 	// Oldest first, so a match is deterministic if (impossibly, for distinct
 	// codes) more than one candidate step validated.
 	for _, candidate := range []int64{current - 1, current, current + 1} {
+		if candidate < 0 {
+			continue // # pragma: no cover -- only reachable with a system clock set before 1970; the guard makes the uint64 conversion below provably non-negative (gosec G115)
+		}
 		valid, err := hotp.ValidateCustom(code, uint64(candidate), secret, opts)
 		if err == nil && valid {
 			return candidate, true
