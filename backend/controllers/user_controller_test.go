@@ -295,9 +295,19 @@ func TestLoginUser_UnknownIdentifier_ResponseIsIndistinguishable(t *testing.T) {
 	wrongPwCode, wrongPwBody, _ := post("realuser_ind@example.com")
 	unknownCode, unknownBody, unknownDur := post("ghost_ind@example.com")
 
+	// The error *envelope* carries a per-response `timestamp`, which is not an
+	// enumeration signal (both branches set it) and can straddle a second
+	// boundary on a slow runner — compare the `error` object, which is what a
+	// caller could actually use to tell the two branches apart.
+	errObj := func(body []byte) any {
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(body, &m))
+		return m["error"]
+	}
+
 	assert.Equal(t, http.StatusUnauthorized, wrongPwCode)
 	assert.Equal(t, wrongPwCode, unknownCode, "status must not distinguish unknown identifier from wrong password")
-	assert.Equal(t, string(wrongPwBody), string(unknownBody), "body must not distinguish unknown identifier from wrong password")
+	assert.Equal(t, errObj(wrongPwBody), errObj(unknownBody), "error body must not distinguish unknown identifier from wrong password")
 	assert.Greater(t, unknownDur, 10*time.Millisecond,
 		"unknown-identifier login must still spend a bcrypt comparison (issue #862); got %s", unknownDur)
 }
