@@ -192,6 +192,13 @@ func TestReadiness_FilesystemDirNotWritable(t *testing.T) {
 }
 
 // --- deep health --------------------------------------------------------
+//
+// GET /health is unauthenticated and reports ONLY the rolled-up status word
+// (plus build/compat identity). The per-facet breakdown — job names,
+// integrity-check / restore-drill / data-integrity state, integration
+// reachability — is admin-only at GET /api/v1/admin/system-status (issue
+// #864). These tests exercise the roll-up through the controller; the facet
+// logic itself is covered in services/deep_health_test.go.
 
 func TestDeepHealth_DegradedWhenIntegrityCheckNeverRecorded(t *testing.T) {
 	_, cfg, r := migratedHealthRouter(t)
@@ -200,11 +207,8 @@ func TestDeepHealth_DegradedWhenIntegrityCheckNeverRecorded(t *testing.T) {
 	code, body := getJSON(t, r, "/health")
 	require.Equal(t, http.StatusOK, code, "degraded is still 200 — degraded-but-alive is not down")
 	require.Equal(t, "degraded", body["status"])
-
-	checks, _ := body["checks"].(map[string]any)
-	facet, _ := checks["integrity_check"].(map[string]any)
-	require.Equal(t, "degraded", facet["status"])
-	require.Contains(t, facet["reason"], "never recorded")
+	_, hasChecks := body["checks"]
+	require.False(t, hasChecks, "the facet breakdown is admin-only (issue #864)")
 }
 
 func TestDeepHealth_HealthyWithRecordedOKResults(t *testing.T) {
@@ -235,17 +239,18 @@ func TestDeepHealth_DegradedWhenIntegrityCheckFailed(t *testing.T) {
 		CheckedAt: time.Now(),
 	}).Error)
 
-	code, body := getJSON(t, r, "/health")
-	require.Equal(t, http.StatusOK, code)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/health", nil)
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	require.Equal(t, "degraded", body["status"])
-	checks, _ := body["checks"].(map[string]any)
-	facet, _ := checks["integrity_check"].(map[string]any)
-	require.Equal(t, "degraded", facet["status"])
-	reason, _ := facet["reason"].(string)
-	require.Contains(t, reason, "failed")
-	// The stored detail (table names / schema internals) must NOT leak into
-	// this unauthenticated response — it goes to the log + failure webhook.
-	require.NotContains(t, reason, "page 42 is corrupt")
+	// Neither the facet nor the stored detail reach the unauthenticated body.
+	_, hasChecks := body["checks"]
+	require.False(t, hasChecks)
+	require.NotContains(t, w.Body.String(), "page 42 is corrupt")
 }
 
 func TestDeepHealth_DegradedOnStuckJobLock(t *testing.T) {
@@ -259,13 +264,16 @@ func TestDeepHealth_DegradedOnStuckJobLock(t *testing.T) {
 		LockedBy:  "dead-worker",
 	}).Error)
 
-	code, body := getJSON(t, r, "/health")
-	require.Equal(t, http.StatusOK, code)
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest(http.MethodGet, "/health", nil)
+	r.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	var body map[string]any
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	require.Equal(t, "degraded", body["status"])
-	checks, _ := body["checks"].(map[string]any)
-	facet, _ := checks["background_jobs"].(map[string]any)
-	require.Equal(t, "degraded", facet["status"])
-	require.Contains(t, facet["reason"], "calendar_sync")
+	// The stuck job still degrades the roll-up, but its name does not leak.
+	require.NotContains(t, w.Body.String(), "calendar_sync")
 }
 
 func TestDeepHealth_StillUnhealthyWhenDatabaseDown(t *testing.T) {
@@ -278,11 +286,15 @@ func TestDeepHealth_StillUnhealthyWhenDatabaseDown(t *testing.T) {
 	require.Equal(t, "unhealthy", body["status"])
 }
 
-// The deep endpoint is unauthenticated, so its reason/detail strings must not
-// leak internals — absolute paths, the operator's SMTP host, raw dial errors,
-// or the integrity/restore-drill detail (which can carry table names + row
-// counts). Detail belongs in the server log + failure webhook, not this body.
-func TestDeepHealth_ResponseBodyLeaksNoInternals(t *testing.T) {
+// TestDeepHealth_ResponseBodyOmitsFacetBreakdown is the issue #864 regression
+// guard: with every facet-degrading condition in play (integrity check
+// enabled but failing, a stuck job lock, SMTP + FCM configured) the
+// unauthenticated /health body still carries no per-facet breakdown at all —
+// no checks object, no internal job names, no integration keys, no
+// integrity/restore-drill state, and none of the operator secrets that the
+// deep snapshot's reason strings are sanitized against. It stays a useful
+// one-word degraded report.
+func TestDeepHealth_ResponseBodyOmitsFacetBreakdown(t *testing.T) {
 	db, cfg, r := migratedHealthRouter(t)
 	cfg.DBIntegrityCheckEnabled = true
 	cfg.UseSMTP = true
@@ -296,28 +308,43 @@ func TestDeepHealth_ResponseBodyLeaksNoInternals(t *testing.T) {
 		Detail:    "contacts: live=1234 restored=1200; secret_table page 7 malformed",
 		CheckedAt: time.Now(),
 	}).Error)
+	locked := time.Now().Add(-30 * time.Minute)
+	require.NoError(t, db.Create(&models.JobExecution{
+		JobName: "calendar_sync", LastRunAt: locked, LockedAt: &locked, LockedBy: "dead-worker",
+	}).Error)
 
 	w := httptest.NewRecorder()
 	req, _ := http.NewRequest(http.MethodGet, "/health", nil)
 	r.ServeHTTP(w, req)
 	raw := w.Body.String()
 
+	var body map[string]any
+	require.NoError(t, json.Unmarshal([]byte(raw), &body))
+	_, hasChecks := body["checks"]
+	require.False(t, hasChecks, "issue #864: no per-facet checks object on the unauthenticated /health")
+
 	for _, needle := range []string{
+		"checks",                           // the breakdown container
+		"background_jobs",                  // facet name
+		"calendar_sync",                    // internal job name
+		"integrity_check", "restore_drill", // facet names
+		"data_integrity", "integrations", // facet names
+		"last_run_at", "stuck", // per-job fields
 		"sekret-internal-mailhost.corp.example", // SMTP host
 		"/very/secret/path",                     // FCM file path
 		"contacts: live=1234",                   // restore-drill row counts
-		"secret_table",                          // integrity-check schema hint
-		"page 7 malformed",
+		"secret_table", "page 7 malformed",      // integrity-check schema hint
 		"dial tcp", // raw net error text
 	} {
-		require.NotContains(t, raw, needle, "deep /health body must not expose %q", needle)
+		require.NotContainsf(t, raw, needle, "unauthenticated /health body must not expose %q", needle)
 	}
-	// It should still be a useful degraded report.
-	require.Contains(t, raw, "degraded")
+	// Still a useful report.
+	require.Equal(t, "degraded", body["status"])
+	require.NotEmpty(t, body["version"])
 }
 
-// Sanity: the deep body still decodes into the typed HealthResponse (the
-// pre-split shape is preserved, with checks added).
+// Sanity: the body still decodes into the typed HealthResponse (the pre-split
+// flat shape — status/database/version — is preserved; only checks is gone).
 func TestDeepHealth_TypedShapeUnchanged(t *testing.T) {
 	_, _, r := migratedHealthRouter(t)
 	w := httptest.NewRecorder()

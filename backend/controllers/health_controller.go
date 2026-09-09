@@ -27,16 +27,24 @@ import (
 //   - GET /health       — deep health. Is the CRM actually operational?
 //     Everything /ready checks, plus persisted integrity-check / restore-drill
 //     outcomes, background-job locks, and server-scoped integration
-//     reachability. Reports healthy | degraded | unhealthy; only a database
-//     read failure yields 503. "degraded" (an optional integration is down, a
-//     scheduled job is stale) is still 200 — degraded-but-alive is not down.
+//     reachability, rolled up into a single healthy | degraded | unhealthy
+//     word. Only a database read failure yields 503. "degraded" (an optional
+//     integration is down, a scheduled job is stale) is still 200 —
+//     degraded-but-alive is not down.
 //
 // All three are unauthenticated and carry no secrets, matching the original
-// single /health.
+// single /health. The deep endpoint reports only the rolled-up status plus
+// build/compatibility identity — NOT the per-facet breakdown (job names,
+// integrity-check / restore-drill / data-integrity reasons, integration
+// reachability). That breakdown names internal components and operational
+// state, so it is admin-only: GET /api/v1/admin/system-status returns the
+// full services.DeepHealth snapshot as its "health" field (issue #864,
+// pen-test engagement #860 finding F-4).
 
 // HealthResponse is the deep GET /health body. The flat database/version
-// fields are retained for backward compatibility with the pre-split endpoint;
-// the per-facet breakdown is under checks.
+// fields are retained for backward compatibility with the pre-split endpoint.
+// The per-facet services.DeepHealth breakdown is deliberately not included
+// here — it is admin-only at GET /api/v1/admin/system-status (issue #864).
 type HealthResponse struct {
 	Status    string         `json:"status"` // healthy | degraded | unhealthy
 	Timestamp string         `json:"timestamp"`
@@ -58,8 +66,7 @@ type HealthResponse struct {
 	// Deliberately not omitempty: it is part of the compatibility contract
 	// and must always be present so a client can distinguish "v1" from a
 	// server that predates the field entirely.
-	APIContractVersion string              `json:"api_contract_version"`
-	Checks             services.DeepHealth `json:"checks"`
+	APIContractVersion string `json:"api_contract_version"`
 }
 
 // DatabaseHealth represents the database health status
@@ -186,6 +193,12 @@ func readinessFilesystem(c *gin.Context) ReadinessCheckDetail {
 const apiContractVersion = "v1"
 
 // HealthCheck handles the deep health check endpoint, GET /health.
+//
+// The full services.DeepHealth snapshot is still computed here — it drives the
+// rolled-up status word and the 503-only-on-database-read-failure semantics —
+// but the per-facet breakdown is NOT serialized: it names internal jobs,
+// integrity/restore-drill state and integration reachability, which is
+// admin-only (GET /api/v1/admin/system-status, issue #864).
 func HealthCheck(c *gin.Context) {
 	db, _ := dbFromContext(c)
 	cfg := currentConfig(c)
@@ -215,7 +228,6 @@ func HealthCheck(c *gin.Context) {
 		BuildDate:          build.BuildDate,
 		MinClientVersion:   cfg.MinClientVersion,
 		APIContractVersion: apiContractVersion,
-		Checks:             deep,
 	})
 }
 

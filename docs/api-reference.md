@@ -245,4 +245,4 @@ should use.
 |---|---|---|
 | `GET` | `/health/live` | Liveness — is the process running? Returns immediately, no I/O. For restart policies. |
 | `GET` | `/health/ready` | Readiness — can this instance serve? DB + migrations + filesystem. `503` when not. For traffic gating. |
-| `GET` | `/health` | Deep health — `healthy`/`degraded`/`unhealthy` with a per-facet breakdown; also reports the build version. Only `503`s on a DB read failure. |
+| `GET` | `/health` | Deep health — the `healthy`/`degraded`/`unhealthy` roll-up, plus the build version and client-compat fields. Only `503`s on a DB read failure. The per-facet breakdown (job names, integrity/restore-drill state, integration reachability) is admin-only at `/admin/system-status` (issue #864). |
