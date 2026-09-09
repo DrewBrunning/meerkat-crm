@@ -133,3 +133,19 @@ func EnsureSelfContact(db *gorm.DB, user *models.User) error {
 		return nil
 	})
 }
+
+// dummyBcryptHash is a valid cost-10 bcrypt hash of a throwaway string.
+// Hardcoded rather than computed at init so a bcrypt failure cannot crash the
+// server before it starts. Its cost must match HashPassword's (bcrypt.DefaultCost)
+// — pinned by user_service_test.go.
+var dummyBcryptHash = []byte("$2a$10$cVbCNN0wW/qssAUweZnd5.Mo6tGVSDzdafdNooU64z7ycj0Ycg7D2")
+
+// SpendDummyPasswordHash burns one bcrypt comparison, matching the cost of a
+// real password check. Call it on a login handler's "identifier not found"
+// branch, before returning the invalid-credentials error, so response timing
+// does not reveal whether the account exists (issue #862). The error body and
+// status are already constant for known vs unknown identifiers — only the
+// bcrypt cost, previously skipped for unknown identifiers, needed equalizing.
+func SpendDummyPasswordHash(password string) {
+	_ = bcrypt.CompareHashAndPassword(dummyBcryptHash, []byte(password))
+}

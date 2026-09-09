@@ -126,9 +126,13 @@ func LoginUser(context *gin.Context, cfg *config.Config) {
 		return
 	}
 
-	// Check per-account rate limiting before attempting authentication
+	// Check login rate limiting before attempting authentication. Issue #867:
+	// the lockout is keyed on (identifier, client IP), so a failed run only
+	// denies the source that caused it — an attacker who knows the identifier
+	// can't lock the legitimate user out from their own IP.
+	clientIP := context.ClientIP()
 	accountLimiter := middleware.GetAccountRateLimiter()
-	if isLocked, remainingSecs := accountLimiter.IsLocked(identifier); isLocked {
+	if isLocked, remainingSecs := accountLimiter.IsLoginLocked(identifier, clientIP); isLocked {
 		context.JSON(http.StatusTooManyRequests, gin.H{
 			"error":          "Account temporarily locked",
 			"message":        "Too many failed login attempts. Please try again later.",
@@ -151,8 +155,12 @@ func LoginUser(context *gin.Context, cfg *config.Config) {
 
 	if err := query.First(&foundUser).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// Issue #862: spend the same bcrypt cost as a real wrong-password
+			// attempt so response timing can't be used to tell a registered
+			// identifier from an unregistered one.
+			services.SpendDummyPasswordHash(input.Password)
 			// Record failed attempt even for non-existent users to prevent enumeration
-			accountLimiter.RecordFailedAttempt(identifier)
+			accountLimiter.RecordLoginFailure(identifier, clientIP)
 			apperrors.AbortWithError(context, apperrors.ErrInvalidCredentials())
 		} else {
 			apperrors.AbortWithError(context, apperrors.ErrDatabase("Failed to query user").WithError(err))
@@ -168,7 +176,7 @@ func LoginUser(context *gin.Context, cfg *config.Config) {
 		// distinguish them (anti-enumeration); they stay in the request log.
 		models.RecordAuditEvent(models.AuditEntityAuth, foundUser.Username, models.AuditOpLoginFailed, foundUser.ID)
 		// Record failed attempt for password mismatch
-		isLocked, lockoutSecs := accountLimiter.RecordFailedAttempt(identifier)
+		isLocked, lockoutSecs := accountLimiter.RecordLoginFailure(identifier, clientIP)
 		if isLocked {
 			context.JSON(http.StatusTooManyRequests, gin.H{
 				"error":          "Account temporarily locked",
@@ -183,8 +191,8 @@ func LoginUser(context *gin.Context, cfg *config.Config) {
 		return
 	}
 
-	// Successful login - clear any failed attempt tracking
-	accountLimiter.RecordSuccessfulLogin(identifier)
+	// Successful login - clear any failed attempt tracking for this (identifier, IP)
+	accountLimiter.RecordLoginSuccess(identifier, clientIP)
 
 	// N8: account has 2FA enabled — the password alone must not mint a
 	// session. Issue a short-lived, single-purpose challenge (no usable
