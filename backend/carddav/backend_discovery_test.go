@@ -31,9 +31,11 @@ func TestCurrentUserPrincipal(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "/carddav/principals/alice/", principal)
 
-	// No username in context: error.
+	// No username in context: a 401, not a bare error (which the DAV layer
+	// renders as HTTP 500 — issue #874).
 	_, err = backend.CurrentUserPrincipal(context.Background())
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "401")
 }
 
 func TestAddressBookHomeSetPath(t *testing.T) {
@@ -46,6 +48,7 @@ func TestAddressBookHomeSetPath(t *testing.T) {
 
 	_, err = backend.AddressBookHomeSetPath(context.Background())
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "401")
 }
 
 func TestListAddressBooks(t *testing.T) {
@@ -64,6 +67,7 @@ func TestListAddressBooks(t *testing.T) {
 
 	_, err = backend.ListAddressBooks(context.Background())
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "401")
 }
 
 func TestGetAddressBook(t *testing.T) {
@@ -81,17 +85,24 @@ func TestGetAddressBook(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, book)
 
-	// Any other path is not found.
+	// Any other path is a clean 404, not a bare error (which the DAV layer
+	// would surface as HTTP 500 — issue #874).
 	_, err = backend.GetAddressBook(ctx, "/carddav/addressbooks/alice/other/")
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "404", "an unknown collection path must carry a 404, not fall through to 500")
 
-	// Another user's path is not found.
+	// Another user's path is a clean 404 too — a cross-user probe is
+	// indistinguishable from any other unknown collection (isolation holds
+	// regardless; this is the error-handling contract). Issue #874's
+	// credentialed pen-test reproduction.
 	_, err = backend.GetAddressBook(ctx, "/carddav/addressbooks/bob/contacts/")
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "404", "a cross-user collection path must be 404, not 500")
 
-	// No username: error.
+	// No username: 401, not a bare error (→ 500).
 	_, err = backend.GetAddressBook(context.Background(), "/carddav/addressbooks/alice/contacts/")
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "401", "an unauthenticated request must carry a 401, not fall through to 500")
 }
 
 func TestCreateDeleteAddressBookUnsupported(t *testing.T) {
@@ -157,6 +168,7 @@ func TestQueryAddressObjects_Unauthenticated(t *testing.T) {
 	backend, _ := newDiscoveryBackend(t)
 	_, err := backend.QueryAddressObjects(context.Background(), "/carddav/addressbooks/alice/contacts/", &webdavcarddav.AddressBookQuery{})
 	require.Error(t, err)
+	assert.Contains(t, err.Error(), "401", "an unauthenticated REPORT must carry a 401, not fall through to 500")
 }
 
 // TestQueryAddressObjects_FilterLessReturnsEverything pins TEST-09's first
