@@ -9630,7 +9630,7 @@ paths:
     patch:
       summary: Update a user (admin)
       operationId: adminUpdateUser
-      description: Setting a password bumps the user's token_version (kills their sessions). You cannot remove your own admin status or demote the last admin.
+      description: Setting a password bumps the user's token_version (kills their sessions). Admin role changes are self-service only (issue #871) - you can remove your own admin status unless you are the last admin, but you cannot change another admin's role.
       requestBody:
         required: true
         content:
@@ -9651,7 +9651,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: Cannot remove your own admin status or the last admin.
+          description: Cannot change another admin's role, or remove your own admin status while you are the last admin.
           content:
             application/json:
               schema:
@@ -9671,7 +9671,7 @@ paths:
     delete:
       summary: Delete a user and all their data (admin)
       operationId: adminDeleteUser
-      description: Hard-deletes the user and every dependent table in a transaction. Cannot delete your own account or the last admin.
+      description: Hard-deletes the user and every dependent table in a transaction. Cannot delete your own account or another admin (issue #871 - the target must remove its own admin status first).
       responses:
         "200":
           description: Deleted.
@@ -9686,7 +9686,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "403":
-          description: Cannot delete your own account or the last admin.
+          description: Cannot delete your own account or another admin.
           content:
             application/json:
               schema:

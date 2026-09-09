@@ -1005,10 +1005,11 @@ func TestUpdateUser_DuplicateUsername_Conflict(t *testing.T) {
 // against self-demotion and last-admin demotion, and whether it (or the
 // route layer) blocks self-promotion.
 
-// The acting admin must not be able to strip their own admin status via
-// UpdateUser, even if they are not the last admin. Guard is at
-// admin_user_controller.go:187-190.
-func TestUpdateUser_CannotRemoveOwnAdminStatus(t *testing.T) {
+// Admin role changes are self-service only (issue #871): the acting admin CAN
+// strip their own admin status as long as they are not the last admin. This
+// is the path an operator uses to step a departing colleague down before the
+// account is deleted.
+func TestUpdateUser_CanRemoveOwnAdminStatus_WhenNotLastAdmin(t *testing.T) {
 	db, router := setupRouter()
 
 	var actingUser models.User
@@ -1016,8 +1017,8 @@ func TestUpdateUser_CannotRemoveOwnAdminStatus(t *testing.T) {
 	actingUser.IsAdmin = true
 	require.NoError(t, db.Save(&actingUser).Error)
 
-	// A second admin exists, so this is NOT a last-admin situation -- the
-	// self-demotion guard must fire independently of the admin count.
+	// A second admin exists, so demoting the acting admin does not empty the
+	// admin set -- the last-admin guard does not fire.
 	require.NoError(t, db.Create(&models.User{Username: "other-admin", Email: "other-admin@example.com", Password: "password123", IsAdmin: true}).Error)
 
 	router.PATCH("/users/:id", withValidated(func() any { return &models.AdminUserUpdateInput{} }), UpdateUser)
@@ -1031,17 +1032,50 @@ func TestUpdateUser_CannotRemoveOwnAdminStatus(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var updated models.User
+	require.NoError(t, db.First(&updated, actingUser.ID).Error)
+	assert.False(t, updated.IsAdmin, "an admin may remove their own admin status when they are not the last admin")
+}
+
+// The last admin may not demote themselves -- the last-admin guard applies to
+// a self-demotion just as it does to demoting another account.
+func TestUpdateUser_CannotSelfDemote_WhenLastAdmin(t *testing.T) {
+	db, router := setupRouter()
+
+	var actingUser models.User
+	require.NoError(t, db.First(&actingUser).Error)
+	actingUser.IsAdmin = true
+	require.NoError(t, db.Save(&actingUser).Error)
+
+	var adminCount int64
+	require.NoError(t, db.Model(&models.User{}).Where("is_admin = ?", true).Count(&adminCount).Error)
+	require.EqualValues(t, 1, adminCount, "test setup requires the acting admin to be the only admin")
+
+	router.PATCH("/users/:id", withValidated(func() any { return &models.AdminUserUpdateInput{} }), UpdateUser)
+
+	demote := false
+	payload := models.AdminUserUpdateInput{IsAdmin: &demote}
+	jsonValue, _ := json.Marshal(payload)
+
+	req, _ := http.NewRequest("PATCH", "/users/"+strconv.Itoa(int(actingUser.ID)), bytes.NewBuffer(jsonValue))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
 	assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "last admin")
 
 	var unchanged models.User
 	require.NoError(t, db.First(&unchanged, actingUser.ID).Error)
-	assert.True(t, unchanged.IsAdmin, "acting admin's own admin status must be unchanged")
+	assert.True(t, unchanged.IsAdmin, "the last admin must remain an admin")
 }
 
-// An admin must not be able to demote the last remaining admin -- including
-// a DIFFERENT user than themselves -- to zero admins on the instance. Guard
-// is at admin_user_controller.go:192-204, mirroring DeleteUser's last-admin
-// count check.
+// An admin must not be able to demote the last remaining admin (a DIFFERENT
+// user than themselves). Post-#871 this is caught by the peer-admin guard
+// before the last-admin count is even consulted, but the invariant -- no path
+// to a zero-admin instance -- is the point.
 func TestUpdateUser_CannotDemoteLastAdmin(t *testing.T) {
 	db, router := setupRouter()
 
@@ -1071,11 +1105,11 @@ func TestUpdateUser_CannotDemoteLastAdmin(t *testing.T) {
 	assert.True(t, unchanged.IsAdmin, "last admin must remain an admin")
 }
 
-// Demoting an admin who is NOT the last admin must succeed -- this is the
-// success-path complement to TestUpdateUser_CannotDemoteLastAdmin, proving
-// the guard is scoped to the "count <= 1" case rather than blocking all
-// demotions.
-func TestUpdateUser_DemoteAdmin_WhenNotLastAdmin_Succeeds(t *testing.T) {
+// An admin must not be able to demote a PEER admin, even when other admins
+// remain (so it is not a last-admin situation). Role de-escalation is
+// self-service only (issue #871): without this an admin could strip every
+// other admin and take sole control.
+func TestUpdateUser_CannotDemotePeerAdmin(t *testing.T) {
 	db, router := setupRouter()
 
 	var actingUser models.User
@@ -1085,6 +1119,9 @@ func TestUpdateUser_DemoteAdmin_WhenNotLastAdmin_Succeeds(t *testing.T) {
 
 	target := models.User{Username: "target", Email: "target@example.com", Password: "password123", IsAdmin: true}
 	require.NoError(t, db.Create(&target).Error)
+	// A third admin, so demoting `target` would still leave two admins -- the
+	// last-admin guard is not what is doing the work here.
+	require.NoError(t, db.Create(&models.User{Username: "third-admin", Email: "third-admin@example.com", Password: "password123", IsAdmin: true}).Error)
 
 	router.PATCH("/users/:id", withValidated(func() any { return &models.AdminUserUpdateInput{} }), UpdateUser)
 
@@ -1097,11 +1134,43 @@ func TestUpdateUser_DemoteAdmin_WhenNotLastAdmin_Succeeds(t *testing.T) {
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 
+	assert.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	assert.Contains(t, w.Body.String(), "another admin's role")
+
+	var unchanged models.User
+	require.NoError(t, db.First(&unchanged, target.ID).Error)
+	assert.True(t, unchanged.IsAdmin, "a peer admin's role must be unchanged")
+}
+
+// Promoting a NON-admin to admin is unaffected by the #871 guard -- the guard
+// only blocks de-escalation of an existing admin, not onboarding a new one.
+func TestUpdateUser_CanPromotePeerToAdmin_Succeeds(t *testing.T) {
+	db, router := setupRouter()
+
+	var actingUser models.User
+	require.NoError(t, db.First(&actingUser).Error)
+	actingUser.IsAdmin = true
+	require.NoError(t, db.Save(&actingUser).Error)
+
+	target := models.User{Username: "target", Email: "target@example.com", Password: "password123", IsAdmin: false}
+	require.NoError(t, db.Create(&target).Error)
+
+	router.PATCH("/users/:id", withValidated(func() any { return &models.AdminUserUpdateInput{} }), UpdateUser)
+
+	promote := true
+	payload := models.AdminUserUpdateInput{IsAdmin: &promote}
+	jsonValue, _ := json.Marshal(payload)
+
+	req, _ := http.NewRequest("PATCH", "/users/"+strconv.Itoa(int(target.ID)), bytes.NewBuffer(jsonValue))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
 	var updated models.User
 	require.NoError(t, db.First(&updated, target.ID).Error)
-	assert.False(t, updated.IsAdmin)
+	assert.True(t, updated.IsAdmin)
 }
 
 // UpdateUser's input DTO (models.AdminUserUpdateInput) accepts an IsAdmin
