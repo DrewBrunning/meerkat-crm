@@ -28,10 +28,14 @@ func BasicAuthMiddleware() gin.HandlerFunc {
 
 		// Normalize identifier for consistent rate limiting
 		identifier := strings.ToLower(username)
+		clientIP := c.ClientIP()
 
-		// Check per-account rate limiting before attempting authentication
+		// Check login rate limiting before attempting authentication. Issue
+		// #867: keyed on (identifier, client IP), so a failed run only denies
+		// the source that caused it — it shares the AccountRateLimiter with the
+		// interactive-login path.
 		accountLimiter := middleware.GetAccountRateLimiter()
-		if isLocked, remainingSecs := accountLimiter.IsLocked(identifier); isLocked {
+		if isLocked, remainingSecs := accountLimiter.IsLoginLocked(identifier, clientIP); isLocked {
 			logger.Warn().
 				Str("identifier", identifier).
 				Str("ip", c.ClientIP()).
@@ -52,7 +56,7 @@ func BasicAuthMiddleware() gin.HandlerFunc {
 			// Burn the same bcrypt cost as a real comparison to not reveal if an account exists (issue #862)
 			services.SpendDummyPasswordHash(password)
 			// Record failed attempt even for non-existent users to prevent enumeration
-			accountLimiter.RecordFailedAttempt(identifier)
+			accountLimiter.RecordLoginFailure(identifier, clientIP)
 			logger.Warn().
 				Str("identifier", identifier).
 				Str("ip", c.ClientIP()).
@@ -77,7 +81,7 @@ func BasicAuthMiddleware() gin.HandlerFunc {
 
 		if !passwordOK && matchedToken == nil {
 			// Record failed attempt for password/token mismatch
-			isLocked, _ := accountLimiter.RecordFailedAttempt(identifier)
+			isLocked, _ := accountLimiter.RecordLoginFailure(identifier, clientIP)
 			logger.Warn().
 				Str("identifier", identifier).
 				Str("ip", c.ClientIP()).
@@ -93,8 +97,8 @@ func BasicAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		// Successful login - clear any failed attempt tracking
-		accountLimiter.RecordSuccessfulLogin(identifier)
+		// Successful login - clear any failed attempt tracking for this (identifier, IP)
+		accountLimiter.RecordLoginSuccess(identifier, clientIP)
 
 		// Set user info in context for downstream handlers
 		c.Set("userID", user.ID)

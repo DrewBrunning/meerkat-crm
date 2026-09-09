@@ -374,8 +374,11 @@ func Complete2FALogin(c *gin.Context, cfg *config.Config) {
 	// Rate-limit the code step by account, not just by IP. A 6-digit code is
 	// brute-forceable in minutes without it (N8). Using the username keeps the
 	// budget stable regardless of whether step 1 used username or email.
+	// Issue #867: keyed on (username, client IP) — the same bucket the password
+	// step uses — so a failed run only denies the source that caused it.
+	clientIP := c.ClientIP()
 	accountLimiter := middleware.GetAccountRateLimiter()
-	if isLocked, remainingSecs := accountLimiter.IsLocked(username); isLocked {
+	if isLocked, remainingSecs := accountLimiter.IsLoginLocked(username, clientIP); isLocked {
 		c.JSON(http.StatusTooManyRequests, gin.H{
 			"error":          "Account temporarily locked",
 			"message":        "Too many failed login attempts. Please try again later.",
@@ -407,7 +410,7 @@ func Complete2FALogin(c *gin.Context, cfg *config.Config) {
 	if !valid2FAProof(db, &user, input.Code, currentConfig(c).JWTSecretKey) {
 		// T18 audit: failed 2FA step for a known account (issue #381).
 		models.RecordAuditEvent(models.AuditEntityAuth, user.Username, models.AuditOpLoginFailed, user.ID)
-		_, lockoutSecs := accountLimiter.RecordFailedAttempt(username)
+		_, lockoutSecs := accountLimiter.RecordLoginFailure(username, clientIP)
 		if lockoutSecs > 0 {
 			c.JSON(http.StatusTooManyRequests, gin.H{
 				"error":          "Account temporarily locked",
@@ -421,7 +424,7 @@ func Complete2FALogin(c *gin.Context, cfg *config.Config) {
 		apperrors.AbortWithError(c, apperrors.ErrInvalidInput("code", "Invalid code. Please try again."))
 		return
 	}
-	accountLimiter.RecordSuccessfulLogin(username)
+	accountLimiter.RecordLoginSuccess(username, clientIP)
 
 	tokenString, err := services.IssueSession(db, user, cfg, c.Request.UserAgent(), c.ClientIP())
 	if err != nil {

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"fmt"
+	"mycorrhizal/middleware"
 	"mycorrhizal/models"
 	"net/http"
 	"net/http/httptest"
@@ -203,4 +204,33 @@ func TestBasicAuthMiddleware_UnknownUserRejected(t *testing.T) {
 
 	w := doBasicAuthRequest(router, "no-such-carddav-user", "whatever")
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
+
+// TestBasicAuthMiddleware_Griefing_DoesNotLockLegitimateIP pins issue #867 on
+// the CardDAV path: it shares the AccountRateLimiter with interactive login, so
+// failures from an attacker's IP must not lock the real user out from theirs.
+func TestBasicAuthMiddleware_Griefing_DoesNotLockLegitimateIP(t *testing.T) {
+	db, router := newAuthTestRouter(t)
+
+	hashed, err := bcrypt.GenerateFromPassword([]byte("correct-password"), bcrypt.DefaultCost)
+	require.NoError(t, err)
+	require.NoError(t, db.Create(&models.User{Username: "dav-grief", Email: "dav-grief@example.com", Password: string(hashed)}).Error)
+
+	req := func(ip, pw string) *httptest.ResponseRecorder {
+		r, _ := http.NewRequest("GET", "/probe", nil)
+		r.SetBasicAuth("dav-grief", pw)
+		r.RemoteAddr = ip + ":40000"
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, r)
+		return w
+	}
+
+	const attackerIP, victimIP = "203.0.113.31", "198.51.100.31"
+	var last int
+	for i := 0; i < middleware.MaxLoginAttempts; i++ {
+		last = req(attackerIP, "wrong").Code
+	}
+	assert.Equal(t, http.StatusTooManyRequests, last, "attacker IP should be locked")
+	assert.Equal(t, http.StatusOK, req(victimIP, "correct-password").Code,
+		"victim's IP must not be locked by the attacker's failures (issue #867)")
 }

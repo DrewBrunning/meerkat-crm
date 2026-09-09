@@ -302,6 +302,67 @@ func TestLoginUser_UnknownIdentifier_ResponseIsIndistinguishable(t *testing.T) {
 		"unknown-identifier login must still spend a bcrypt comparison (issue #862); got %s", unknownDur)
 }
 
+// loginFrom issues a /login POST from a specific source IP (set on RemoteAddr;
+// gin's ClientIP() reads it when no X-Forwarded-For is present).
+func loginFrom(router http.Handler, ip, identifier, password string) *httptest.ResponseRecorder {
+	body, _ := json.Marshal(map[string]string{"identifier": identifier, "password": password})
+	req, _ := http.NewRequest("POST", "/login", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = ip + ":40000"
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+// TestLoginUser_Griefing_DoesNotLockLegitimateIP pins issue #867 end to end: an
+// attacker who knows the identifier and burns the failure budget from their own
+// IP cannot lock the real user out from a different IP.
+func TestLoginUser_Griefing_DoesNotLockLegitimateIP(t *testing.T) {
+	cfg := config.Config{JWTSecretKey: "mysecretkey", JWTExpiryHours: 24}
+	db, router := setupRouter()
+	router.POST("/login", func(c *gin.Context) { LoginUser(c, &cfg) })
+
+	u := models.User{Username: "grief_target", Email: "grief_target@example.com"}
+	u.Password, _ = services.HashPassword(strongPassword)
+	require.NoError(t, db.Create(&u).Error)
+
+	const attackerIP, victimIP = "203.0.113.7", "198.51.100.7"
+
+	// Attacker exhausts the (identifier, attackerIP) budget.
+	var last int
+	for i := 0; i < middleware.MaxLoginAttempts; i++ {
+		last = loginFrom(router, attackerIP, "grief_target", "wrong-password").Code
+	}
+	assert.Equal(t, http.StatusTooManyRequests, last, "attacker's own IP should be locked")
+	assert.Equal(t, http.StatusTooManyRequests,
+		loginFrom(router, attackerIP, "grief_target", strongPassword).Code,
+		"attacker IP stays locked even with the right password")
+
+	// The legitimate user, from their own IP, is unaffected.
+	assert.Equal(t, http.StatusOK,
+		loginFrom(router, victimIP, "grief_target", strongPassword).Code,
+		"victim's IP must not be locked by the attacker's failures (issue #867)")
+}
+
+// TestLoginUser_SameIP_StillLocksAfterMaxAttempts: brute-force protection per
+// source is preserved — repeated failures from one IP still lock that IP.
+func TestLoginUser_SameIP_StillLocksAfterMaxAttempts(t *testing.T) {
+	cfg := config.Config{JWTSecretKey: "mysecretkey", JWTExpiryHours: 24}
+	db, router := setupRouter()
+	router.POST("/login", func(c *gin.Context) { LoginUser(c, &cfg) })
+
+	u := models.User{Username: "bf_target", Email: "bf_target@example.com"}
+	u.Password, _ = services.HashPassword(strongPassword)
+	require.NoError(t, db.Create(&u).Error)
+
+	const ip = "203.0.113.8"
+	for i := 0; i < middleware.MaxLoginAttempts-1; i++ {
+		require.Equal(t, http.StatusUnauthorized, loginFrom(router, ip, "bf_target", "nope").Code, "attempt %d", i+1)
+	}
+	assert.Equal(t, http.StatusTooManyRequests, loginFrom(router, ip, "bf_target", "nope").Code,
+		"MaxLoginAttempts-th failure from one IP must lock it")
+}
+
 func TestLoginUser_InvalidInput(t *testing.T) {
 	config := config.Config{
 		JWTSecretKey: "mysecretkey",

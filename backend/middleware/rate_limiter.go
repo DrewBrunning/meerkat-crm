@@ -19,6 +19,21 @@ const (
 	MaxLockoutDuration = 30 * time.Minute
 	// AccountLockoutTTL is how long to remember failed attempts after last failure
 	AccountLockoutTTL = 1 * time.Hour
+
+	// GlobalAccountLoginAttempts is the per-identifier failure budget across ALL
+	// source IPs — the backstop against an attacker who rotates IPs to sidestep
+	// the tight per-(identifier, IP) lock (issue #867). Set well above
+	// MaxLoginAttempts so a single source trips the per-pair lock long before
+	// this, and legitimate users effectively never reach it.
+	GlobalAccountLoginAttempts = 30
+	// GlobalAccountLockoutDuration is the lockout applied once the global budget
+	// is spent. FIXED (not exponential) and shorter than MaxLockoutDuration so
+	// the DoS amplification of this backstop stays bounded and predictable.
+	GlobalAccountLockoutDuration = 15 * time.Minute
+	// KnownGoodIPTTL is how long a successful authentication keeps a source IP
+	// exempt from the global backstop for that identifier, so the legitimate
+	// user is never denied by failures an attacker piled up from elsewhere.
+	KnownGoodIPTTL = 24 * time.Hour
 )
 
 // AccountLockoutEntry tracks failed login attempts per account
@@ -28,18 +43,30 @@ type AccountLockoutEntry struct {
 	LastAttempt    time.Time
 }
 
-// AccountRateLimiter manages per-account login rate limiting with exponential backoff
+// AccountRateLimiter manages login rate limiting with exponential backoff.
+//
+// Failures are tracked in `accounts` keyed by whatever string the caller
+// passes. The login call sites (see login_lockout.go) pass a composite
+// LoginKey(identifier, ip) so a lockout only ever denies the source that
+// caused it — issue #867: an attacker who knows a victim's identifier must not
+// be able to lock the victim out from their own IP. `global` is the
+// per-identifier backstop for an IP-rotating attacker, and `knownGoodIPs`
+// records IPs that recently authenticated so the backstop never denies them.
 type AccountRateLimiter struct {
-	accounts map[string]*AccountLockoutEntry
-	mu       sync.RWMutex
-	ttl      time.Duration
+	accounts     map[string]*AccountLockoutEntry
+	global       map[string]*AccountLockoutEntry
+	knownGoodIPs map[string]map[string]time.Time
+	mu           sync.RWMutex
+	ttl          time.Duration
 }
 
 // NewAccountRateLimiter creates a new account-based rate limiter
 func NewAccountRateLimiter(ttl time.Duration) *AccountRateLimiter {
 	return &AccountRateLimiter{
-		accounts: make(map[string]*AccountLockoutEntry),
-		ttl:      ttl,
+		accounts:     make(map[string]*AccountLockoutEntry),
+		global:       make(map[string]*AccountLockoutEntry),
+		knownGoodIPs: make(map[string]map[string]time.Time),
+		ttl:          ttl,
 	}
 }
 
@@ -48,18 +75,19 @@ func NewAccountRateLimiter(ttl time.Duration) *AccountRateLimiter {
 func (a *AccountRateLimiter) IsLocked(identifier string) (bool, int) {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
+	return lockedForLocked(a.accounts, identifier, time.Now())
+}
 
-	entry, exists := a.accounts[identifier]
+// lockedForLocked reports whether m[key] carries an unexpired lockout. Caller
+// holds a.mu (read or write).
+func lockedForLocked(m map[string]*AccountLockoutEntry, key string, now time.Time) (bool, int) {
+	entry, exists := m[key]
 	if !exists {
 		return false, 0
 	}
-
-	now := time.Now()
 	if entry.LockedUntil.After(now) {
-		remaining := int(entry.LockedUntil.Sub(now).Seconds())
-		return true, remaining
+		return true, int(entry.LockedUntil.Sub(now).Seconds())
 	}
-
 	return false, 0
 }
 
@@ -68,16 +96,18 @@ func (a *AccountRateLimiter) IsLocked(identifier string) (bool, int) {
 func (a *AccountRateLimiter) RecordFailedAttempt(identifier string) (bool, int) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	return recordExpBackoffLocked(a.accounts, identifier, time.Now())
+}
 
-	now := time.Now()
-	entry, exists := a.accounts[identifier]
-
+// recordExpBackoffLocked bumps the failure counter for m[key] and, at or over
+// MaxLoginAttempts, sets an exponentially-backed-off lockout capped at
+// MaxLockoutDuration. Caller holds a.mu (write). Returns (isNowLocked,
+// lockoutDurationSeconds).
+func recordExpBackoffLocked(m map[string]*AccountLockoutEntry, key string, now time.Time) (bool, int) {
+	entry, exists := m[key]
 	if !exists {
-		entry = &AccountLockoutEntry{
-			FailedAttempts: 0,
-			LastAttempt:    now,
-		}
-		a.accounts[identifier] = entry
+		entry = &AccountLockoutEntry{LastAttempt: now}
+		m[key] = entry
 	}
 
 	entry.FailedAttempts++
@@ -127,12 +157,29 @@ func (a *AccountRateLimiter) CleanupStaleAccountEntries() {
 	defer a.mu.Unlock()
 
 	now := time.Now()
-	for identifier, entry := range a.accounts {
-		// Remove entries where:
-		// 1. Lockout has expired AND
-		// 2. Last attempt was more than TTL ago
-		if entry.LockedUntil.Before(now) && now.Sub(entry.LastAttempt) > a.ttl {
-			delete(a.accounts, identifier)
+	stale := func(m map[string]*AccountLockoutEntry) {
+		for key, entry := range m {
+			// Remove entries where:
+			// 1. Lockout has expired AND
+			// 2. Last attempt was more than TTL ago
+			if entry.LockedUntil.Before(now) && now.Sub(entry.LastAttempt) > a.ttl {
+				delete(m, key)
+			}
+		}
+	}
+	stale(a.accounts)
+	stale(a.global)
+
+	// Drop known-good IPs past their exemption window, then any identifier whose
+	// set has emptied out.
+	for identifier, ips := range a.knownGoodIPs {
+		for ip, seen := range ips {
+			if now.Sub(seen) > KnownGoodIPTTL {
+				delete(ips, ip)
+			}
+		}
+		if len(ips) == 0 {
+			delete(a.knownGoodIPs, identifier)
 		}
 	}
 }
