@@ -89,3 +89,21 @@ test('offers the Monica import assistant alongside the file import (issue #549)'
   expect(await screen.findByRole('button', { name: 'Import from Monica' })).toBeInTheDocument();
   expect(screen.getByRole('button', { name: 'Import from Meerkat' })).toBeInTheDocument();
 });
+
+// Issue #861: the CSV export is the user's own full backup, so it carries the
+// private/secret items and unconfirmed relationships the vCard/JSContact
+// exports hold back. A user who reads "private" as "not in my backup file"
+// would hand out more than they meant to, so the panel must say what the file
+// contains *before* the download button, not in a doc they never open.
+test('warns that the CSV backup includes private and secret data before downloading', async () => {
+  historyMock.mockResolvedValue([]);
+  renderPage();
+
+  const notice = await screen.findByText(/private or secret/i);
+  expect(notice).toBeInTheDocument();
+  expect(notice).toHaveTextContent(/vCard or JSContact/i);
+
+  // Positioned ahead of the control it qualifies.
+  const download = screen.getByRole('button', { name: 'Download CSV' });
+  expect(notice.compareDocumentPosition(download) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+});

@@ -367,8 +367,18 @@ These are real bugs that shipped, not hypotheticals.
   their ID in `BeforeCreate`. Everything older uses `gorm.Model`'s uint PK.
 - Validation lives in struct tags + `middleware.ValidateJSONMiddleware`; custom validators
   (`phone`, `birthday`, `safeurl`, `relation_type`) are registered in `middleware/`.
-- Sensitivity (`normal|private|secret`): anything above `normal` is excluded from exports and
-  external sync **in the query**, not in the caller.
+- Sensitivity (`normal|private|secret`): anything above `normal` is excluded from **external sync,
+  contact shares, and the neutral-`Card` exports (vCard 3/4, JSContact)** — filtered **in the
+  query**, not in the caller, and re-includable only via the explicit `?include_sensitive=true`
+  opt-in. The rule is about copies that leave the instance or reach another party; it is **not** an
+  access-control tier against the owning user.
+  - **The flat CSV export (`GET /api/v1/export`) is the deliberate exception** and carries every
+    sensitivity *and* `status: suggested`, each labelled by its own column: it is the user's own
+    full backup landing on their own device, and the only full-fidelity export the app offers, so
+    withholding there is silent data loss (issue #861). Pinned by
+    `controllers/export_csv_full_fidelity_test.go`, which asserts both halves of the asymmetry.
+    Making the CSV filter is a **policy change**, not a bug fix — a pen-test read the old blanket
+    wording here and correctly reported the CSV as a leak against a claim that was never true.
 
 ## Frontend traps
 

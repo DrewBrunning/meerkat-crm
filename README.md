@@ -36,7 +36,7 @@ Everything in this section is **built and working today** — nothing below is a
 ### Modern Data Formats & Syncing
 - **Expanded Protocol Support:** In addition to vCard 3.0 and CardDAV/CalDAV, Mycorrhizal adds full support for **vCard 4.0** and **JSContact**.
 - **Flexible Export:** Granular selective field export so you can choose exactly which fields get exported for available formats.
-- **Field Sensitivity:** Mark fields as private or secret to exclude them from exports and external sync entirely.
+- **Field Sensitivity:** Mark fields as private or secret to exclude them from external sync, contact shares, and the vCard/JSContact exports entirely. Your own full CSV backup still contains them — it is a backup, not a share.
 - **Serve Interactions as CalDAV:** Expose activities and life events to a calendar client, and eventually two-way calendar sync.
 
 ### Relationships, Households & Pets
