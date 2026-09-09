@@ -143,10 +143,23 @@ var steps = []step{
 	{"search-contact", (*smokeRun).searchContact},
 	{"export", (*smokeRun).exportAndReadBack},
 	{"refetch-fields", (*smokeRun).refetchAndAssertFields},
-	// Exercises the shipped nginx layer specifically — no Go test in this repo
-	// sees nginx (httptest hits the Gin router directly), so a proxy-config
-	// regression is invisible everywhere else.
-	{"wellknown-discovery", (*smokeRun).wellKnownDiscoveryRelative}, // issue #865
+	// The checks below exercise the shipped nginx layer specifically — no Go
+	// test in this repo sees nginx (httptest hits the Gin router directly), so
+	// a proxy-config regression is invisible everywhere else.
+	{"export-loss-header", (*smokeRun).exportLossHeaderThroughProxy}, // issue #863
+	{"wellknown-discovery", (*smokeRun).wellKnownDiscoveryRelative},  // issue #865
+}
+
+// smokeLossyCRM is the CRM-envelope the smoke contact carries. Each field is a
+// CRM-only concept with no vCard/JSContact home, so a structured export
+// reports a fidelity loss for each — which is how the export-loss-header step
+// gets a non-trivial X-Mycorrhizal-Export-Loss-Report to send back through
+// nginx (issue #863).
+var smokeLossyCRM = map[string]any{
+	"how_we_met":          "Met at the clean-install open house",
+	"work_information":    "Runs the deployment smoke test",
+	"contact_information": "Reachable only via this test",
+	"gender":              "unspecified",
 }
 
 // checkHealth asserts the three-endpoint health surface (issue #421) reports
@@ -279,7 +292,7 @@ func (r *smokeRun) createContact() error {
 		},
 		"keywords": []string{"deploysmoke"},
 	}
-	body, err := r.postJSON("/api/v1/contacts", map[string]any{"card": card, "crm": map[string]any{}}, http.StatusCreated)
+	body, err := r.postJSON("/api/v1/contacts", map[string]any{"card": card, "crm": smokeLossyCRM}, http.StatusCreated)
 	if err != nil {
 		return err
 	}
@@ -440,6 +453,58 @@ func (r *smokeRun) exportAndReadBack() error {
 		}
 		if !bytes.Contains(body, []byte(smokeSurname)) {
 			return fmt.Errorf("GET %s: export does not contain %q: %s", ex.path, smokeSurname, truncate(body, 400))
+		}
+	}
+	return nil
+}
+
+// exportLossHeaderThroughProxy pins issue #863: the structured exporters set
+// X-Mycorrhizal-Export-Loss-Report, a URL-encoded JSON header. nginx's default
+// proxy_buffer_size is a single ~4 KB page that must hold the *entire*
+// upstream header block; a large loss-report header overran it and nginx
+// returned 502 in place of the file (the CSV export, which sets no such
+// header, kept working — exactly what the pen test observed). This asserts
+// both exporters return 200 through the shipped nginx and that the loss-report
+// header arrives intact, well-formed, and within a stock proxy header buffer.
+// The smoke contact carries smokeLossyCRM so the header is non-trivial rather
+// than an empty report.
+func (r *smokeRun) exportLossHeaderThroughProxy() error {
+	const lossHeader = "X-Mycorrhizal-Export-Loss-Report"
+	for _, path := range []string{"/api/v1/export/vcf", "/api/v1/export/jscontact"} {
+		status, header, body, err := r.doResp(http.MethodGet, path, "", nil)
+		if err != nil {
+			return err
+		}
+		if status != http.StatusOK {
+			return fmt.Errorf("GET %s: status %d, want 200 — a 5xx here is issue #863 (loss-report header overran the proxy header buffer): %s",
+				path, status, truncate(body, 300))
+		}
+		raw := header.Get(lossHeader)
+		if raw == "" {
+			return fmt.Errorf("GET %s: no %s header — nginx may have dropped an oversized header", path, lossHeader)
+		}
+		// nginx's compiled default proxy_buffer_size is one page (~4 KB) and
+		// holds the whole header block; the value alone must stay well inside it.
+		if len(raw) > 4096 {
+			return fmt.Errorf("GET %s: %s is %d bytes — over a stock 4 KB proxy header buffer (issue #863)", path, lossHeader, len(raw))
+		}
+		decoded, err := url.QueryUnescape(raw)
+		if err != nil {
+			return fmt.Errorf("GET %s: %s is not URL-decodable: %w", path, lossHeader, err)
+		}
+		var report struct {
+			Count       int  `json:"count"`
+			Truncated   bool `json:"truncated"`
+			Diagnostics []struct {
+				Concept string `json:"concept"`
+			} `json:"diagnostics"`
+		}
+		if err := json.Unmarshal([]byte(decoded), &report); err != nil {
+			return fmt.Errorf("GET %s: %s is not valid JSON: %w (%s)", path, lossHeader, err, truncate([]byte(decoded), 200))
+		}
+		if report.Count < len(smokeLossyCRM) {
+			return fmt.Errorf("GET %s: loss-report count = %d, want >= %d (the smoke contact carries that many CRM-only fields with no export home)",
+				path, report.Count, len(smokeLossyCRM))
 		}
 	}
 	return nil
@@ -636,6 +701,33 @@ func (r *smokeRun) do(method, path, contentType string, body []byte) ([]byte, in
 		return nil, resp.StatusCode, fmt.Errorf("read response body: %w", err)
 	}
 	return respBody, resp.StatusCode, nil
+}
+
+// doResp issues one request and returns the status, response headers and the
+// fully-read body. Unlike do(), it surfaces the header map — the nginx-layer
+// steps assert on Location / Content-Type / X-Mycorrhizal-Export-Loss-Report.
+func (r *smokeRun) doResp(method, path, contentType string, body []byte) (int, http.Header, []byte, error) {
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequest(method, r.baseURL+path, reader)
+	if err != nil { // # pragma: no cover — method and URL are always well-formed constants
+		return 0, nil, nil, fmt.Errorf("build request: %w", err)
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("%s %s: %w", method, path, err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil { // # pragma: no cover — the test servers always send a complete body
+		return resp.StatusCode, resp.Header, nil, fmt.Errorf("read response body: %w", err)
+	}
+	return resp.StatusCode, resp.Header, respBody, nil
 }
 
 func truncate(b []byte, n int) string {

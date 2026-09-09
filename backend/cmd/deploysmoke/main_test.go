@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -150,8 +151,10 @@ func (s *stubServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && p == "/api/v1/search":
 		s.search(w)
 	case r.Method == http.MethodGet && p == "/api/v1/export/vcf":
+		s.writeLossHeader(w)
 		s.export(w, "export-vcf-code", "export-vcf-noname", "BEGIN:VCARD\nFN:"+smokeGiven+" "+smokeSurname+"\nEND:VCARD\n")
 	case r.Method == http.MethodGet && p == "/api/v1/export/jscontact":
+		s.writeLossHeader(w)
 		switch s.fault {
 		case "export-jscontact-code":
 			w.WriteHeader(http.StatusInternalServerError)
@@ -304,6 +307,38 @@ func (s *stubServer) export(w http.ResponseWriter, codeFault, nonameFault, okBod
 	}
 }
 
+// writeLossHeader stamps the structured exporters' X-Mycorrhizal-Export-Loss-
+// Report header the way the real handlers do (issue #863). The default is a
+// small, well-formed, multi-diagnostic report; the faults model the ways the
+// exportLossHeaderThroughProxy step must reject.
+func (s *stubServer) writeLossHeader(w http.ResponseWriter) {
+	switch s.fault {
+	case "export-loss-missing":
+		// nginx dropped an oversized header entirely.
+		return
+	case "export-loss-toobig":
+		// A header value past a stock 4 KB proxy buffer.
+		w.Header().Set("X-Mycorrhizal-Export-Loss-Report", lossHeaderValue(4, 6000))
+	case "export-loss-lowcount":
+		w.Header().Set("X-Mycorrhizal-Export-Loss-Report", lossHeaderValue(2, 24))
+	default:
+		w.Header().Set("X-Mycorrhizal-Export-Loss-Report", lossHeaderValue(6, 24))
+	}
+}
+
+// lossHeaderValue builds a URL-encoded loss-report header carrying count
+// diagnostics, each padded to roughly pad bytes of "reason" text.
+func lossHeaderValue(count, pad int) string {
+	diags := make([]map[string]string, count)
+	for i := range diags {
+		diags[i] = map[string]string{"concept": "crm.how_we_met", "reason": strings.Repeat("x", pad)}
+	}
+	b, _ := json.Marshal(map[string]any{
+		"format": "vcard4", "count": count, "truncated": false, "diagnostics": diags,
+	})
+	return url.QueryEscape(string(b))
+}
+
 // wellKnown models an nginx .well-known discovery 301 (issue #865). The happy
 // path emits a relative Location; the faults model the internal-port leak and
 // a non-redirect response.
@@ -412,6 +447,9 @@ func TestRun_StepFailures(t *testing.T) {
 		{"export-jscontact-noname", "export"},
 		{"export-bundle-code", "export"},
 		{"export-bundle-noname", "export"},
+		{"export-loss-missing", "export-loss-header"},
+		{"export-loss-toobig", "export-loss-header"},
+		{"export-loss-lowcount", "export-loss-header"},
 		{"wellknown-port-leak", "wellknown-discovery"},
 		{"wellknown-not-301", "wellknown-discovery"},
 		{"refetch-code", "refetch-fields"},
