@@ -226,3 +226,49 @@ func TestHandlerGetMissingCardNotFound(t *testing.T) {
 	h(c)
 	assert.Equal(t, http.StatusBadRequest, w.Code, "DELETE of a reserved-word card path is an invalid path")
 }
+
+// TestHandlerCrossUserAddressBookPropfindNotFound pins issue #874's credentialed
+// pen-test finding: authenticated as one principal, a PROPFIND on another
+// principal's (or any non-own) collection path used to return HTTP 500 with the
+// internal string "address book not found" as a plaintext body, because
+// GetAddressBook returned a bare fmt.Errorf that the DAV layer maps to Internal
+// Server Error. Isolation was never at risk — every path resolves to the
+// authenticated principal — but a foreign/unknown collection must render as a
+// clean 404, consistent with a missing card's 404 and the REST layer's
+// structured errors.
+func TestHandlerCrossUserAddressBookPropfindNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	db := dbtest.New(t)
+	h := NewHandler(db, t.TempDir()).GinHandler()
+
+	propfind := `<?xml version="1.0" encoding="utf-8" ?>
+<D:propfind xmlns:D="DAV:"><D:prop><D:resourcetype/></D:prop></D:propfind>`
+
+	cases := []struct {
+		name string
+		path string
+	}{
+		{name: "another principal's collection", path: "/carddav/addressbooks/pentest1/contacts/"},
+		{name: "unknown collection under own principal", path: "/carddav/addressbooks/pentest2/other/"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			req, _ := http.NewRequest("PROPFIND", tc.path, strings.NewReader(propfind))
+			req.Header.Set("Depth", "1")
+			req.Header.Set("Content-Type", "application/xml")
+
+			c, _ := gin.CreateTestContext(w)
+			c.Request = req
+			c.Set("userID", uint(2))
+			c.Set("username", "pentest2")
+			h(c)
+
+			assert.Equal(t, http.StatusNotFound, w.Code,
+				"a foreign/unknown collection PROPFIND must be a clean 404, not a 500")
+			assert.NotEqual(t, http.StatusInternalServerError, w.Code)
+		})
+	}
+}
