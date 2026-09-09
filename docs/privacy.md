@@ -86,8 +86,17 @@ contact, deleting them means editing that note — search will find every mentio
 - **Export** everything at any time: `Settings → Export`, in CSV, vCard 3, vCard 4, or JSContact.
   You can also export your own audit log.
 - **Delete** your account and all its data; the operator can also do this for you.
-- Fields you mark **private** or **secret** are held back from exports and from CardDAV/CalDAV
-  sync automatically.
+- Fields you mark **private** or **secret** are held back automatically from CardDAV/CalDAV sync,
+  from contact shares, and from the vCard/JSContact exports — the copies that leave this instance
+  or reach another person. Marking a field sensitive changes who *else* can see it; it does not
+  hide it from you.
+- **The CSV export is the exception, deliberately**: `Settings → Export → Download CSV` is your own
+  full backup, so it contains everything — including your `private` and `secret` items, and
+  relationships still marked as unconfirmed suggestions. Each row carries its own `Sensitivity` and
+  `Status` column so you can tell them apart. A backup that silently dropped your most sensitive
+  data would not be a backup. Treat that file accordingly: if you are handing a copy of your data
+  to someone else, export vCard or JSContact instead, which withhold sensitive fields unless you
+  explicitly opt in.
 
 ## For operators
 

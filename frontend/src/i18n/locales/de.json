@@ -1125,6 +1125,7 @@
     "export": {
       "title": "Daten exportieren",
       "description": "Laden Sie alle Ihre Daten als CSV-Datei herunter. Dies umfasst Kontakte, Aktivitäten, Notizen, Erinnerungen und Beziehungen. Profilfotos sind nicht enthalten.",
+      "sensitivityNotice": "Dies ist eine vollständige Sicherung und enthält daher auch als privat oder geheim markierte Einträge sowie Beziehungen, die noch auf Ihre Bestätigung warten — jeweils in der Datei gekennzeichnet. Wenn Sie jemandem eine Kopie geben möchten, verwenden Sie stattdessen den vCard- oder JSContact-Export, der sensible Felder ohne ausdrückliche Zustimmung weglässt.",
       "downloadButton": "CSV herunterladen",
       "exporting": "Exportiere...",
       "success": "Ihre Daten wurden erfolgreich exportiert.",

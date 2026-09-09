@@ -393,6 +393,17 @@ export default function DataSettingsPage() {
             >
               {t('settings.export.description')}
             </Typography>
+            {/*
+              Issue #861: the CSV is the user's own full backup, so it carries
+              private/secret items and unconfirmed relationships that the
+              vCard/JSContact exports hold back. Saying so before the download
+              is the point — the sensitivity marker means "don't share this",
+              and a user who assumes it also means "not in my backup file"
+              would hand out more than they meant to.
+            */}
+            <Alert severity="info" sx={{ py: 0 }}>
+              {t('settings.export.sensitivityNotice')}
+            </Alert>
             {exportError && (
               <Alert severity="error" sx={{ py: 0 }}>
                 {exportError}

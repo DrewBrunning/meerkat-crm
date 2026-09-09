@@ -426,12 +426,31 @@ design is ADR-0010 / CON-04, issue #479).
   shape as the other four.
 - **Retention**: nothing server-side to retain.
 - **Deletion / propagation**: nothing to delete — there is no export artifact that outlives the request.
-  Sensitive-above-`normal` fields and CSV-formula-injection payloads are filtered/neutralized *before*
-  the export leaves the server (`sensitivity` classification, ASVS 8.3.4). The audit-log export's
-  `before_snapshot` column is omitted unless the caller explicitly passes `?include_snapshots=true`: it
-  is already credential-redacted at write time (`auditDenyList`, `models/audit.go`) but is **not**
-  filtered by contact-field sensitivity the way the other four exports are, so it is gated behind its own
-  explicit opt-in rather than reusing `include_sensitive`.
+  CSV-formula-injection payloads are neutralized on every CSV path *before* the export leaves the server.
+  Sensitivity filtering, however, is **not** uniform across the five exports, and the split is deliberate
+  (issue #861):
+  - **vCard 3 / vCard 4 / JSContact** — sensitive-above-`normal` fields are filtered in the projection
+    query (`sensitivity` classification, ASVS 8.3.4), re-includable only via the explicit
+    `?include_sensitive=true` opt-in. These are the copies that can reach another person or another
+    system, so they default-deny.
+  - **The flat CSV (`GET /export`, `ExportData`)** — carries **every** sensitivity and **every** status,
+    including `private`/`secret` rows and unconfirmed `status: suggested` relationship edges, each
+    labelled by its own `Sensitivity`/`Status` column. It takes no `sections`/`include_sensitive`
+    params at all (stated in `openapi.yaml`'s `/export` description). Rationale: this is the user's own
+    full personal-data backup landing on their own device — not a share to another party — and it is the
+    only full-fidelity export the app offers, so filtering it would be silent data loss in the one file a
+    user relies on to hold everything. Sensitivity is a rule about copies that leave the instance, not an
+    access-control tier against the owning user. Pinned by
+    `backend/controllers/export_csv_full_fidelity_test.go`
+    (`TestExportCSV_IsFullFidelityBackup_UnlikeVCard`), which asserts both halves — CSV withholds
+    nothing, vCard withholds exactly the sensitive rows — over one seeded dataset, with a
+    normal-sensitivity control paired to every absence check. Making the CSV filter is a policy change,
+    not a bug fix.
+  - **The audit-log export's** `before_snapshot` column is omitted unless the caller explicitly passes
+    `?include_snapshots=true`: it is already credential-redacted at write time (`auditDenyList`,
+    `models/audit.go`) but is **not** filtered by contact-field sensitivity the way the three
+    neutral-`Card` exports are, so it is gated behind its own explicit opt-in rather than reusing
+    `include_sensitive`.
 - **Auditability (issue #444)**: a *sensitive* export (`?include_sensitive=true`) is **not**
   individually recorded in the audit log — a documented decision, not an oversight. The export handlers
   are strictly read-only: they never write to any audited entity, so an export leaves no audit row today,

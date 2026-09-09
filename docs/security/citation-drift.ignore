@@ -29,7 +29,6 @@ docs/security/asvs-l2.md | `routes/routes.go:52-55` | backend/routes/routes.go  
 docs/security/asvs-l2.md | `backend/controllers/circle_controller.go:49` | backend/controllers/circle_controller.go  # the canonical `WHERE id = ? AND user_id = ?`; row calls it the canonical server-side scope
 docs/security/asvs-l2.md | `contact_share_controller.go:50` | backend/controllers/contact_share_controller.go  # the deliberately unscoped recipient lookup the row is pointing out as the one cross-account surface
 docs/security/asvs-l2.md | `backend/services/graph_traversal.go:113-115` | backend/services/graph_traversal.go  # `AND e.sensitivity != ?` in the CTE; row says "filtered in the projection query"
-docs/security/asvs-l2.md | `backend/controllers/briefing_controller.go:236-244` | backend/controllers/briefing_controller.go  # the briefing sensitivity carve-out comment + filter
 docs/security/asvs-l2.md | `httputil/fetch.go:94-119` | backend/httputil/fetch.go  # buildImageClient and its DNS-rebinding pin; row says "Go's standard TLS certificate verification"
 docs/security/asvs-l2.md | `fetch.go:17-58` | backend/httputil/fetch.go  # validateURLForSSRF; row says "pre-flight checks"
 docs/security/asvs-l2.md | `models/user.go:16` | backend/models/user.go  # the IsAdmin field; row 4.3.1 says 2FA is "available but not enforced for admins"
