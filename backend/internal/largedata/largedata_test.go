@@ -8,6 +8,7 @@ import (
 
 	"mycorrhizal/database"
 	"mycorrhizal/internal/canonicalfixture"
+	"mycorrhizal/middleware"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -250,6 +251,38 @@ func TestScaleRejectsBadInputs(t *testing.T) {
 	}
 	_, err = Scale(empty, 100)
 	assert.Error(t, err, "a manifest with no contacts must be refused")
+}
+
+// TestRegeneratedUIDsSatisfyUUID4Validation is the issue #868 regression
+// test: every card UID largedata generates must pass the exact `uuid4` tag
+// go-playground/validator evaluates for RelationshipEdgeInput.SourceID/
+// TargetID, CircleMemberInput/HouseholdMemberInput.MemberVCardUID,
+// ContactTagInput.ContactVCardUID, ContactShareInput.VCardUID, and
+// BulkContactOperationInput.VCardUIDs — not a hand-rolled regex, so this
+// cannot drift from what the API actually enforces. Before #868,
+// regeneratedUID produced a real RFC 4122 v5 UUID (third group starting
+// "5"), which uuid4 rejects; a seeded contact's vcard_uid then failed
+// validation before ever reaching ownership-resolution code.
+func TestRegeneratedUIDsSatisfyUUID4Validation(t *testing.T) {
+	m := readManifest(t)
+	scaled, err := Scale(m, 2000)
+	require.NoError(t, err)
+	require.NotEmpty(t, scaled.Contacts)
+
+	for _, c := range scaled.Contacts {
+		require.NotEmpty(t, c.Card.UID, "contact %q must carry a card UID", c.Name)
+		assert.True(t, middleware.ValidateVar(c.Card.UID, "uuid4"),
+			"contact %q's card UID %q must satisfy the uuid4 validator DTOs use", c.Name, c.Card.UID)
+	}
+
+	// Also cover the salted derivation path (the PERF-01 per-user namespacing),
+	// which shares regeneratedUID with Scale.
+	salted, err := scaleSalted(m, 2000, "perf-profile")
+	require.NoError(t, err)
+	for _, c := range salted.Contacts {
+		assert.True(t, middleware.ValidateVar(c.Card.UID, "uuid4"),
+			"salted contact %q's card UID %q must satisfy the uuid4 validator DTOs use", c.Name, c.Card.UID)
+	}
 }
 
 // TestRewriterURIRemapping pins the card-level UID re-keying directly: a
