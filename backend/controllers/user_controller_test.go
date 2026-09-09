@@ -263,6 +263,45 @@ func TestLoginUser_InvalidCredentials(t *testing.T) {
 	assert.Equal(t, "INVALID_CREDENTIALS", errorDetail["code"])
 }
 
+// TestLoginUser_UnknownIdentifier_ResponseIsIndistinguishable pins issue #862 on
+// two axes:
+//   - the response: an unregistered identifier and a real account with the wrong
+//     password return a byte-for-byte identical status + body;
+//   - the timing: the unknown-identifier branch still spends a full bcrypt
+//     comparison (via services.SpendDummyPasswordHash) instead of returning
+//     early. The assertion is a one-directional floor — bcrypt at cost 10 is
+//     ~40ms and CPU-bound, so a loaded CI runner only ever makes it *slower*;
+//     the only way under the floor is skipping the hash entirely, which is
+//     exactly the regression this guards.
+func TestLoginUser_UnknownIdentifier_ResponseIsIndistinguishable(t *testing.T) {
+	cfg := config.Config{JWTSecretKey: "mysecretkey", JWTExpiryHours: 24}
+	db, router := setupRouter()
+	router.POST("/login", func(c *gin.Context) { LoginUser(c, &cfg) })
+
+	realUser := models.User{Username: "realuser_ind", Email: "realuser_ind@example.com"}
+	realUser.Password, _ = services.HashPassword(strongPassword)
+	require.NoError(t, db.Create(&realUser).Error)
+
+	post := func(identifier string) (int, []byte, time.Duration) {
+		body, _ := json.Marshal(map[string]string{"identifier": identifier, "password": "not-the-password"})
+		req, _ := http.NewRequest("POST", "/login", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		start := time.Now()
+		router.ServeHTTP(w, req)
+		return w.Code, w.Body.Bytes(), time.Since(start)
+	}
+
+	wrongPwCode, wrongPwBody, _ := post("realuser_ind@example.com")
+	unknownCode, unknownBody, unknownDur := post("ghost_ind@example.com")
+
+	assert.Equal(t, http.StatusUnauthorized, wrongPwCode)
+	assert.Equal(t, wrongPwCode, unknownCode, "status must not distinguish unknown identifier from wrong password")
+	assert.Equal(t, string(wrongPwBody), string(unknownBody), "body must not distinguish unknown identifier from wrong password")
+	assert.Greater(t, unknownDur, 10*time.Millisecond,
+		"unknown-identifier login must still spend a bcrypt comparison (issue #862); got %s", unknownDur)
+}
+
 func TestLoginUser_InvalidInput(t *testing.T) {
 	config := config.Config{
 		JWTSecretKey: "mysecretkey",

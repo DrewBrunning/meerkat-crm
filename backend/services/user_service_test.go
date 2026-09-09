@@ -30,6 +30,24 @@ func TestHashPassword_Error(t *testing.T) {
 	assert.Error(t, err)
 }
 
+func TestSpendDummyPasswordHash(t *testing.T) {
+	// Issue #862: the dummy hash must cost the same as a real account hash, or
+	// the timing equalization is pointless. HashPassword uses bcrypt.DefaultCost.
+	cost, err := bcrypt.Cost(dummyBcryptHash)
+	assert.NoError(t, err, "dummyBcryptHash must be a valid bcrypt hash")
+	assert.Equal(t, bcrypt.DefaultCost, cost, "dummy hash cost must match HashPassword's")
+
+	// The dummy comparison must never succeed (it would be a login bypass on the
+	// not-found branch if the attacker could ever guess the throwaway plaintext)
+	// and must not panic on any input shape a login handler can hand it.
+	assert.NotPanics(t, func() {
+		SpendDummyPasswordHash("")
+		SpendDummyPasswordHash("an-ordinary-password")
+		SpendDummyPasswordHash(string(make([]byte, 200))) // > bcrypt's 72-byte cap
+	})
+	assert.Error(t, bcrypt.CompareHashAndPassword(dummyBcryptHash, []byte("an-ordinary-password")))
+}
+
 func TestGenerateToken(t *testing.T) {
 	config := config.Config{
 		JWTSecretKey:   "mysecretkey",

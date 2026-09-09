@@ -4,6 +4,7 @@ import (
 	"mycorrhizal/logger"
 	"mycorrhizal/middleware"
 	"mycorrhizal/models"
+	"mycorrhizal/services"
 	"net/http"
 	"strconv"
 	"strings"
@@ -12,11 +13,6 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
-
-// equalize response time for non-existing user by using dummy bcrypt value
-// Pre-computed hash of a boilerplate string — hardcoded so a bcrypt failure
-// at init time cannot crash the server before it starts.
-var dummyBcryptHash = []byte("$2a$10$cVbCNN0wW/qssAUweZnd5.Mo6tGVSDzdafdNooU64z7ycj0Ycg7D2")
 
 // BasicAuthMiddleware provides HTTP Basic Authentication for CardDAV
 // It supports both username and email as the login identifier
@@ -53,8 +49,8 @@ func BasicAuthMiddleware() gin.HandlerFunc {
 		// Try to find user by username or email
 		err := db.Where("username = ? OR email = ?", identifier, identifier).First(&user).Error
 		if err != nil {
-			// Burn the same bcrypt cost as a real comparison to not reveal if an account exists
-			_ = bcrypt.CompareHashAndPassword(dummyBcryptHash, []byte(password))
+			// Burn the same bcrypt cost as a real comparison to not reveal if an account exists (issue #862)
+			services.SpendDummyPasswordHash(password)
 			// Record failed attempt even for non-existent users to prevent enumeration
 			accountLimiter.RecordFailedAttempt(identifier)
 			logger.Warn().

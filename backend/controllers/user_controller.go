@@ -151,6 +151,10 @@ func LoginUser(context *gin.Context, cfg *config.Config) {
 
 	if err := query.First(&foundUser).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
+			// Issue #862: spend the same bcrypt cost as a real wrong-password
+			// attempt so response timing can't be used to tell a registered
+			// identifier from an unregistered one.
+			services.SpendDummyPasswordHash(input.Password)
 			// Record failed attempt even for non-existent users to prevent enumeration
 			accountLimiter.RecordFailedAttempt(identifier)
 			apperrors.AbortWithError(context, apperrors.ErrInvalidCredentials())

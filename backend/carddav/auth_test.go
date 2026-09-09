@@ -193,3 +193,14 @@ func TestBasicAuthMiddleware_WrongPasswordAndNoValidTokenRejected(t *testing.T) 
 	w := doBasicAuthRequest(router, "wrong-pw-user", "totally-wrong")
 	assert.Equal(t, http.StatusUnauthorized, w.Code)
 }
+
+// TestBasicAuthMiddleware_UnknownUserRejected is a regression guard for the
+// issue #862 refactor: the unknown-identifier branch (which now burns its bcrypt
+// cost via the shared services.SpendDummyPasswordHash instead of a local dummy
+// hash) must still reject with 401.
+func TestBasicAuthMiddleware_UnknownUserRejected(t *testing.T) {
+	_, router := newAuthTestRouter(t)
+
+	w := doBasicAuthRequest(router, "no-such-carddav-user", "whatever")
+	assert.Equal(t, http.StatusUnauthorized, w.Code)
+}
