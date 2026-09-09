@@ -430,6 +430,20 @@ The refusal is the intended behavior, not a bug: if an integration "can't
 reach" something, the first thing to check is which posture applies to it and
 what its knob is set to.
 
+**Exposed and multi-tenant deployments must flip the `guarded-when-enabled`
+knobs on.** The default (off) assumes a trusted LAN where webhooks and
+integrations legitimately target private hosts. On an instance reachable from
+the internet, or one hosting accounts you do not personally vet, leaving them
+off means an authenticated user's webhook or integration URL can reach
+loopback, other LAN hosts, and the cloud-metadata endpoint
+(`169.254.169.254`); a network egress policy is a second layer, not a
+substitute. Set `WEBHOOK_BLOCK_PRIVATE_URLS`, `CALDAV_BLOCK_PRIVATE_URLS`,
+`IMMICH_BLOCK_PRIVATE_URLS`, `PAPERLESS_BLOCK_PRIVATE_URLS`,
+`SEAFILE_BLOCK_PRIVATE_URLS`, `WEBDAV_BLOCK_PRIVATE_URLS`,
+`MONICA_BLOCK_PRIVATE_URLS`, and `OIDC_BLOCK_PRIVATE_URLS` to `true` — the
+operator checklist is the "SSRF hardening" row in
+[the deployment security baseline](security/deployment-baseline.md).
+
 ## Where to look first (the diagnostic path)
 
 One sweep, then per-integration surfaces:

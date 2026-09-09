@@ -466,3 +466,27 @@ func TestRenderedDocHasRequiredSections(t *testing.T) {
 		}
 	}
 }
+
+// TestSSRFSectionCarriesOperatorHardeningGuidance pins issue #870: the SSRF
+// section must state that the opt-in guards default off for trusted-LAN
+// self-hosting and must be switched on for an internet-exposed or multi-tenant
+// deployment, and must point the operator at the deployment security baseline.
+// A pen test read the "SSRF guards enforced in the transport dialer" claim and
+// correctly reported that with the flags off the app-layer guard is inactive —
+// this guidance is what keeps the running posture and the claim reconcilable.
+func TestSSRFSectionCarriesOperatorHardeningGuidance(t *testing.T) {
+	doc := Render()
+	for _, want := range []string{
+		"### Operator posture (issue #870)",
+		"trusted LAN",
+		"reachable from the internet",
+		"WEBHOOK_BLOCK_PRIVATE_URLS",
+		"OIDC_BLOCK_PRIVATE_URLS",
+		"169.254.169.254",
+		"docs/security/deployment-baseline.md",
+	} {
+		if !strings.Contains(doc, want) {
+			t.Errorf("SSRF section is missing operator-hardening guidance %q", want)
+		}
+	}
+}

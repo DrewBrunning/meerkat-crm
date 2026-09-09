@@ -98,9 +98,23 @@ func contactLossReports(format string, contact *models.Contact, diags []contactm
 const exportLossReportHeader = "X-Mycorrhizal-Export-Loss-Report"
 
 // maxExportLossHeaderBytes bounds the URL-encoded loss-report JSON carried in
-// exportLossReportHeader, chosen to stay comfortably inside typical proxy
-// header limits (~8KB) while carrying as many diagnostics as fit.
-const maxExportLossHeaderBytes = 6000
+// exportLossReportHeader.
+//
+// Issue #863: the previous 6 KB bound assumed "typical proxy header limits
+// (~8KB)". That is the wrong model. nginx — the proxy in this project's own
+// shipped all-in-one image — buffers the *entire* upstream response header
+// block into a single proxy_buffer_size buffer, whose compiled default is one
+// memory page (4 KB on the linux/amd64 Alpine build we ship). A 6 KB value in
+// this one header alone overran that buffer, so nginx returned
+// "502 Bad Gateway" ("upstream sent too big header") in place of the export —
+// while the CSV export, which sets no such header, kept working. The shipped
+// nginx.conf now also raises proxy_buffer_size on /api/ (defense in depth),
+// but the header must be small enough to pass a *stock*-configured reverse
+// proxy too: 3 KB leaves ~1 KB of a 4 KB buffer for the status line and the
+// dozen other response headers. Truncation past this bound is unchanged —
+// truncated=true, the true total in count, the full list via GET
+// /export/preflight.
+const maxExportLossHeaderBytes = 3072
 
 // exportLossHeader is the JSON object carried in exportLossReportHeader.
 // Diagnostics is never omitted so the client can distinguish an empty report

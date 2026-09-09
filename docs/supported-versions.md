@@ -190,8 +190,12 @@ is possible — the guarantee still holds and is still tested — but it puts th
 operator in the position of data controller for people they have never met (see
 [Privacy](privacy.md)). **For any instance with more than one user, run with
 `DISABLE_REGISTRATION=true`** and create each account deliberately from the
-admin panel. Mycorrhizal CRM is MIT-licensed: how you run your instance is
-ultimately your call, and this is a recommendation, not a restriction.
+admin panel. Such an instance should also enable the app-layer SSRF guard (the
+`*_BLOCK_PRIVATE_URLS` set, off by default for trusted-LAN self-hosting) — see
+the "SSRF hardening" row in
+[the deployment security baseline](security/deployment-baseline.md). Mycorrhizal
+CRM is MIT-licensed: how you run your instance is ultimately your call, and this
+is a recommendation, not a restriction.
 
 ## Version-support lifecycle
 
