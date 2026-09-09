@@ -167,6 +167,8 @@ func (s *stubServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	case r.Method == http.MethodGet && p == "/api/v1/export":
 		s.export(w, "export-bundle-code", "export-bundle-noname", "=== CONTACTS ===\nID,Lastname\n1,"+smokeSurname+"\n")
+	case r.Method == http.MethodPost && p == "/api/v1/contacts/import/upload":
+		s.importUpload(w, r)
 	case r.Method == http.MethodGet && p == "/.well-known/carddav":
 		s.wellKnown(w, "/carddav/")
 	case r.Method == http.MethodGet && p == "/.well-known/caldav":
@@ -339,6 +341,31 @@ func lossHeaderValue(count, pad int) string {
 	return url.QueryEscape(string(b))
 }
 
+// importUpload models the CSV import upload endpoint behind the shipped nginx
+// (issue #876). The happy path: a sub-1-MB-default upload reaches the handler
+// (JSON), an over-20-MB upload gets the app's structured 413.
+func (s *stubServer) importUpload(w http.ResponseWriter, r *http.Request) {
+	const maxCSV = 20 << 20
+	over := r.ContentLength > maxCSV
+	switch {
+	case !over && s.fault == "import-nginx-html-413":
+		// nginx's own 1-MB-default rejection: an HTML error page, not JSON.
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		_, _ = w.Write([]byte("<html><head><title>413</title></head><body><h1>413 Request Entity Too Large</h1></body></html>"))
+	case over && s.fault == "import-app-not-enforcing":
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"session_id":"stub"}`))
+	case over:
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		_, _ = w.Write([]byte(`{"error":"request body too large"}`))
+	default:
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"session_id":"stub"}`))
+	}
+}
+
 // wellKnown models an nginx .well-known discovery 301 (issue #865). The happy
 // path emits a relative Location; the faults model the internal-port leak and
 // a non-redirect response.
@@ -450,6 +477,8 @@ func TestRun_StepFailures(t *testing.T) {
 		{"export-loss-missing", "export-loss-header"},
 		{"export-loss-toobig", "export-loss-header"},
 		{"export-loss-lowcount", "export-loss-header"},
+		{"import-nginx-html-413", "import-body-limit"},
+		{"import-app-not-enforcing", "import-body-limit"},
 		{"wellknown-port-leak", "wellknown-discovery"},
 		{"wellknown-not-301", "wellknown-discovery"},
 		{"refetch-code", "refetch-fields"},

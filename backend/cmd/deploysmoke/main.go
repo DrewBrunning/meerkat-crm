@@ -147,6 +147,7 @@ var steps = []step{
 	// test in this repo sees nginx (httptest hits the Gin router directly), so
 	// a proxy-config regression is invisible everywhere else.
 	{"export-loss-header", (*smokeRun).exportLossHeaderThroughProxy}, // issue #863
+	{"import-body-limit", (*smokeRun).importBodyLimitOwnedByApp},     // issue #876
 	{"wellknown-discovery", (*smokeRun).wellKnownDiscoveryRelative},  // issue #865
 }
 
@@ -510,6 +511,71 @@ func (r *smokeRun) exportLossHeaderThroughProxy() error {
 	return nil
 }
 
+// importBodyLimitOwnedByApp pins issue #876: docker/nginx.conf set no
+// client_max_body_size, so nginx's compiled 1 MB default rejected every
+// import over 1 MB before it reached the backend — making services.MaxCSVSize
+// (20 MB) and friends unreachable in the shipped image, and hiding the app's
+// structured 413 behind nginx's HTML one. With client_max_body_size raised
+// above the largest app cap, the Go BodySizeLimitMiddleware is the binding
+// limit again.
+func (r *smokeRun) importBodyLimitOwnedByApp() error {
+	const path = "/api/v1/contacts/import/upload"
+
+	// (1) A CSV comfortably above nginx's old 1 MB default but well below the
+	// app's 20 MB CSV cap must reach the Go handler: a structured JSON
+	// response, never nginx's text/html 413.
+	ct, small, err := buildMultipartBody("file", "big.csv", csvBytes(2<<20))
+	if err != nil {
+		return err
+	}
+	status, header, body, err := r.doResp(http.MethodPost, path, ct, small)
+	if err != nil {
+		return err
+	}
+	if status == http.StatusRequestEntityTooLarge {
+		return fmt.Errorf("POST %s (2 MB): 413 — nginx client_max_body_size is rejecting below the app's 20 MB CSV cap (issue #876): %s",
+			path, truncate(body, 200))
+	}
+	if mt := header.Get("Content-Type"); !strings.Contains(mt, "json") {
+		return fmt.Errorf("POST %s (2 MB): Content-Type %q, want JSON — the request did not reach the Go handler (nginx HTML error page?): %s",
+			path, mt, truncate(body, 200))
+	}
+
+	// (2) A CSV above the app's 20 MB cap must be rejected by
+	// BodySizeLimitMiddleware with its structured body — proving the app
+	// layer, not the proxy, owns the limit.
+	ct, big, err := buildMultipartBody("file", "big.csv", csvBytes(21<<20))
+	if err != nil {
+		return err
+	}
+	status, header, body, err = r.doResp(http.MethodPost, path, ct, big)
+	if err != nil {
+		return err
+	}
+	if status != http.StatusRequestEntityTooLarge {
+		return fmt.Errorf("POST %s (21 MB): status %d, want 413 from the app: %s", path, status, truncate(body, 200))
+	}
+	if mt := header.Get("Content-Type"); !strings.Contains(mt, "json") {
+		return fmt.Errorf("POST %s (21 MB): Content-Type %q, want JSON — a 413 from nginx, not the app", path, mt)
+	}
+	if !bytes.Contains(body, []byte("request body too large")) {
+		return fmt.Errorf("POST %s (21 MB): body %q, want the app's \"request body too large\"", path, truncate(body, 200))
+	}
+	return nil
+}
+
+// csvBytes returns approximately n bytes of well-formed CSV (a header plus
+// repeated data rows). Used to build import uploads of a controlled wire size.
+func csvBytes(n int) []byte {
+	var buf bytes.Buffer
+	buf.Grow(n + 32)
+	buf.WriteString("given,family,email\n")
+	for buf.Len() < n {
+		buf.WriteString("Smoke,Row,smoke.row@example.com\n")
+	}
+	return buf.Bytes()
+}
+
 // wellKnownDiscoveryRelative pins issue #865: the CardDAV/CalDAV .well-known
 // discovery redirects were emitted by nginx with the default
 // absolute_redirect, which builds the Location from the Host header and
@@ -661,19 +727,29 @@ func (r *smokeRun) postJSON(path string, body any, wantStatus ...int) ([]byte, e
 }
 
 func (r *smokeRun) postMultipart(path, field, filename string, content []byte, hint string, wantStatus ...int) ([]byte, error) {
+	contentType, body, err := buildMultipartBody(field, filename, content)
+	if err != nil {
+		return nil, err
+	}
+	return r.expect(http.MethodPost, path, contentType, body, wantStatus, hint)
+}
+
+// buildMultipartBody assembles a single-file multipart/form-data body and
+// returns its Content-Type (with boundary) and bytes.
+func buildMultipartBody(field, filename string, content []byte) (string, []byte, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 	part, err := w.CreateFormFile(field, filename)
 	if err != nil { // # pragma: no cover — CreateFormFile on a fresh writer does not fail
-		return nil, fmt.Errorf("build multipart part: %w", err)
+		return "", nil, fmt.Errorf("build multipart part: %w", err)
 	}
 	if _, err := part.Write(content); err != nil { // # pragma: no cover — writing to a bytes.Buffer-backed part does not fail
-		return nil, fmt.Errorf("write multipart content: %w", err)
+		return "", nil, fmt.Errorf("write multipart content: %w", err)
 	}
 	if err := w.Close(); err != nil { // # pragma: no cover — closing a bytes.Buffer-backed writer does not fail
-		return nil, fmt.Errorf("close multipart writer: %w", err)
+		return "", nil, fmt.Errorf("close multipart writer: %w", err)
 	}
-	return r.expect(http.MethodPost, path, w.FormDataContentType(), buf.Bytes(), wantStatus, hint)
+	return w.FormDataContentType(), buf.Bytes(), nil
 }
 
 // do issues one request and returns the fully-read body and status. The
