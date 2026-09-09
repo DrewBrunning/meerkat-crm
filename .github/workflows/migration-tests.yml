@@ -419,7 +419,7 @@ jobs:
       # test uses — asserted here by using it.
       - name: Cache the large benchmark-profile database
         id: perf01-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/perf01-large.db
           key: perf01-large-${{ hashFiles('testdata/canonical-fixture/manifest.json', 'backend/internal/largedata/**', 'backend/internal/canonicalfixture/**', 'backend/cmd/migratebench/**', 'backend/database/migrations/**') }}

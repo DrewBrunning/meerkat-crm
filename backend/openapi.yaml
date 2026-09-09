@@ -6464,6 +6464,15 @@ paths:
         rows per section. Values are formula-injection-neutralized. This
         endpoint does not take sections/include_sensitive params — those
         apply only to the vCard/JSContact exports.
+
+
+        Because it is the caller's own backup rather than a copy handed to
+        another party, it deliberately carries every `sensitivity`
+        (`private` and `secret` included) and every relationship `status`
+        (unconfirmed `suggested` edges included), each labelled by its own
+        column so a consumer can re-apply the classification. Export vCard
+        or JSContact instead for a copy that default-denies sensitive
+        fields. See docs/security/data-retention-lifecycle.md §11.
       responses:
         "401":
           description: Not authenticated (missing or invalid session cookie or full-scope bearer token).

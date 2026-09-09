@@ -101,11 +101,27 @@ type RelationshipEdge struct {
 	// Status gates authority: only "confirmed" edges are ever projected to
 	// Card.RelatedTo or treated as fact by anything outside a suggestion-
 	// review surface. See the RelationshipStatus* constants above.
+	//
+	// "Projected as fact" is the operative phrase: the flat CSV backup
+	// (controllers.ExportData) does carry suggested rows, but writes Status as
+	// its own column, so it transcribes the pending suggestion rather than
+	// asserting it (issue #861).
 	Status string `gorm:"not null;index" json:"status" validate:"required,oneof=confirmed suggested"`
 
 	// Sensitivity is the cross-cutting marker. Anything above
-	// "normal" is excluded by default from exports (enforced in models/
-	// contact_record.go's projection step), external sync, and shared views.
+	// "normal" is excluded by default from every copy that leaves this
+	// instance or reaches another party: the neutral-Card exports (vCard 3/4,
+	// JSContact), CardDAV/CalDAV sync, contact shares, and shared views —
+	// enforced in models/contact_record.go's projection step, re-includable
+	// only via the explicit include_sensitive opt-in.
+	//
+	// It is not an access-control tier against the owning user, so the flat
+	// CSV export (controllers.ExportData) deliberately carries every
+	// sensitivity, labelled by its own column: that file is the user's own
+	// full backup, and the only full-fidelity export offered. See issue #861
+	// and controllers/export_csv_full_fidelity_test.go, which pins both
+	// halves of the asymmetry.
+	//
 	// Ships as a column now rather than being retrofitted later.
 	Sensitivity string `gorm:"not null;default:normal;index" json:"sensitivity" validate:"required,oneof=normal private secret"`
 }
