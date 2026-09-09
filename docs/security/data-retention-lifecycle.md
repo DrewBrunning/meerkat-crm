@@ -172,14 +172,20 @@ phones, addresses). Surfaced by the #510 privacy/data-minimization review as the
 
 Session/JWT cookies, TOTP recovery codes, password-reset tokens, API tokens.
 
-- **Where / who**: httpOnly cookie (session) or DB row (API tokens, hashed); never in `localStorage`
-  (pinned by the #419 Playwright regression, `frontend/e2e/`).
-- **Retention**: token expiry per type (session TTL, reset-token TTL, recovery-code single-use — deleted
+- **Where / who**: the session JWT in an httpOnly cookie, plus (issue #866) a server-side `sessions`
+  row per login that the cookie's `sid` claim points at — see §23 for that row's own lifecycle. API
+  tokens are hashed DB rows. Never in `localStorage` (pinned by the #419 Playwright regression,
+  `frontend/e2e/`).
+- **Retention**: token expiry per type (session absolute TTL = `JWT_EXPIRY_HOURS`, plus the
+  `SESSION_IDLE_TIMEOUT_HOURS` idle cutoff; reset-token TTL; recovery-code single-use — deleted
   in the same `WHERE` that consumes them, `services/twofactor.go:171-175`). API tokens live until
   revoked/rotated (issue #413).
-- **Deletion / propagation**: logout clears the cookie server-side and `USER_INFO_KEY` client-side
-  (`frontend/src/auth.ts:172`); revoke-all/rotate invalidate DB rows immediately.
-- **Backups**: API token hashes yes; session cookies no (never persisted server-side to begin with).
+- **Deletion / propagation**: logout revokes this device's `sessions` row server-side (`RevokeSession`)
+  and clears the cookie + `USER_INFO_KEY` client-side (`frontend/src/auth.ts:172`); a password / 2FA
+  change revokes every row (`RevokeAllSessions`) beside the `TokenVersion` bump; revoke-all/rotate
+  invalidate API-token rows immediately.
+- **Backups**: API token hashes yes; `sessions` rows yes (they are DB rows now), but they carry no
+  secret — the id is an opaque lookup key useless without the separately-signed JWT.
 
 ## 5. Attachments & profile photos (files on disk)
 
@@ -740,6 +746,40 @@ design is ADR-0010 / CON-04, issue #479).
   `backend/middleware/idempotency_test.go` (claim/replay/422/concurrent),
   `backend/controllers/delete_cascade_coverage_test.go` (`idempotency_keys` seeded + swept in the
   DeleteUser sweep, bucket `go-cascade-user`).
+
+## 23. Server-side sessions (`sessions`) — one row per interactive login
+
+- **Where / who**: one row per login (password, 2FA completion, OIDC callback, device-grant exchange,
+  and the post-password-change re-issue), written by `services.IssueSession` (issue #866, ADR 0017).
+  `user_id` is the logging-in user; the `id` is a 256-bit `crypto/rand` value also carried in the
+  JWT's `sid` claim. `AuthMiddleware` reads the row on every authenticated request.
+- **What it contains**: `created_at`, `last_seen_at` (advanced, throttled to ~1/min, on each
+  authenticated request), `expires_at` (absolute = `created_at + JWT_EXPIRY_HOURS`), a nullable
+  `revoked_at`, and `user_agent` / `ip` captured at login for the management list. No secret — the id
+  is an opaque key, useless without the separately-signed JWT — and no user content.
+- **Retention**: a row is live until `revoked_at` is set (logout, password/2FA change, or an explicit
+  `DELETE /sessions*`), until `expires_at` passes, or until it sits unused past
+  `SESSION_IDLE_TIMEOUT_HOURS` (default 12; `0` disables idle enforcement, not the row). The
+  job-locked `PurgeExpiredSessions` cron (6-hourly, `services/session_service.go`) hard-deletes rows
+  past `expires_at` and rows revoked more than 24 h ago. Not disablable — an expired session row has
+  no recovery value. No CardDAV/CalDAV projection; the Android offline mirror stores its own bearer
+  token (§8), not these rows.
+- **Deletion / propagation**: hard-delete (no `deleted_at` — operational-row class, ADR 0004).
+  Removed with the account by `DeleteUser`'s explicit enumeration (`go-cascade-user` bucket in
+  `controllers/delete_cascade_coverage_test.go`) and by the `ON DELETE CASCADE` FK to `users`.
+  Dropped wholesale by migration `000053`'s `down.sql` (documented there as losing only the
+  server-side revocation layer, not user data).
+- **Backups**: included in the DB snapshot like any other table; carries no secret and is bounded by
+  the absolute-expiry window, so it needs no special handling in the backup-confidentiality boundary
+  (§10).
+- **Verification**: `backend/middleware/auth_lifecycle_test.go`
+  (`TestAuthMiddleware_JWTRejectedAfterSessionRevoked`, `TestAuthMiddleware_JWTRejectedAfterIdleTimeout`,
+  `TestAuthMiddleware_JWTWithoutSidClaimRejected`),
+  `backend/services/session_service_test.go` (purge + revoke-all + job-lock),
+  `backend/controllers/session_controller_test.go` (list/revoke scoping),
+  `backend/routes/session_lifecycle_test.go` (password/2FA change revokes prior sessions end-to-end),
+  `backend/controllers/delete_cascade_coverage_test.go` (`sessions` seeded + swept in the DeleteUser
+  sweep, bucket `go-cascade-user`).
 
 ## Known gaps
 

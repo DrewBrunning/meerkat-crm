@@ -214,8 +214,8 @@ func LoginUser(context *gin.Context, cfg *config.Config) {
 		return
 	}
 
-	// Create JWT token
-	tokenString, err := services.GenerateToken(foundUser, cfg)
+	// Mint the server-side session row (issue #866) and a JWT carrying its id.
+	tokenString, err := services.IssueSession(db, foundUser, cfg, context.Request.UserAgent(), context.ClientIP())
 	if err != nil {
 		apperrors.AbortWithError(context, apperrors.ErrInternal("Could not generate token").WithError(err))
 		return
@@ -257,6 +257,22 @@ func LoginUser(context *gin.Context, cfg *config.Config) {
 // trip can be built.
 func LogoutUser(context *gin.Context, cfg *config.Config, oidcProvider *services.OIDCProvider) {
 	log := logger.FromContext(context)
+
+	// Issue #866: revoke this device's server-side session row so a copy of
+	// the auth_token cookie made before logout stops working immediately,
+	// instead of staying valid for its whole absolute expiry. Best-effort and
+	// scoped to *this* session only (per-device logout) — /logout runs
+	// outside AuthMiddleware, so the sid is read from the cookie's own signed
+	// token. A missing/invalid token or a failing store just means the cookie
+	// clear below is the only effect, exactly as before.
+	if raw, err := context.Cookie("auth_token"); err == nil {
+		if sid := services.SessionIDFromToken(raw, cfg); sid != "" {
+			db := context.MustGet("db").(*gorm.DB)
+			if err := services.RevokeSession(db, sid); err != nil {
+				log.Error().Err(err).Msg("logout: failed to revoke session row") // # pragma: no cover — best-effort; only a failing store trips this
+			}
+		}
+	}
 
 	// Issue #392: Strict, matching the cookie as set at login.
 	context.SetSameSite(http.SameSiteStrictMode)
@@ -496,6 +512,13 @@ func ConfirmPasswordReset(context *gin.Context, cfg *config.Config) {
 	// mint fresh sessions.
 	if _, err := services.RevokeAllDeviceGrants(db, user.ID); err != nil {
 		log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after password reset") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
+	}
+	// Issue #866: mark the server-side session rows revoked too. The
+	// TokenVersion bump above already stops every JWT; this leaves the rows in
+	// a revoked state (for the /sessions timeline) instead of lingering until
+	// the idle/expiry purge.
+	if _, err := services.RevokeAllSessions(db, user.ID); err != nil {
+		log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke sessions after password reset") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
 	}
 
 	// Issue #411 / ASVS 2.2.3: let the account owner know a reset happened,
@@ -799,6 +822,12 @@ func ChangePassword(context *gin.Context, cfg *config.Config) {
 	if _, err := services.RevokeAllDeviceGrants(db, user.ID); err != nil {
 		log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after password change") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
 	}
+	// Issue #866: revoke the server-side session rows alongside the
+	// TokenVersion bump, so a password change signs out other devices at the
+	// row level too (the caller's own row is re-created by the re-issue below).
+	if _, err := services.RevokeAllSessions(db, user.ID); err != nil {
+		log.Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke sessions after password change") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
+	}
 
 	// The bump above also invalidated the caller's own token. Re-issue it so
 	// changing your password signs out your *other* sessions rather than
@@ -806,7 +835,7 @@ func ChangePassword(context *gin.Context, cfg *config.Config) {
 	// only: API tokens are separate credentials and carry no token version.
 	if isAPIToken, _ := context.Get("isAPIToken"); isAPIToken != true {
 		cfg := currentConfig(context)
-		tokenString, err := services.GenerateToken(user, &cfg)
+		tokenString, err := services.IssueSession(db, user, &cfg, context.Request.UserAgent(), context.ClientIP())
 		if err != nil {
 			// The password change already succeeded; failing here would be
 			// misleading. Report success and let the client re-authenticate.

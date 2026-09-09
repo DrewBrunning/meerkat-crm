@@ -19,6 +19,12 @@ import (
 )
 
 func setupAuthTestRouter() (*gorm.DB, *gin.Engine) {
+	return setupAuthTestRouterWithIdle(0)
+}
+
+// setupAuthTestRouterWithIdle is setupAuthTestRouter with a non-zero session
+// idle timeout (issue #866); 0 disables idle enforcement.
+func setupAuthTestRouterWithIdle(idleHours int) (*gorm.DB, *gin.Engine) {
 	gin.SetMode(gin.ReleaseMode)
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -35,14 +41,14 @@ func setupAuthTestRouter() (*gorm.DB, *gin.Engine) {
 		panic("failed to get underlying sql db")
 	}
 	sqlDB.SetMaxOpenConns(1)
-	db.AutoMigrate(&models.User{}, &models.ApiToken{})
+	db.AutoMigrate(&models.User{}, &models.ApiToken{}, &models.Session{})
 
 	user := models.User{Username: "authtest", Email: "authtest@example.com", Password: "password"}
 	if err := db.Create(&user).Error; err != nil {
 		panic("failed to seed user")
 	}
 
-	cfg := &config.Config{JWTSecretKey: "test-secret-key-32-chars-minimum!"}
+	cfg := &config.Config{JWTSecretKey: "test-secret-key-32-chars-minimum!", SessionIdleTimeoutHours: idleHours}
 
 	router := gin.New()
 	router.Use(func(c *gin.Context) {

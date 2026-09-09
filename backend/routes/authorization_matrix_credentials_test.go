@@ -143,7 +143,7 @@ func TestAuthorizationMatrixNonJWTCredentials(t *testing.T) {
 	davUser := models.User{Username: "cred-dav", Email: "cred-dav@example.com", Password: string(davPWHash)}
 	require.NoError(t, db.Create(&davUser).Error)
 
-	ownerJWT, err := services.GenerateToken(owner, cfg)
+	ownerJWT, err := services.IssueSession(db, owner, cfg, "", "")
 	require.NoError(t, err)
 	// carddav-scoped token (davUser): rejected by AuthMiddleware before any
 	// handler runs, so it never mutates state — one is enough for the whole run.

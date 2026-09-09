@@ -190,6 +190,11 @@ func ConfirmTwoFactor(c *gin.Context) {
 	if _, err := services.RevokeAllDeviceGrants(db, user.ID); err != nil {
 		logger.FromContext(c).Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after 2FA enrollment") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
 	}
+	// Issue #866: mark the server-side session rows revoked alongside the
+	// token_version bump; reissueSessionToken below gives the caller a fresh one.
+	if _, err := services.RevokeAllSessions(db, user.ID); err != nil {
+		logger.FromContext(c).Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke sessions after 2FA enrollment") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
+	}
 	// T18 audit: 2FA enabled (issue #381).
 	models.RecordAuditEvent(models.AuditEntityUser, fmt.Sprintf("%d", user.ID), models.AuditOpTOTPEnable, user.ID)
 	reissueSessionToken(c, user)
@@ -267,6 +272,10 @@ func DisableTwoFactor(c *gin.Context) {
 	// passwordless door open.
 	if _, err := services.RevokeAllDeviceGrants(db, user.ID); err != nil {
 		logger.FromContext(c).Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke device grants after disabling 2FA") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
+	}
+	// Issue #866: revoke the server-side session rows too (see ConfirmTwoFactor).
+	if _, err := services.RevokeAllSessions(db, user.ID); err != nil {
+		logger.FromContext(c).Error().Err(err).Uint("user_id", user.ID).Msg("Failed to revoke sessions after disabling 2FA") // # pragma: no cover — best-effort post-success revocation; only a failing store trips this
 	}
 	// T18 audit: 2FA disabled (issue #381).
 	models.RecordAuditEvent(models.AuditEntityUser, fmt.Sprintf("%d", user.ID), models.AuditOpTOTPDisable, user.ID)
@@ -414,7 +423,7 @@ func Complete2FALogin(c *gin.Context, cfg *config.Config) {
 	}
 	accountLimiter.RecordSuccessfulLogin(username)
 
-	tokenString, err := services.GenerateToken(user, cfg)
+	tokenString, err := services.IssueSession(db, user, cfg, c.Request.UserAgent(), c.ClientIP())
 	if err != nil {
 		apperrors.AbortWithError(c, apperrors.ErrInternal("Could not generate token").WithError(err))
 		return
@@ -471,7 +480,8 @@ func reissueSessionToken(c *gin.Context, user models.User) {
 		logger.FromContext(c).Warn().Uint("user_id", user.ID).Msg("Cannot re-issue session token: JWT secret missing from context")
 		return
 	}
-	tokenString, err := services.GenerateToken(user, &cfg)
+	db := c.MustGet("db").(*gorm.DB)
+	tokenString, err := services.IssueSession(db, user, &cfg, c.Request.UserAgent(), c.ClientIP())
 	if err != nil {
 		logger.FromContext(c).Error().Err(err).Uint("user_id", user.ID).Msg("Failed to re-issue token after 2FA change")
 		return

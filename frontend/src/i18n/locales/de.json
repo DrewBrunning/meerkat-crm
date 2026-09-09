@@ -1696,6 +1696,27 @@
     },
     "expired": "Abgelaufen"
   },
+  "sessions": {
+    "title": "Aktive Sitzungen",
+    "description": "Geräte, die derzeit bei deinem Konto angemeldet sind. Widerrufe alle, die du nicht kennst; eine widerrufene Sitzung wird sofort ungültig.",
+    "loadError": "Sitzungen konnten nicht geladen werden",
+    "revokeSuccess": "Sitzung widerrufen",
+    "revokeCurrentSuccess": "Auf diesem Gerät abgemeldet",
+    "revokeError": "Sitzung konnte nicht widerrufen werden",
+    "revokeOthersSuccess_one": "{{count}} andere Sitzung widerrufen",
+    "revokeOthersSuccess_other": "{{count}} andere Sitzungen widerrufen",
+    "revokeOthersError": "Andere Sitzungen konnten nicht widerrufen werden",
+    "device": "Gerät",
+    "lastSeen": "Zuletzt aktiv",
+    "signedIn": "Angemeldet",
+    "actions": "Aktionen",
+    "unknownDevice": "Unbekanntes Gerät",
+    "thisDevice": "Dieses Gerät",
+    "revoke": "Widerrufen",
+    "revokeCurrent": "Abmelden",
+    "revokeOthersButton": "Von allen anderen Geräten abmelden",
+    "empty": "Keine aktiven Sitzungen"
+  },
   "users": {
     "title": "Benutzerverwaltung",
     "loadError": "Benutzer konnten nicht geladen werden",

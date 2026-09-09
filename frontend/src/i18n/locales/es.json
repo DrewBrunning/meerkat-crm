@@ -1696,6 +1696,27 @@
     },
     "expired": "Caducado"
   },
+  "sessions": {
+    "title": "Sesiones activas",
+    "description": "Dispositivos con sesión iniciada en tu cuenta. Revoca los que no reconozcas; una sesión revocada deja de funcionar de inmediato.",
+    "loadError": "No se pudieron cargar las sesiones",
+    "revokeSuccess": "Sesión revocada",
+    "revokeCurrentSuccess": "Sesión cerrada en este dispositivo",
+    "revokeError": "No se pudo revocar la sesión",
+    "revokeOthersSuccess_one": "{{count}} otra sesión revocada",
+    "revokeOthersSuccess_other": "{{count}} otras sesiones revocadas",
+    "revokeOthersError": "No se pudieron revocar las demás sesiones",
+    "device": "Dispositivo",
+    "lastSeen": "Última actividad",
+    "signedIn": "Inicio de sesión",
+    "actions": "Acciones",
+    "unknownDevice": "Dispositivo desconocido",
+    "thisDevice": "Este dispositivo",
+    "revoke": "Revocar",
+    "revokeCurrent": "Cerrar sesión",
+    "revokeOthersButton": "Cerrar sesión en los demás dispositivos",
+    "empty": "No hay sesiones activas"
+  },
   "users": {
     "title": "Gestión de Usuarios",
     "loadError": "Error al cargar los usuarios",
