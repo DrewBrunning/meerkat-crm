@@ -1695,6 +1695,27 @@
     },
     "expired": "Expiré"
   },
+  "sessions": {
+    "title": "Sessions actives",
+    "description": "Appareils actuellement connectés à votre compte. Révoquez ceux que vous ne reconnaissez pas ; une session révoquée cesse de fonctionner immédiatement.",
+    "loadError": "Échec du chargement des sessions",
+    "revokeSuccess": "Session révoquée",
+    "revokeCurrentSuccess": "Déconnecté sur cet appareil",
+    "revokeError": "Échec de la révocation de la session",
+    "revokeOthersSuccess_one": "{{count}} autre session révoquée",
+    "revokeOthersSuccess_other": "{{count}} autres sessions révoquées",
+    "revokeOthersError": "Échec de la révocation des autres sessions",
+    "device": "Appareil",
+    "lastSeen": "Dernière activité",
+    "signedIn": "Connexion",
+    "actions": "Actions",
+    "unknownDevice": "Appareil inconnu",
+    "thisDevice": "Cet appareil",
+    "revoke": "Révoquer",
+    "revokeCurrent": "Se déconnecter",
+    "revokeOthersButton": "Déconnecter tous les autres appareils",
+    "empty": "Aucune session active"
+  },
   "users": {
     "title": "Gestion des utilisateurs",
     "loadError": "Échec du chargement des utilisateurs",

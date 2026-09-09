@@ -198,6 +198,8 @@ func buildCWTable(s seeded) map[string]cwRow {
 		"PUT /api/v1/notifications/config":                    exempt(reasonNonRevision),
 		"DELETE /api/v1/api-tokens/:id":                       exempt(reasonNonRevision),
 		"POST /api/v1/api-tokens/revoke-all":                  exempt(reasonNonRevision),
+		"DELETE /api/v1/sessions/:id":                         exempt(reasonNonRevision),
+		"DELETE /api/v1/sessions":                             exempt(reasonNonRevision),
 		"DELETE /api/v1/attachments/:id":                      exempt(reasonNonRevision),
 		"DELETE /api/v1/reminder-completions/:id":             exempt(reasonNonRevision),
 		"DELETE /api/v1/notifications/devices/:id":            exempt(reasonNonRevision),
@@ -352,7 +354,7 @@ func TestConditionalWriteMatrix(t *testing.T) {
 
 	owner := models.User{Username: "con02-owner", Email: "con02-owner@example.com", Password: "password123"}
 	require.NoError(t, db.Create(&owner).Error)
-	token, err := services.GenerateToken(owner, cfg)
+	token, err := services.IssueSession(db, owner, cfg, "", "")
 	require.NoError(t, err)
 
 	res := seedResources(t, db, owner.ID)

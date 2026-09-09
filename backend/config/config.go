@@ -86,6 +86,7 @@ type Config struct {
 	WebhookDeliveryRetentionDays int    // Days webhook_deliveries rows survive before the purge job hard-deletes them (issue #622, default 30)
 	JobRunRetentionDays          int    // Days job_runs rows survive before the retention purge removes them (issue #391, default 30)
 	IdempotencyKeyRetentionHours int    // Hours idempotency_keys rows survive before the TTL purge removes them (issue #459, CON-04, default 24; <=0 disables)
+	SessionIdleTimeoutHours      int    // Hours a session may sit unused before AuthMiddleware rejects it, short of the JWT_EXPIRY_HOURS absolute ceiling (issue #866, default 12; 0 disables idle enforcement)
 
 	// General-API rate limiting, per client IP. Configurable because the
 	// hardcoded values had already been raised once to stop a full Playwright
@@ -246,6 +247,7 @@ func LoadConfig() *Config {
 		WebhookDeliveryRetentionDays:  getIntEnv("WEBHOOK_DELIVERY_RETENTION_DAYS", 30),
 		JobRunRetentionDays:           getIntEnv("JOB_RUN_RETENTION_DAYS", 30),
 		IdempotencyKeyRetentionHours:  getIntEnv("IDEMPOTENCY_KEY_RETENTION_HOURS", 24),
+		SessionIdleTimeoutHours:       getIntEnv("SESSION_IDLE_TIMEOUT_HOURS", 12),
 		APIRateLimitInterval:          time.Duration(getIntEnv("API_RATE_LIMIT_INTERVAL_MS", 600)) * time.Millisecond,
 		APIRateLimitBurst:             getIntEnv("API_RATE_LIMIT_BURST", 1000),
 		ImmichSyncIntervalHours:       getIntEnv("IMMICH_SYNC_INTERVAL_HOURS", 6),
@@ -718,6 +720,17 @@ func (c *Config) Validate() []ValidationError {
 		errors = append(errors, ValidationError{
 			Field:   "JWT_EXPIRY_HOURS",
 			Message: fmt.Sprintf("Invalid JWT expiry hours '%d'. Must be between 1 and 8760 (1 year).", c.JWTExpiryHours),
+		})
+	}
+
+	// Validate the session idle timeout (issue #866). 0 disables idle
+	// enforcement; anything positive must not exceed the absolute JWT ceiling
+	// (a larger value could never fire) and must be at least an hour (the
+	// knob's unit — sub-hour idle windows are not a supported shape).
+	if c.SessionIdleTimeoutHours < 0 || c.SessionIdleTimeoutHours > c.JWTExpiryHours {
+		errors = append(errors, ValidationError{
+			Field:   "SESSION_IDLE_TIMEOUT_HOURS",
+			Message: fmt.Sprintf("Invalid session idle timeout '%d'. Must be 0 (disabled) or between 1 and JWT_EXPIRY_HOURS (%d).", c.SessionIdleTimeoutHours, c.JWTExpiryHours),
 		})
 	}
 

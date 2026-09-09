@@ -124,7 +124,7 @@ func TestTwoFactorChallengeTokenRejectsInvalid(t *testing.T) {
 
 	// A regular session token (no purpose claim) is NOT a challenge.
 	sessionCfg := &config.Config{JWTSecretKey: twoFactorTestSecret, JWTExpiryHours: 24}
-	sessionToken, err := GenerateToken(user, sessionCfg)
+	sessionToken, err := GenerateToken(user, sessionCfg, "test-sid")
 	require.NoError(t, err)
 	_, _, ok = Parse2FAChallengeToken(sessionToken, cfg)
 	assert.False(t, ok)

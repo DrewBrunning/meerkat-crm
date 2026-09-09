@@ -234,7 +234,7 @@ func checkCookieFlagPolicy(t *testing.T, cookieSecure bool) {
 	// --- flow: 2FA management (setup + confirm) re-mints auth_token ---------
 	// (exercises reissueSessionToken's SetCookie, a distinct call site from
 	// the password-change one)
-	mgmtToken, err := services.GenerateToken(mgmtUser, cfg)
+	mgmtToken, err := services.IssueSession(db, mgmtUser, cfg, "", "")
 	require.NoError(t, err)
 
 	w, _ = doRequest(router, sessionRequest("POST", "/api/v1/users/2fa/setup", nil, mgmtToken))

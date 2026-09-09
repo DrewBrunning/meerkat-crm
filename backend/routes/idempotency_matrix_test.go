@@ -315,7 +315,7 @@ func TestIdempotencyMatrix_KeyedCreateReplaysThroughRealRouter(t *testing.T) {
 
 	user := models.User{Username: "con04-replay", Email: "con04-replay@example.com", Password: "password123"}
 	require.NoError(t, db.Create(&user).Error)
-	token, err := services.GenerateToken(user, cfg)
+	token, err := services.IssueSession(db, user, cfg, "", "")
 	require.NoError(t, err)
 
 	router := gin.New()

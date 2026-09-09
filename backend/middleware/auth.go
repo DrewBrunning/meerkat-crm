@@ -153,9 +153,60 @@ func AuthMiddleware(cfg *config.Config) gin.HandlerFunc {
 			return
 		}
 
+		// Issue #866: every session JWT carries a `sid` naming a server-side
+		// sessions row. A logout revokes just that row (per-device); an idle
+		// period past SESSION_IDLE_TIMEOUT_HOURS times it out; a password/2FA
+		// change revokes all of the user's rows. Tokens minted before
+		// migration 000053 carry no `sid` — reject them, forcing one re-login,
+		// exactly as the missing-token_version case above does.
+		sid, _ := claims["sid"].(string)
+		if sid == "" {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid token"})
+			c.Abort()
+			return
+		}
+		var session models.Session
+		if err := db.Select("last_seen_at", "expires_at", "revoked_at").
+			First(&session, "id = ?", sid).Error; err != nil {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session expired, please sign in again"})
+			c.Abort()
+			return
+		}
+		now := time.Now()
+		idle := time.Duration(cfg.SessionIdleTimeoutHours) * time.Hour
+		if session.RevokedAt != nil ||
+			!session.ExpiresAt.After(now) ||
+			(idle > 0 && now.Sub(session.LastSeenAt) > idle) {
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "Session expired, please sign in again"})
+			c.Abort()
+			return
+		}
+		// Throttled: only the first request in each sessionTouchInterval writes.
+		if now.Sub(session.LastSeenAt) >= sessionTouchInterval {
+			TouchSession(db, sid, now)
+		}
+
 		c.Set("userID", userID)
+		c.Set("sessionID", sid)
 		c.Next()
 	}
+}
+
+// sessionTouchInterval is how stale a session's last_seen_at must be before an
+// authenticated request rewrites it. Coarse on purpose: the idle timeout is
+// measured in hours, so a per-minute write is precise enough and keeps
+// all-but-one request read-only (mirrors TouchAPIToken's fire-and-forget).
+const sessionTouchInterval = time.Minute
+
+// TouchSession advances a session's last_seen_at in the background. Failure is
+// logged, never fatal to the request — an unwritable DB is surfaced elsewhere.
+func TouchSession(db *gorm.DB, sid string, at time.Time) {
+	go func(sid string) {
+		if err := db.Model(&models.Session{}).Where("id = ?", sid).
+			Update("last_seen_at", at).Error; err != nil {
+			logger.Logger.Warn().Err(err).Str("session_id", sid).Msg("Failed to update session last_seen_at")
+		}
+	}(sid)
 }
 
 // LookupAPIToken validates a raw "mycorrhizal_"-prefixed API token string

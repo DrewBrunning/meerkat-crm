@@ -127,7 +127,7 @@ func doRequest(router *gin.Engine, req *http.Request) (*httptest.ResponseRecorde
 func enableTwoFactor(t *testing.T, db *gorm.DB, router *gin.Engine, cfg *config.Config, user models.User) (secret string, recoveryCodes []string, reissuedSession string) {
 	t.Helper()
 
-	token, err := services.GenerateToken(user, cfg)
+	token, err := services.IssueSession(db, user, cfg, "", "")
 	require.NoError(t, err)
 
 	// setup
@@ -166,7 +166,7 @@ func enableTwoFactor(t *testing.T, db *gorm.DB, router *gin.Engine, cfg *config.
 
 func TestTwoFactor_EnrollmentFlow(t *testing.T) {
 	db, router, _, user := twoFactorTestEnv(t)
-	token, err := services.GenerateToken(user, &config.Config{JWTSecretKey: testJWTSecret, JWTExpiryHours: 24})
+	token, err := services.IssueSession(db, user, &config.Config{JWTSecretKey: testJWTSecret, JWTExpiryHours: 24}, "", "")
 	require.NoError(t, err)
 
 	// Issue #722: a remembered device enrolled under the pre-2FA posture must
@@ -378,7 +378,7 @@ func TestTwoFactor_OIDCUserCannotEnroll(t *testing.T) {
 	oidcUser := models.User{Username: "sso-user", Email: "sso@example.com", Password: hashed, OIDCSubject: &oidcSubject}
 	require.NoError(t, db.Create(&oidcUser).Error)
 
-	token, err := services.GenerateToken(oidcUser, cfg)
+	token, err := services.IssueSession(db, oidcUser, cfg, "", "")
 	require.NoError(t, err)
 
 	w, _ := doRequest(router, sessionRequest("POST", "/users/2fa/setup", nil, token))
@@ -409,7 +409,7 @@ func TestTwoFactor_OwnershipScoping(t *testing.T) {
 	require.NoError(t, err)
 	other := models.User{Username: "other-user", Email: "other@example.com", Password: hashed}
 	require.NoError(t, db.Create(&other).Error)
-	token, err := services.GenerateToken(other, cfg)
+	token, err := services.IssueSession(db, other, cfg, "", "")
 	require.NoError(t, err)
 
 	w, _ := doRequest(router, sessionRequest("GET", "/users/2fa/status", nil, token))

@@ -212,7 +212,7 @@ func OIDCCallbackHandler(provider *services.OIDCProvider, cfg *config.Config) gi
 			return
 		}
 
-		tokenString, err := services.GenerateToken(*user, cfg)
+		tokenString, err := services.IssueSession(db, *user, cfg, c.Request.UserAgent(), c.ClientIP())
 		if err != nil {
 			log.Error().Err(err).Uint("user_id", user.ID).Msg("OIDC: failed to generate JWT")
 			oidcErrorRedirect(c, android, "oidc_error")

@@ -1722,6 +1722,27 @@
     },
     "expired": "Expired"
   },
+  "sessions": {
+    "title": "Active sessions",
+    "description": "Devices currently signed in to your account. Revoke any you don't recognise; a revoked session stops working immediately.",
+    "loadError": "Failed to load sessions",
+    "revokeSuccess": "Session revoked",
+    "revokeCurrentSuccess": "Signed out on this device",
+    "revokeError": "Failed to revoke session",
+    "revokeOthersSuccess_one": "{{count}} other session revoked",
+    "revokeOthersSuccess_other": "{{count}} other sessions revoked",
+    "revokeOthersError": "Failed to revoke other sessions",
+    "device": "Device",
+    "lastSeen": "Last active",
+    "signedIn": "Signed in",
+    "actions": "Actions",
+    "unknownDevice": "Unknown device",
+    "thisDevice": "This device",
+    "revoke": "Revoke",
+    "revokeCurrent": "Sign out",
+    "revokeOthersButton": "Log out all other devices",
+    "empty": "No active sessions"
+  },
   "users": {
     "title": "User Management",
     "loadError": "Failed to load users",
