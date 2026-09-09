@@ -263,6 +263,116 @@ func TestLoginUser_InvalidCredentials(t *testing.T) {
 	assert.Equal(t, "INVALID_CREDENTIALS", errorDetail["code"])
 }
 
+// TestLoginUser_UnknownIdentifier_ResponseIsIndistinguishable pins issue #862 on
+// two axes:
+//   - the response: an unregistered identifier and a real account with the wrong
+//     password return a byte-for-byte identical status + body;
+//   - the timing: the unknown-identifier branch still spends a full bcrypt
+//     comparison (via services.SpendDummyPasswordHash) instead of returning
+//     early. The assertion is a one-directional floor — bcrypt at cost 10 is
+//     ~40ms and CPU-bound, so a loaded CI runner only ever makes it *slower*;
+//     the only way under the floor is skipping the hash entirely, which is
+//     exactly the regression this guards.
+func TestLoginUser_UnknownIdentifier_ResponseIsIndistinguishable(t *testing.T) {
+	cfg := config.Config{JWTSecretKey: "mysecretkey", JWTExpiryHours: 24}
+	db, router := setupRouter()
+	router.POST("/login", func(c *gin.Context) { LoginUser(c, &cfg) })
+
+	realUser := models.User{Username: "realuser_ind", Email: "realuser_ind@example.com"}
+	realUser.Password, _ = services.HashPassword(strongPassword)
+	require.NoError(t, db.Create(&realUser).Error)
+
+	post := func(identifier string) (int, []byte, time.Duration) {
+		body, _ := json.Marshal(map[string]string{"identifier": identifier, "password": "not-the-password"})
+		req, _ := http.NewRequest("POST", "/login", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		start := time.Now()
+		router.ServeHTTP(w, req)
+		return w.Code, w.Body.Bytes(), time.Since(start)
+	}
+
+	wrongPwCode, wrongPwBody, _ := post("realuser_ind@example.com")
+	unknownCode, unknownBody, unknownDur := post("ghost_ind@example.com")
+
+	// The error *envelope* carries a per-response `timestamp`, which is not an
+	// enumeration signal (both branches set it) and can straddle a second
+	// boundary on a slow runner — compare the `error` object, which is what a
+	// caller could actually use to tell the two branches apart.
+	errObj := func(body []byte) any {
+		var m map[string]any
+		require.NoError(t, json.Unmarshal(body, &m))
+		return m["error"]
+	}
+
+	assert.Equal(t, http.StatusUnauthorized, wrongPwCode)
+	assert.Equal(t, wrongPwCode, unknownCode, "status must not distinguish unknown identifier from wrong password")
+	assert.Equal(t, errObj(wrongPwBody), errObj(unknownBody), "error body must not distinguish unknown identifier from wrong password")
+	assert.Greater(t, unknownDur, 10*time.Millisecond,
+		"unknown-identifier login must still spend a bcrypt comparison (issue #862); got %s", unknownDur)
+}
+
+// loginFrom issues a /login POST from a specific source IP (set on RemoteAddr;
+// gin's ClientIP() reads it when no X-Forwarded-For is present).
+func loginFrom(router http.Handler, ip, identifier, password string) *httptest.ResponseRecorder {
+	body, _ := json.Marshal(map[string]string{"identifier": identifier, "password": password})
+	req, _ := http.NewRequest("POST", "/login", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.RemoteAddr = ip + ":40000"
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	return w
+}
+
+// TestLoginUser_Griefing_DoesNotLockLegitimateIP pins issue #867 end to end: an
+// attacker who knows the identifier and burns the failure budget from their own
+// IP cannot lock the real user out from a different IP.
+func TestLoginUser_Griefing_DoesNotLockLegitimateIP(t *testing.T) {
+	cfg := config.Config{JWTSecretKey: "mysecretkey", JWTExpiryHours: 24}
+	db, router := setupRouter()
+	router.POST("/login", func(c *gin.Context) { LoginUser(c, &cfg) })
+
+	u := models.User{Username: "grief_target", Email: "grief_target@example.com"}
+	u.Password, _ = services.HashPassword(strongPassword)
+	require.NoError(t, db.Create(&u).Error)
+
+	const attackerIP, victimIP = "203.0.113.7", "198.51.100.7"
+
+	// Attacker exhausts the (identifier, attackerIP) budget.
+	var last int
+	for i := 0; i < middleware.MaxLoginAttempts; i++ {
+		last = loginFrom(router, attackerIP, "grief_target", "wrong-password").Code
+	}
+	assert.Equal(t, http.StatusTooManyRequests, last, "attacker's own IP should be locked")
+	assert.Equal(t, http.StatusTooManyRequests,
+		loginFrom(router, attackerIP, "grief_target", strongPassword).Code,
+		"attacker IP stays locked even with the right password")
+
+	// The legitimate user, from their own IP, is unaffected.
+	assert.Equal(t, http.StatusOK,
+		loginFrom(router, victimIP, "grief_target", strongPassword).Code,
+		"victim's IP must not be locked by the attacker's failures (issue #867)")
+}
+
+// TestLoginUser_SameIP_StillLocksAfterMaxAttempts: brute-force protection per
+// source is preserved — repeated failures from one IP still lock that IP.
+func TestLoginUser_SameIP_StillLocksAfterMaxAttempts(t *testing.T) {
+	cfg := config.Config{JWTSecretKey: "mysecretkey", JWTExpiryHours: 24}
+	db, router := setupRouter()
+	router.POST("/login", func(c *gin.Context) { LoginUser(c, &cfg) })
+
+	u := models.User{Username: "bf_target", Email: "bf_target@example.com"}
+	u.Password, _ = services.HashPassword(strongPassword)
+	require.NoError(t, db.Create(&u).Error)
+
+	const ip = "203.0.113.8"
+	for i := 0; i < middleware.MaxLoginAttempts-1; i++ {
+		require.Equal(t, http.StatusUnauthorized, loginFrom(router, ip, "bf_target", "nope").Code, "attempt %d", i+1)
+	}
+	assert.Equal(t, http.StatusTooManyRequests, loginFrom(router, ip, "bf_target", "nope").Code,
+		"MaxLoginAttempts-th failure from one IP must lock it")
+}
+
 func TestLoginUser_InvalidInput(t *testing.T) {
 	config := config.Config{
 		JWTSecretKey: "mysecretkey",
