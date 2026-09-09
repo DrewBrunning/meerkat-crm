@@ -143,6 +143,24 @@ var steps = []step{
 	{"search-contact", (*smokeRun).searchContact},
 	{"export", (*smokeRun).exportAndReadBack},
 	{"refetch-fields", (*smokeRun).refetchAndAssertFields},
+	// The checks below exercise the shipped nginx layer specifically — no Go
+	// test in this repo sees nginx (httptest hits the Gin router directly), so
+	// a proxy-config regression is invisible everywhere else.
+	{"export-loss-header", (*smokeRun).exportLossHeaderThroughProxy}, // issue #863
+	{"import-body-limit", (*smokeRun).importBodyLimitOwnedByApp},     // issue #876
+	{"wellknown-discovery", (*smokeRun).wellKnownDiscoveryRelative},  // issue #865
+}
+
+// smokeLossyCRM is the CRM-envelope the smoke contact carries. Each field is a
+// CRM-only concept with no vCard/JSContact home, so a structured export
+// reports a fidelity loss for each — which is how the export-loss-header step
+// gets a non-trivial X-Mycorrhizal-Export-Loss-Report to send back through
+// nginx (issue #863).
+var smokeLossyCRM = map[string]any{
+	"how_we_met":          "Met at the clean-install open house",
+	"work_information":    "Runs the deployment smoke test",
+	"contact_information": "Reachable only via this test",
+	"gender":              "unspecified",
 }
 
 // checkHealth asserts the three-endpoint health surface (issue #421) reports
@@ -275,7 +293,7 @@ func (r *smokeRun) createContact() error {
 		},
 		"keywords": []string{"deploysmoke"},
 	}
-	body, err := r.postJSON("/api/v1/contacts", map[string]any{"card": card, "crm": map[string]any{}}, http.StatusCreated)
+	body, err := r.postJSON("/api/v1/contacts", map[string]any{"card": card, "crm": smokeLossyCRM}, http.StatusCreated)
 	if err != nil {
 		return err
 	}
@@ -441,6 +459,172 @@ func (r *smokeRun) exportAndReadBack() error {
 	return nil
 }
 
+// exportLossHeaderThroughProxy pins issue #863: the structured exporters set
+// X-Mycorrhizal-Export-Loss-Report, a URL-encoded JSON header. nginx's default
+// proxy_buffer_size is a single ~4 KB page that must hold the *entire*
+// upstream header block; a large loss-report header overran it and nginx
+// returned 502 in place of the file (the CSV export, which sets no such
+// header, kept working — exactly what the pen test observed). This asserts
+// both exporters return 200 through the shipped nginx and that the loss-report
+// header arrives intact, well-formed, and within a stock proxy header buffer.
+// The smoke contact carries smokeLossyCRM so the header is non-trivial rather
+// than an empty report.
+func (r *smokeRun) exportLossHeaderThroughProxy() error {
+	const lossHeader = "X-Mycorrhizal-Export-Loss-Report"
+	for _, path := range []string{"/api/v1/export/vcf", "/api/v1/export/jscontact"} {
+		status, header, body, err := r.doResp(http.MethodGet, path, "", nil)
+		if err != nil {
+			return err
+		}
+		if status != http.StatusOK {
+			return fmt.Errorf("GET %s: status %d, want 200 — a 5xx here is issue #863 (loss-report header overran the proxy header buffer): %s",
+				path, status, truncate(body, 300))
+		}
+		raw := header.Get(lossHeader)
+		if raw == "" {
+			return fmt.Errorf("GET %s: no %s header — nginx may have dropped an oversized header", path, lossHeader)
+		}
+		// nginx's compiled default proxy_buffer_size is one page (~4 KB) and
+		// holds the whole header block; the value alone must stay well inside it.
+		if len(raw) > 4096 {
+			return fmt.Errorf("GET %s: %s is %d bytes — over a stock 4 KB proxy header buffer (issue #863)", path, lossHeader, len(raw))
+		}
+		decoded, err := url.QueryUnescape(raw)
+		if err != nil {
+			return fmt.Errorf("GET %s: %s is not URL-decodable: %w", path, lossHeader, err)
+		}
+		var report struct {
+			Count       int  `json:"count"`
+			Truncated   bool `json:"truncated"`
+			Diagnostics []struct {
+				Concept string `json:"concept"`
+			} `json:"diagnostics"`
+		}
+		if err := json.Unmarshal([]byte(decoded), &report); err != nil {
+			return fmt.Errorf("GET %s: %s is not valid JSON: %w (%s)", path, lossHeader, err, truncate([]byte(decoded), 200))
+		}
+		if report.Count < len(smokeLossyCRM) {
+			return fmt.Errorf("GET %s: loss-report count = %d, want >= %d (the smoke contact carries that many CRM-only fields with no export home)",
+				path, report.Count, len(smokeLossyCRM))
+		}
+	}
+	return nil
+}
+
+// importBodyLimitOwnedByApp pins issue #876: docker/nginx.conf set no
+// client_max_body_size, so nginx's compiled 1 MB default rejected every
+// import over 1 MB before it reached the backend — making services.MaxCSVSize
+// (20 MB) and friends unreachable in the shipped image, and hiding the app's
+// structured 413 behind nginx's HTML one. With client_max_body_size raised
+// above the largest app cap, the Go BodySizeLimitMiddleware is the binding
+// limit again.
+func (r *smokeRun) importBodyLimitOwnedByApp() error {
+	const path = "/api/v1/contacts/import/upload"
+
+	// (1) A CSV comfortably above nginx's old 1 MB default but well below the
+	// app's 20 MB CSV cap must reach the Go handler: a structured JSON
+	// response, never nginx's text/html 413.
+	ct, small, err := buildMultipartBody("file", "big.csv", csvBytes(2<<20))
+	if err != nil { // # pragma: no cover — buildMultipartBody only fails if multipart calls on a bytes.Buffer fail, which they cannot
+		return err
+	}
+	status, header, body, err := r.doResp(http.MethodPost, path, ct, small)
+	if err != nil {
+		return err
+	}
+	if status == http.StatusRequestEntityTooLarge {
+		return fmt.Errorf("POST %s (2 MB): 413 — nginx client_max_body_size is rejecting below the app's 20 MB CSV cap (issue #876): %s",
+			path, truncate(body, 200))
+	}
+	if mt := header.Get("Content-Type"); !strings.Contains(mt, "json") {
+		return fmt.Errorf("POST %s (2 MB): Content-Type %q, want JSON — the request did not reach the Go handler (nginx HTML error page?): %s",
+			path, mt, truncate(body, 200))
+	}
+
+	// (2) A CSV above the app's 20 MB cap must be rejected by
+	// BodySizeLimitMiddleware with its structured body — proving the app
+	// layer, not the proxy, owns the limit.
+	ct, big, err := buildMultipartBody("file", "big.csv", csvBytes(21<<20))
+	if err != nil { // # pragma: no cover — see the first buildMultipartBody call above
+		return err
+	}
+	status, header, body, err = r.doResp(http.MethodPost, path, ct, big)
+	if err != nil { // # pragma: no cover — identical to the first-upload transport guard above, unreachable once that one has returned
+		return err
+	}
+	if status != http.StatusRequestEntityTooLarge {
+		return fmt.Errorf("POST %s (21 MB): status %d, want 413 from the app: %s", path, status, truncate(body, 200))
+	}
+	if mt := header.Get("Content-Type"); !strings.Contains(mt, "json") {
+		return fmt.Errorf("POST %s (21 MB): Content-Type %q, want JSON — a 413 from nginx, not the app", path, mt)
+	}
+	if !bytes.Contains(body, []byte("request body too large")) {
+		return fmt.Errorf("POST %s (21 MB): body %q, want the app's \"request body too large\"", path, truncate(body, 200))
+	}
+	return nil
+}
+
+// csvBytes returns approximately n bytes of well-formed CSV (a header plus
+// repeated data rows). Used to build import uploads of a controlled wire size.
+func csvBytes(n int) []byte {
+	var buf bytes.Buffer
+	buf.Grow(n + 32)
+	buf.WriteString("given,family,email\n")
+	for buf.Len() < n {
+		buf.WriteString("Smoke,Row,smoke.row@example.com\n")
+	}
+	return buf.Bytes()
+}
+
+// wellKnownDiscoveryRelative pins issue #865: the CardDAV/CalDAV .well-known
+// discovery redirects were emitted by nginx with the default
+// absolute_redirect, which builds the Location from the Host header and
+// nginx's own listen port — leaking the internal :8080 and handing real
+// clients (arriving over https on the published port) a URL they cannot
+// follow. A relative Location resolves against the request URI and carries
+// neither.
+func (r *smokeRun) wellKnownDiscoveryRelative() error {
+	// A client that does not follow redirects, so the 301 itself is readable.
+	noRedirect := &http.Client{
+		Jar:     r.client.Jar,
+		Timeout: 30 * time.Second,
+		CheckRedirect: func(*http.Request, []*http.Request) error {
+			return http.ErrUseLastResponse
+		},
+	}
+	for _, wk := range []struct{ path, want string }{
+		{"/.well-known/carddav", "/carddav/"},
+		{"/.well-known/caldav", "/caldav/"},
+	} {
+		req, err := http.NewRequest(http.MethodGet, r.baseURL+wk.path, nil)
+		if err != nil { // # pragma: no cover — method and URL are always well-formed constants
+			return fmt.Errorf("build request for %s: %w", wk.path, err)
+		}
+		resp, err := noRedirect.Do(req)
+		if err != nil {
+			return fmt.Errorf("GET %s: %w", wk.path, err)
+		}
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusMovedPermanently {
+			return fmt.Errorf("GET %s: status %d, want 301", wk.path, resp.StatusCode)
+		}
+		loc := resp.Header.Get("Location")
+		if loc == "" {
+			return fmt.Errorf("GET %s: 301 with no Location header", wk.path)
+		}
+		if strings.Contains(loc, ":8080") {
+			return fmt.Errorf("GET %s: Location %q discloses the internal port — nginx absolute_redirect must be off (issue #865)", wk.path, loc)
+		}
+		if strings.HasPrefix(loc, "http://") || strings.HasPrefix(loc, "https://") {
+			return fmt.Errorf("GET %s: Location %q is absolute; a relative Location avoids the scheme/port leak (issue #865)", wk.path, loc)
+		}
+		if loc != wk.want {
+			return fmt.Errorf("GET %s: Location %q, want %q", wk.path, loc, wk.want)
+		}
+	}
+	return nil
+}
+
 // refetchAndAssertFields reads the contact back and checks that every field
 // type written in createContact survived the round trip through SQLite.
 func (r *smokeRun) refetchAndAssertFields() error {
@@ -543,19 +727,29 @@ func (r *smokeRun) postJSON(path string, body any, wantStatus ...int) ([]byte, e
 }
 
 func (r *smokeRun) postMultipart(path, field, filename string, content []byte, hint string, wantStatus ...int) ([]byte, error) {
+	contentType, body, err := buildMultipartBody(field, filename, content)
+	if err != nil { // # pragma: no cover — buildMultipartBody cannot fail on a bytes.Buffer
+		return nil, err
+	}
+	return r.expect(http.MethodPost, path, contentType, body, wantStatus, hint)
+}
+
+// buildMultipartBody assembles a single-file multipart/form-data body and
+// returns its Content-Type (with boundary) and bytes.
+func buildMultipartBody(field, filename string, content []byte) (string, []byte, error) {
 	var buf bytes.Buffer
 	w := multipart.NewWriter(&buf)
 	part, err := w.CreateFormFile(field, filename)
 	if err != nil { // # pragma: no cover — CreateFormFile on a fresh writer does not fail
-		return nil, fmt.Errorf("build multipart part: %w", err)
+		return "", nil, fmt.Errorf("build multipart part: %w", err)
 	}
 	if _, err := part.Write(content); err != nil { // # pragma: no cover — writing to a bytes.Buffer-backed part does not fail
-		return nil, fmt.Errorf("write multipart content: %w", err)
+		return "", nil, fmt.Errorf("write multipart content: %w", err)
 	}
 	if err := w.Close(); err != nil { // # pragma: no cover — closing a bytes.Buffer-backed writer does not fail
-		return nil, fmt.Errorf("close multipart writer: %w", err)
+		return "", nil, fmt.Errorf("close multipart writer: %w", err)
 	}
-	return r.expect(http.MethodPost, path, w.FormDataContentType(), buf.Bytes(), wantStatus, hint)
+	return w.FormDataContentType(), buf.Bytes(), nil
 }
 
 // do issues one request and returns the fully-read body and status. The
@@ -583,6 +777,33 @@ func (r *smokeRun) do(method, path, contentType string, body []byte) ([]byte, in
 		return nil, resp.StatusCode, fmt.Errorf("read response body: %w", err)
 	}
 	return respBody, resp.StatusCode, nil
+}
+
+// doResp issues one request and returns the status, response headers and the
+// fully-read body. Unlike do(), it surfaces the header map — the nginx-layer
+// steps assert on Location / Content-Type / X-Mycorrhizal-Export-Loss-Report.
+func (r *smokeRun) doResp(method, path, contentType string, body []byte) (int, http.Header, []byte, error) {
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequest(method, r.baseURL+path, reader)
+	if err != nil { // # pragma: no cover — method and URL are always well-formed constants
+		return 0, nil, nil, fmt.Errorf("build request: %w", err)
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	resp, err := r.client.Do(req)
+	if err != nil {
+		return 0, nil, nil, fmt.Errorf("%s %s: %w", method, path, err)
+	}
+	defer resp.Body.Close()
+	respBody, err := io.ReadAll(resp.Body)
+	if err != nil { // # pragma: no cover — the test servers always send a complete body
+		return resp.StatusCode, resp.Header, nil, fmt.Errorf("read response body: %w", err)
+	}
+	return resp.StatusCode, resp.Header, respBody, nil
 }
 
 func truncate(b []byte, n int) string {

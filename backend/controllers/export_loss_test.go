@@ -406,6 +406,55 @@ func TestExportLossHeader_TruncatesToHeaderBudget(t *testing.T) {
 	assert.NotEmpty(t, hdr.Diagnostics, "the bounded header still carries what fit")
 }
 
+// TestExportLossHeader_FitsStockProxyHeaderBuffer pins issue #863: the
+// URL-encoded loss-report header must fit inside a reverse proxy's *default*
+// response-header buffer. nginx — the proxy in this project's shipped
+// all-in-one image — holds the entire upstream header block in a single
+// proxy_buffer_size buffer whose compiled default is one memory page (4 KB on
+// the linux/amd64 Alpine build shipped). The previous 6 KB bound overran that
+// on its own, and nginx returned "502 Bad Gateway" in place of the export
+// (the CSV export, which sets no such header, kept working — exactly the
+// asymmetry the pen test reported). The value must stay well under 4 KB so
+// the status line and the dozen other response headers also fit.
+func TestExportLossHeader_FitsStockProxyHeaderBuffer(t *testing.T) {
+	db, router := setupRouter()
+	registerVCFRoute(router, "")
+
+	var user models.User
+	db.First(&user)
+	// Far more lossy contacts than the bound can carry, each padded with a
+	// realistic free-text CRM field so a diagnostic is not artificially small.
+	for i := 0; i < 300; i++ {
+		db.Create(&models.Contact{
+			UserID:    user.ID,
+			Firstname: "Many",
+			Lastname:  "Losses",
+			Gender:    "x",
+			HowWeMet:  "met at a conference; long-ish note so the report entry is a realistic size",
+		})
+	}
+
+	req, _ := http.NewRequest("GET", "/export/vcf?version=4", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+	require.Equal(t, http.StatusOK, w.Code)
+
+	raw := w.Header().Get(exportLossReportHeader)
+	require.NotEmpty(t, raw)
+
+	hdr := parseLossHeader(t, w)
+	require.True(t, hdr.Truncated, "300 lossy contacts must overflow the bound and truncate")
+	require.Greater(t, hdr.Count, len(hdr.Diagnostics),
+		"count is the true total; diagnostics is the bounded subset that fit")
+
+	// The concrete regression: the wire value must fit a stock 4 KB proxy
+	// header buffer with room to spare for every other response header.
+	assert.LessOrEqualf(t, len(raw), maxExportLossHeaderBytes,
+		"the emitted header (%d bytes) must not exceed its own bound", len(raw))
+	assert.LessOrEqual(t, maxExportLossHeaderBytes, 3072,
+		"issue #863: keep the bound small enough that the whole response header block fits a 4 KB proxy buffer")
+}
+
 // TestExportLossHeader_EmptyCarriesEmptyList pins that an export with nothing
 // lost still sets the header — as an empty diagnostics list, not an absent
 // key or null — so a client can always read count/diagnostics.
