@@ -7,10 +7,12 @@ import (
 	"image"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestSmokeConfigFromEnv_Defaults(t *testing.T) {
@@ -86,10 +88,11 @@ func TestPostMultipart_BuildsWellFormedBody(t *testing.T) {
 // happy-path test expects; any other value makes exactly one step's response
 // wrong so the matching negative test can assert run() fails at that step.
 type stubServer struct {
-	t           *testing.T
-	fault       string
-	contactPOST int // POST /api/v1/contacts call counter (first = rich contact, second = related)
-	attachment  []byte
+	t            *testing.T
+	fault        string
+	contactPOST  int // POST /api/v1/contacts call counter (first = rich contact, second = related)
+	exportVCFGET int // GET /api/v1/export/vcf call counter (export step, then export-loss-header step)
+	attachment   []byte
 }
 
 func newStubServer(t *testing.T, fault string) *httptest.Server {
@@ -151,7 +154,15 @@ func (s *stubServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case r.Method == http.MethodGet && p == "/api/v1/search":
 		s.search(w)
 	case r.Method == http.MethodGet && p == "/api/v1/export/vcf":
+		s.exportVCFGET++
 		s.writeLossHeader(w)
+		// The export step reads vcf once; the export-loss-header step reads it
+		// again. Only fail the second read so the export step still passes and
+		// the failure lands on export-loss-header.
+		if s.fault == "export-loss-status" && s.exportVCFGET > 1 {
+			w.WriteHeader(http.StatusBadGateway)
+			return
+		}
 		s.export(w, "export-vcf-code", "export-vcf-noname", "BEGIN:VCARD\nFN:"+smokeGiven+" "+smokeSurname+"\nEND:VCARD\n")
 	case r.Method == http.MethodGet && p == "/api/v1/export/jscontact":
 		s.writeLossHeader(w)
@@ -323,6 +334,12 @@ func (s *stubServer) writeLossHeader(w http.ResponseWriter) {
 		w.Header().Set("X-Mycorrhizal-Export-Loss-Report", lossHeaderValue(4, 6000))
 	case "export-loss-lowcount":
 		w.Header().Set("X-Mycorrhizal-Export-Loss-Report", lossHeaderValue(2, 24))
+	case "export-loss-undecodable":
+		// Not a valid %-escape, so url.QueryUnescape fails.
+		w.Header().Set("X-Mycorrhizal-Export-Loss-Report", "%zz")
+	case "export-loss-notjson":
+		// Decodes fine but is not the JSON object the step expects.
+		w.Header().Set("X-Mycorrhizal-Export-Loss-Report", url.QueryEscape("not a json object"))
 	default:
 		w.Header().Set("X-Mycorrhizal-Export-Loss-Report", lossHeaderValue(6, 24))
 	}
@@ -353,9 +370,23 @@ func (s *stubServer) importUpload(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/html")
 		w.WriteHeader(http.StatusRequestEntityTooLarge)
 		_, _ = w.Write([]byte("<html><head><title>413</title></head><body><h1>413 Request Entity Too Large</h1></body></html>"))
+	case !over && s.fault == "import-nginx-html-200":
+		// Reached "the handler" with a 200 but a non-JSON (proxy error page) body.
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html><body>not the app</body></html>"))
 	case over && s.fault == "import-app-not-enforcing":
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"session_id":"stub"}`))
+	case over && s.fault == "import-big-html-413":
+		// A 413, but from nginx (HTML) rather than the app.
+		w.Header().Set("Content-Type", "text/html")
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		_, _ = w.Write([]byte("<html><body>413</body></html>"))
+	case over && s.fault == "import-big-wrongmsg":
+		// The app's 413, but not carrying the expected error string.
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusRequestEntityTooLarge)
+		_, _ = w.Write([]byte(`{"error":"nope"}`))
 	case over:
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusRequestEntityTooLarge)
@@ -377,6 +408,17 @@ func (s *stubServer) wellKnown(w http.ResponseWriter, target string) {
 	case "wellknown-not-301":
 		w.Header().Set("Location", target)
 		w.WriteHeader(http.StatusOK)
+	case "wellknown-noloc":
+		w.WriteHeader(http.StatusMovedPermanently)
+	case "wellknown-absolute":
+		// Absolute but port-less and scheme-correct — still not what the
+		// step wants (a relative Location).
+		w.Header().Set("Location", "https://example.test"+target)
+		w.WriteHeader(http.StatusMovedPermanently)
+	case "wellknown-wrongpath":
+		// Relative and port-less, but the wrong target.
+		w.Header().Set("Location", strings.TrimSuffix(target, "/"))
+		w.WriteHeader(http.StatusMovedPermanently)
 	default:
 		w.Header().Set("Location", target)
 		w.WriteHeader(http.StatusMovedPermanently)
@@ -477,10 +519,19 @@ func TestRun_StepFailures(t *testing.T) {
 		{"export-loss-missing", "export-loss-header"},
 		{"export-loss-toobig", "export-loss-header"},
 		{"export-loss-lowcount", "export-loss-header"},
+		{"export-loss-undecodable", "export-loss-header"},
+		{"export-loss-notjson", "export-loss-header"},
+		{"export-loss-status", "export-loss-header"},
 		{"import-nginx-html-413", "import-body-limit"},
+		{"import-nginx-html-200", "import-body-limit"},
 		{"import-app-not-enforcing", "import-body-limit"},
+		{"import-big-html-413", "import-body-limit"},
+		{"import-big-wrongmsg", "import-body-limit"},
 		{"wellknown-port-leak", "wellknown-discovery"},
 		{"wellknown-not-301", "wellknown-discovery"},
+		{"wellknown-noloc", "wellknown-discovery"},
+		{"wellknown-absolute", "wellknown-discovery"},
+		{"wellknown-wrongpath", "wellknown-discovery"},
 		{"refetch-code", "refetch-fields"},
 		{"refetch-garbage", "refetch-fields"},
 		{"refetch-noname", "refetch-fields"},
@@ -512,5 +563,37 @@ func TestRun_ConnectionRefused(t *testing.T) {
 	err := run(smokeConfig{baseURL: deadURL})
 	if err == nil || !strings.HasPrefix(err.Error(), "health:") {
 		t.Fatalf("run() against a dead server = %v, want a health-step transport error", err)
+	}
+}
+
+// TestNginxSteps_TransportError covers the transport-failure return in each of
+// the three nginx-layer steps (run() stops at the health step before reaching
+// them, so TestRun_ConnectionRefused cannot). Pointed at a closed port, every
+// step must surface the error rather than panic or pass.
+func TestNginxSteps_TransportError(t *testing.T) {
+	srv := newStubServer(t, "")
+	deadURL := srv.URL
+	srv.Close() // nothing listening now
+
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		t.Fatalf("cookiejar.New: %v", err)
+	}
+	r := &smokeRun{
+		client:  &http.Client{Jar: jar, Timeout: 2 * time.Second},
+		baseURL: deadURL,
+	}
+	steps := []struct {
+		name string
+		fn   func(*smokeRun) error
+	}{
+		{"export-loss-header", (*smokeRun).exportLossHeaderThroughProxy},
+		{"import-body-limit", (*smokeRun).importBodyLimitOwnedByApp},
+		{"wellknown-discovery", (*smokeRun).wellKnownDiscoveryRelative},
+	}
+	for _, s := range steps {
+		if err := s.fn(r); err == nil {
+			t.Errorf("%s against a dead server = nil, want a transport error", s.name)
+		}
 	}
 }

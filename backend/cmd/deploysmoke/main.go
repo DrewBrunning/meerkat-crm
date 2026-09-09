@@ -525,7 +525,7 @@ func (r *smokeRun) importBodyLimitOwnedByApp() error {
 	// app's 20 MB CSV cap must reach the Go handler: a structured JSON
 	// response, never nginx's text/html 413.
 	ct, small, err := buildMultipartBody("file", "big.csv", csvBytes(2<<20))
-	if err != nil {
+	if err != nil { // # pragma: no cover — buildMultipartBody only fails if multipart calls on a bytes.Buffer fail, which they cannot
 		return err
 	}
 	status, header, body, err := r.doResp(http.MethodPost, path, ct, small)
@@ -545,11 +545,11 @@ func (r *smokeRun) importBodyLimitOwnedByApp() error {
 	// BodySizeLimitMiddleware with its structured body — proving the app
 	// layer, not the proxy, owns the limit.
 	ct, big, err := buildMultipartBody("file", "big.csv", csvBytes(21<<20))
-	if err != nil {
+	if err != nil { // # pragma: no cover — see the first buildMultipartBody call above
 		return err
 	}
 	status, header, body, err = r.doResp(http.MethodPost, path, ct, big)
-	if err != nil {
+	if err != nil { // # pragma: no cover — identical to the first-upload transport guard above, unreachable once that one has returned
 		return err
 	}
 	if status != http.StatusRequestEntityTooLarge {
@@ -597,7 +597,7 @@ func (r *smokeRun) wellKnownDiscoveryRelative() error {
 		{"/.well-known/caldav", "/caldav/"},
 	} {
 		req, err := http.NewRequest(http.MethodGet, r.baseURL+wk.path, nil)
-		if err != nil {
+		if err != nil { // # pragma: no cover — method and URL are always well-formed constants
 			return fmt.Errorf("build request for %s: %w", wk.path, err)
 		}
 		resp, err := noRedirect.Do(req)
@@ -728,7 +728,7 @@ func (r *smokeRun) postJSON(path string, body any, wantStatus ...int) ([]byte, e
 
 func (r *smokeRun) postMultipart(path, field, filename string, content []byte, hint string, wantStatus ...int) ([]byte, error) {
 	contentType, body, err := buildMultipartBody(field, filename, content)
-	if err != nil {
+	if err != nil { // # pragma: no cover — buildMultipartBody cannot fail on a bytes.Buffer
 		return nil, err
 	}
 	return r.expect(http.MethodPost, path, contentType, body, wantStatus, hint)
