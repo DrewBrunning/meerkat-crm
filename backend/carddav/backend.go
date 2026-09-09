@@ -88,10 +88,20 @@ func ContextWithUser(ctx context.Context, userID uint, username string, db *gorm
 	return ctx
 }
 
+// errUnauthenticated is the WebDAV error returned when a request reaches the
+// backend without an authenticated principal in context. It carries an explicit
+// 401 so the DAV layer's internal.ServeError renders it as such — a bare
+// fmt.Errorf falls through to a 500 with the message as a plaintext body, which
+// leaks an internal string and misreports an auth problem as a server fault
+// (issue #874).
+func errUnauthenticated() error {
+	return webdav.NewHTTPError(http.StatusUnauthorized, fmt.Errorf("user not authenticated"))
+}
+
 func (b *Backend) getUserID(ctx context.Context) (uint, error) {
 	userID, ok := ctx.Value(userIDKey).(uint)
 	if !ok {
-		return 0, fmt.Errorf("user not authenticated")
+		return 0, errUnauthenticated()
 	}
 	return userID, nil
 }
@@ -158,7 +168,7 @@ func importerForVCard(card vcard.Card) contactmodel.Importer {
 func (b *Backend) CurrentUserPrincipal(ctx context.Context) (string, error) {
 	username := b.getUsername(ctx)
 	if username == "" {
-		return "", fmt.Errorf("user not authenticated")
+		return "", errUnauthenticated()
 	}
 	return "/carddav/principals/" + username + "/", nil
 }
@@ -167,7 +177,7 @@ func (b *Backend) CurrentUserPrincipal(ctx context.Context) (string, error) {
 func (b *Backend) AddressBookHomeSetPath(ctx context.Context) (string, error) {
 	username := b.getUsername(ctx)
 	if username == "" {
-		return "", fmt.Errorf("user not authenticated")
+		return "", errUnauthenticated()
 	}
 	return "/carddav/addressbooks/" + username + "/", nil
 }
@@ -176,7 +186,7 @@ func (b *Backend) AddressBookHomeSetPath(ctx context.Context) (string, error) {
 func (b *Backend) ListAddressBooks(ctx context.Context) ([]carddav.AddressBook, error) {
 	username := b.getUsername(ctx)
 	if username == "" {
-		return nil, fmt.Errorf("user not authenticated")
+		return nil, errUnauthenticated()
 	}
 
 	return []carddav.AddressBook{
@@ -201,12 +211,21 @@ func (b *Backend) ListAddressBooks(ctx context.Context) ([]carddav.AddressBook, 
 func (b *Backend) GetAddressBook(ctx context.Context, urlPath string) (*carddav.AddressBook, error) {
 	username := b.getUsername(ctx)
 	if username == "" {
-		return nil, fmt.Errorf("user not authenticated")
+		return nil, errUnauthenticated()
 	}
 
+	// A path that isn't this authenticated principal's own collection — a
+	// cross-user probe or an unknown collection — is a clean 404, not a 500.
+	// The DAV layer only renders a proper status when the error is a
+	// *webdav.HTTPError; a bare fmt.Errorf here surfaced as HTTP 500 with the
+	// message leaked as a plaintext body (issue #874), inconsistent with the
+	// 404 GetAddressObject already returns for a missing card and with the REST
+	// layer's structured errors. Isolation is unaffected either way — every
+	// path resolves to the authenticated principal — this is purely the
+	// error-handling contract.
 	expectedPath := "/carddav/addressbooks/" + username + "/contacts/"
 	if urlPath != expectedPath && urlPath+"/" != expectedPath {
-		return nil, fmt.Errorf("address book not found")
+		return nil, webdav.NewHTTPError(http.StatusNotFound, fmt.Errorf("address book not found"))
 	}
 
 	return &carddav.AddressBook{
