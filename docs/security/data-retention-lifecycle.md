@@ -179,7 +179,11 @@ Session/JWT cookies, TOTP recovery codes, password-reset tokens, API tokens.
 - **Retention**: token expiry per type (session absolute TTL = `JWT_EXPIRY_HOURS`, plus the
   `SESSION_IDLE_TIMEOUT_HOURS` idle cutoff; reset-token TTL; recovery-code single-use — deleted
   in the same `WHERE` that consumes them, `services/twofactor.go:171-175`). API tokens live until
-  revoked/rotated (issue #413).
+  revoked/rotated (issue #413). A single scalar of auth state also persists on the `users` row for
+  TOTP anti-replay: `users.totp_last_used_step` (issue #873, migration `000054`) holds the RFC 6238
+  counter step of the last accepted TOTP code so a replay inside its ±1 step window is rejected
+  (`services.BurnTOTPStep`); it is a derived monotonic marker, not a secret, and is cleared to NULL
+  on 2FA disable / admin 2FA reset.
 - **Deletion / propagation**: logout revokes this device's `sessions` row server-side (`RevokeSession`)
   and clears the cookie + `USER_INFO_KEY` client-side (`frontend/src/auth.ts:172`); a password / 2FA
   change revokes every row (`RevokeAllSessions`) beside the `TokenVersion` bump; revoke-all/rotate

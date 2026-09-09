@@ -50,4 +50,12 @@ type User struct {
 	TOTPSecretEncrypted *string    `gorm:"column:totp_secret_encrypted" json:"-"`
 	TOTPEnabled         bool       `gorm:"column:totp_enabled;not null;default:false" json:"-"`
 	TOTPConfirmedAt     *time.Time `gorm:"column:totp_confirmed_at" json:"-"`
+
+	// TOTPLastUsedStep is the RFC 6238 counter step (unix_seconds / 30) of the
+	// most recently accepted TOTP code for this user — the single-use / anti-
+	// replay guard (issue #873, RFC 6238 §5.2). A code is accepted only if its
+	// step is strictly greater than this; services.BurnTOTPStep does the compare
+	// and the write in one conditional UPDATE so a replay cannot race a first
+	// use. Nil until the first code is spent. Migration 000054.
+	TOTPLastUsedStep *int64 `gorm:"column:totp_last_used_step" json:"-"`
 }
