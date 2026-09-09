@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"strings"
+
 	"github.com/gin-gonic/gin"
 )
 
@@ -43,6 +45,17 @@ func SecurityHeadersMiddleware(enableHSTS bool) gin.HandlerFunc {
 		if enableHSTS {
 			c.Header("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
 		}
+
+		// Private API responses must never be retained by a shared/intermediary
+		// cache or the browser bfcache: a heuristically-cached GET could serve
+		// one context's view of private data to another (issue #872). Scoped to
+		// /api/ so the SPA's static assets — served by nginx, not this process,
+		// with their own ETag + hashed-filename long-cache — are untouched. This
+		// process serves no static assets, so the prefix is the whole boundary.
+		if strings.HasPrefix(c.Request.URL.Path, "/api/") {
+			c.Header("Cache-Control", "no-store")
+		}
+
 		c.Next()
 	}
 }

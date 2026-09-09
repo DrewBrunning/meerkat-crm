@@ -82,6 +82,9 @@ test.describe('Security headers: SPA (nginx)', () => {
     expect(response.status()).toBe(200);
     assertHeaders(response.headers(), NGINX_SECURITY_HEADERS);
     expect(response.headers()['cache-control']).toContain('immutable');
+    // Issue #872: the API's no-store must NOT bleed onto hashed static assets
+    // -- they stay long-cached. The backend's Cache-Control is scoped to /api/.
+    expect(response.headers()['cache-control']).not.toContain('no-store');
   });
 
   test("Strict-Transport-Security is absent, matching this stack's COOKIE_SECURE=off toggle", async ({
@@ -111,6 +114,17 @@ test.describe('Security headers: API (Go backend)', () => {
   test('Strict-Transport-Security is absent on /api/ too', async ({ request }) => {
     const response = await request.get(`${API_BASE_URL}/contacts?limit=1`);
     expect(response.headers()['strict-transport-security']).toBeUndefined();
+  });
+
+  test('an authenticated /api/ response is Cache-Control: no-store (issue #872)', async ({
+    request,
+  }) => {
+    // Private JSON must not be retained by a shared/intermediary cache or the
+    // browser bfcache. Backend-set, scoped to the /api/ prefix -- see the
+    // no-store block in backend/middleware/security_headers.go.
+    const response = await request.get(`${API_BASE_URL}/contacts?limit=1`);
+    expect(response.ok(), `contacts: ${response.status()} ${await response.text()}`).toBeTruthy();
+    expect(response.headers()['cache-control']).toBe('no-store');
   });
 });
 
