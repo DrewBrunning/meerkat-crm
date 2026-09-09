@@ -357,6 +357,11 @@ func TestAuthAuditEvents_AdminUserOperations(t *testing.T) {
 	})
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
+	// Post-#871 an admin cannot delete a peer admin, so the account steps
+	// itself down first. Done here as a direct write (this harness is fixed
+	// to `actor`'s session); in the real API it is a self-service PATCH.
+	require.NoError(t, db.Model(&models.User{}).Where("id = ?", created.ID).Update("is_admin", false).Error)
+
 	// Delete.
 	w = auditDoJSON(router, "DELETE", "/admin/users/"+strconv.Itoa(int(created.ID)), nil)
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
@@ -382,6 +387,60 @@ func TestAuthAuditEvents_AdminUserOperations(t *testing.T) {
 	// The delete event survives the target's hard-delete cascade (UserID =
 	// actor, not target).
 	assert.EqualValues(t, 1, countAudit(t, db, models.AuditEntityUser, id, models.AuditOpDelete))
+}
+
+// Issue #871: an admin cannot demote or delete a PEER admin (self-service
+// role changes only). The blocked attempts must produce NO audit event
+// (nothing changed), while an admin's own self-demotion still emits the
+// AuditOpRoleChange it always has.
+func TestAuthAuditEvents_PeerAdminGuards(t *testing.T) {
+	db, router, _ := newAuthAuditRouter(t)
+
+	// A peer admin plus a third admin, so no action below is a last-admin case.
+	peer := models.User{Username: "peeradmin", Password: strongPassword, Email: "peeradmin@example.com", IsAdmin: true}
+	require.NoError(t, db.Create(&peer).Error)
+	require.NoError(t, db.Create(&models.User{Username: "thirdadmin", Password: strongPassword, Email: "thirdadmin@example.com", IsAdmin: true}).Error)
+	peerID := fmt.Sprintf("%d", peer.ID)
+
+	// Blocked peer-demote -> 403, no role-change audit.
+	w := auditDoJSON(router, "PATCH", "/admin/users/"+strconv.Itoa(int(peer.ID)), models.AdminUserUpdateInput{IsAdmin: boolPtr(false)})
+	require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+
+	// Blocked peer-delete -> 403, no delete audit.
+	w = auditDoJSON(router, "DELETE", "/admin/users/"+strconv.Itoa(int(peer.ID)), nil)
+	require.Equal(t, http.StatusForbidden, w.Code, w.Body.String())
+	models.AuditFlush()
+
+	assert.EqualValues(t, 0, countAudit(t, db, models.AuditEntityUser, peerID, models.AuditOpRoleChange),
+		"a blocked peer-demote must not emit a role-change audit event")
+	assert.EqualValues(t, 0, countAudit(t, db, models.AuditEntityUser, peerID, models.AuditOpDelete),
+		"a blocked peer-delete must not emit a delete audit event")
+
+	// Self-demotion (peer acting on their own account) is allowed and still
+	// audited. A fresh router authenticated as `peer`.
+	selfRouter := gin.New()
+	selfRouter.Use(func(c *gin.Context) {
+		c.Set("db", db)
+		c.Set("cfg", config.Config{JWTSecretKey: testJWTSecret, JWTExpiryHours: 24})
+		c.Set("userID", peer.ID)
+		c.Set("username", peer.Username)
+		c.Next()
+	})
+	selfRouter.PATCH("/admin/users/:id", middleware.ValidateJSONMiddleware(&models.AdminUserUpdateInput{}), UpdateUser)
+
+	w = auditDoJSON(selfRouter, "PATCH", "/admin/users/"+strconv.Itoa(int(peer.ID)), models.AdminUserUpdateInput{IsAdmin: boolPtr(false)})
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+	models.AuditFlush()
+
+	assert.EqualValues(t, 1, countAudit(t, db, models.AuditEntityUser, peerID, models.AuditOpRoleChange),
+		"an admin's own self-demotion must emit exactly one role-change audit event")
+
+	// That role-change event is attributed to the acting (self) admin.
+	var events []models.AuditEvent
+	require.NoError(t, db.Where("entity_type = ? AND entity_id = ? AND operation = ?",
+		models.AuditEntityUser, peerID, models.AuditOpRoleChange).Find(&events).Error)
+	require.Len(t, events, 1)
+	assert.EqualValues(t, peer.ID, events[0].UserID)
 }
 
 func strPtr(s string) *string { return &s }

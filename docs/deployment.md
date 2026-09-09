@@ -62,6 +62,7 @@ Set these variables in `.env` when running over HTTPS:
 | `COOKIE_SECURE` | `true` |
 | `COOKIE_DOMAIN` | Your domain |
 | `JWT_SECRET_KEY` | Generate with `openssl rand -base64 32`; the server refuses to start with the `.env.example` placeholder or a weak secret |
+| `WEBHOOK_BLOCK_PRIVATE_URLS`, `CALDAV_BLOCK_PRIVATE_URLS`, `IMMICH_BLOCK_PRIVATE_URLS`, `PAPERLESS_BLOCK_PRIVATE_URLS`, `SEAFILE_BLOCK_PRIVATE_URLS`, `WEBDAV_BLOCK_PRIVATE_URLS`, `MONICA_BLOCK_PRIVATE_URLS`, `OIDC_BLOCK_PRIVATE_URLS` | `true` on any instance reachable from the internet or hosting accounts you do not personally vet. These default to `false` (trusted-LAN assumption); with them off, an authenticated user's webhook/integration URL can reach loopback, LAN hosts, and `169.254.169.254`. See the [SSRF hardening row](security/deployment-baseline.html#recommended-baseline) in the security baseline. |
 
 
 ## Multi-user instances
@@ -78,6 +79,12 @@ create each account yourself from the admin panel (Settings → Admin). The firs
 registered on a fresh instance is automatically an admin. Open self-service registration
 is fine for a single-user instance and for a small group you fully trust; it is not the
 setting the abuse controls are tuned for.
+
+A multi-tenant instance should also enable the **app-layer SSRF guard** — the
+`*_BLOCK_PRIVATE_URLS` set defaults off for trusted-LAN self-hosting, and with it off an
+account holder who can configure a webhook or integration URL can make the server reach
+your internal network. See the [SSRF hardening row](security/deployment-baseline.html#recommended-baseline)
+in the security baseline and the "SSRF hardening" block in `.env.example`.
 
 ## Single Sign-On (OIDC)
 

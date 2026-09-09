@@ -408,13 +408,17 @@ func UpdateUser(c *gin.Context) {
 	// Pre-mutation snapshot so the audit trail can name what actually changed.
 	wasAdmin := user.IsAdmin
 
-	// Prevent admin from removing their own admin status
-	if input.IsAdmin != nil && !*input.IsAdmin && user.ID == currentUserID {
-		apperrors.AbortWithError(c, apperrors.ErrForbidden("Cannot remove your own admin status"))
+	// Admin role changes are self-service only (issue #871). An admin may step
+	// their own privilege down, but may not demote a *peer* admin: without this
+	// guard, admin A could unilaterally strip every other admin and become the
+	// instance's sole admin. The last-admin guard below still applies to a
+	// self-demotion, so this cannot produce a zero-admin instance.
+	if input.IsAdmin != nil && !*input.IsAdmin && user.IsAdmin && user.ID != currentUserID {
+		apperrors.AbortWithError(c, apperrors.ErrForbidden("Cannot change another admin's role; an admin can only remove their own admin status"))
 		return
 	}
 
-	// Check if trying to remove the last admin
+	// Check if trying to remove the last admin (covers a self-demotion too).
 	if input.IsAdmin != nil && !*input.IsAdmin && user.IsAdmin {
 		var adminCount int64
 		if err := db.Model(&models.User{}).Where("is_admin = ?", true).Count(&adminCount).Error; err != nil {
@@ -649,18 +653,17 @@ func DeleteUser(c *gin.Context) {
 		return
 	}
 
-	// Check if trying to delete the last admin
+	// An admin cannot delete another admin (issue #871), mirroring the
+	// self-service-only rule on role changes in UpdateUser. The target must
+	// remove its own admin status first (becoming an ordinary account), after
+	// which any admin may delete it. Self-deletion is already blocked above,
+	// so an admin account is only ever removed after a deliberate
+	// self-demotion -- which subsumes the old explicit last-admin-delete
+	// guard: the sole admin can neither delete themselves nor be deleted by
+	// anyone else, so a zero-admin instance stays unreachable.
 	if user.IsAdmin {
-		var adminCount int64
-		if err := db.Model(&models.User{}).Where("is_admin = ?", true).Count(&adminCount).Error; err != nil {
-			log.Error().Err(err).Msg("Failed to count admins")
-			apperrors.AbortWithError(c, apperrors.ErrDatabase("count admins").WithError(err))
-			return
-		}
-		if adminCount <= 1 {
-			apperrors.AbortWithError(c, apperrors.ErrForbidden("Cannot delete the last admin"))
-			return
-		}
+		apperrors.AbortWithError(c, apperrors.ErrForbidden("Cannot delete another admin; the account must remove its own admin status first"))
+		return
 	}
 
 	// Capture the user's attachment stored names before the transaction

@@ -156,6 +156,21 @@ func writeSSRFSection(b *strings.Builder) {
 	b.WriteString("carry no user-supplied URL, so there is no dialer to guard — the next reader sees\n")
 	b.WriteString("*why*, instead of assuming every outbound call is dial-guarded. An `unguarded` row\n")
 	b.WriteString("would be a known gap with a named fix; there are none today.\n\n")
+
+	b.WriteString("### Operator posture (issue #870)\n\n")
+	b.WriteString("The `guarded-when-enabled` rows are only guarded when the operator opts in. The\n")
+	b.WriteString("default (off) assumes a **trusted LAN** where webhooks and integrations\n")
+	b.WriteString("legitimately target private hosts. On a deployment reachable from the internet, or\n")
+	b.WriteString("one hosting accounts the operator does not vet, that set must be switched on —\n")
+	b.WriteString("`WEBHOOK_BLOCK_PRIVATE_URLS`, `CALDAV_BLOCK_PRIVATE_URLS`,\n")
+	b.WriteString("`IMMICH_BLOCK_PRIVATE_URLS`, `PAPERLESS_BLOCK_PRIVATE_URLS`,\n")
+	b.WriteString("`SEAFILE_BLOCK_PRIVATE_URLS`, `WEBDAV_BLOCK_PRIVATE_URLS`,\n")
+	b.WriteString("`MONICA_BLOCK_PRIVATE_URLS`, `OIDC_BLOCK_PRIVATE_URLS` all `true`. With them off,\n")
+	b.WriteString("the app-layer guard is inactive and only a network egress policy stands between an\n")
+	b.WriteString("authenticated user's integration URL and an internal or cloud-metadata address\n")
+	b.WriteString("(`169.254.169.254`). Operator checklist: the \"SSRF hardening\" row in\n")
+	b.WriteString("`docs/security/deployment-baseline.md`; `.env.example` groups the flags under\n")
+	b.WriteString("\"SSRF hardening\".\n\n")
 }
 
 func writePerIntegration(b *strings.Builder) {
