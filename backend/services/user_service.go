@@ -29,7 +29,12 @@ func HashPassword(password string) (string, error) {
 	return string(hashedPassword), nil
 }
 
-func GenerateToken(user models.User, cfg *config.Config) (string, error) {
+// GenerateToken signs a session JWT for user. sid is the id of the
+// server-side session row this token belongs to (issue #866); it goes in the
+// `sid` claim and AuthMiddleware rejects the request if the row is gone,
+// revoked, or idle-timed-out. Callers mint the row first — use IssueSession,
+// which does both — rather than calling this directly.
+func GenerateToken(user models.User, cfg *config.Config, sid string) (string, error) {
 	JWTSecretKey := cfg.JWTSecretKey
 	if JWTSecretKey == "" {
 		return "", errors.New("JWT secret key is empty")
@@ -48,7 +53,12 @@ func GenerateToken(user models.User, cfg *config.Config) (string, error) {
 		// Checked against the user's current TokenVersion on every request, so
 		// bumping that column invalidates this token immediately.
 		"token_version": user.TokenVersion,
-		"exp":           time.Now().Add(time.Hour * time.Duration(JWTExpiryHours)).Unix(),
+		// The server-side session row (issue #866). Empty only for tokens
+		// minted before migration 000053; AuthMiddleware rejects those,
+		// forcing one re-login, the same way it treats a missing token_version.
+		"sid": sid,
+		"iat": time.Now().Unix(),
+		"exp": time.Now().Add(time.Hour * time.Duration(JWTExpiryHours)).Unix(),
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
@@ -58,6 +68,36 @@ func GenerateToken(user models.User, cfg *config.Config) (string, error) {
 	}
 
 	return tokenString, nil
+}
+
+// SessionIDFromToken returns the `sid` claim of a signed session JWT, or ""
+// if the token is absent, unparseable, wrong-algorithm, badly signed, or
+// carries no `sid`. Used by the logout path, which runs outside AuthMiddleware
+// and must find the current session row to revoke without trusting an
+// unverified token. Expiry is NOT a disqualifier here — an expired token still
+// names a real row worth revoking.
+func SessionIDFromToken(tokenString string, cfg *config.Config) string {
+	if tokenString == "" {
+		return ""
+	}
+	parser := jwt.NewParser(jwt.WithValidMethods([]string{"HS256"}))
+	token, err := parser.Parse(tokenString, func(t *jwt.Token) (any, error) {
+		return []byte(cfg.JWTSecretKey), nil
+	})
+	if token == nil { // # pragma: no cover — jwt.Parse yields a non-nil token even on a malformed string in this version; defensive
+		return "" // # pragma: no cover — see above
+	}
+	// An expired-but-otherwise-valid token still yields its claims here; only
+	// a signature/format failure leaves them untrustworthy.
+	if err != nil && !errors.Is(err, jwt.ErrTokenExpired) {
+		return ""
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok { // # pragma: no cover — jwt.Parse always constructs MapClaims; defensive, mirrors AuthMiddleware
+		return "" // # pragma: no cover — see above
+	}
+	sid, _ := claims["sid"].(string)
+	return sid
 }
 
 // EnsureSelfContact creates a self contact for a user if one doesn't already

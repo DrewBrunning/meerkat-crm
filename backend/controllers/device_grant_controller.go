@@ -59,7 +59,7 @@ func ExchangeDeviceGrant(c *gin.Context, cfg *config.Config) {
 		return
 	}
 
-	tokenString, err := services.GenerateToken(user, cfg)
+	tokenString, err := services.IssueSession(db, user, cfg, c.Request.UserAgent(), c.ClientIP())
 	if err != nil {
 		apperrors.AbortWithError(c, apperrors.ErrInternal("Could not generate token").WithError(err))
 		return

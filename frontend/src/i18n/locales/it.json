@@ -1696,6 +1696,27 @@
     },
     "expired": "Scaduto"
   },
+  "sessions": {
+    "title": "Sessioni attive",
+    "description": "Dispositivi attualmente connessi al tuo account. Revoca quelli che non riconosci; una sessione revocata smette di funzionare immediatamente.",
+    "loadError": "Impossibile caricare le sessioni",
+    "revokeSuccess": "Sessione revocata",
+    "revokeCurrentSuccess": "Disconnesso su questo dispositivo",
+    "revokeError": "Impossibile revocare la sessione",
+    "revokeOthersSuccess_one": "{{count}} altra sessione revocata",
+    "revokeOthersSuccess_other": "{{count}} altre sessioni revocate",
+    "revokeOthersError": "Impossibile revocare le altre sessioni",
+    "device": "Dispositivo",
+    "lastSeen": "Ultima attività",
+    "signedIn": "Accesso",
+    "actions": "Azioni",
+    "unknownDevice": "Dispositivo sconosciuto",
+    "thisDevice": "Questo dispositivo",
+    "revoke": "Revoca",
+    "revokeCurrent": "Disconnetti",
+    "revokeOthersButton": "Disconnetti tutti gli altri dispositivi",
+    "empty": "Nessuna sessione attiva"
+  },
   "users": {
     "title": "Gestione Utenti",
     "loadError": "Caricamento utenti fallito",

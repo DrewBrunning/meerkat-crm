@@ -40,7 +40,7 @@ func TestGenerateToken(t *testing.T) {
 		Username: "testuser",
 	}
 
-	tokenString, err := GenerateToken(user, &config)
+	tokenString, err := GenerateToken(user, &config, "test-sid")
 	assert.NoError(t, err)
 	assert.NotEmpty(t, tokenString)
 
@@ -54,6 +54,7 @@ func TestGenerateToken(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, user.Username, claims["username"])
 	assert.True(t, claims["authorized"].(bool)) // Check if claims authorize is true
+	assert.Equal(t, "test-sid", claims["sid"])  // issue #866: session id claim
 }
 
 func TestGenerateToken_Error(t *testing.T) {
@@ -66,7 +67,7 @@ func TestGenerateToken_Error(t *testing.T) {
 	}
 
 	// Attempts to generate a token should fail
-	_, err := GenerateToken(user, &config)
+	_, err := GenerateToken(user, &config, "test-sid")
 
 	assert.Error(t, err)
 }
