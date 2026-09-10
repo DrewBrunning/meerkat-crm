@@ -1,6 +1,6 @@
 ---
 title: Issue Classification
-nav_order: 23
+nav_order: 24
 ---
 
 # Issue classification

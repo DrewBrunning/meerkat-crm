@@ -34,6 +34,7 @@ jobs:
       frontend: ${{ steps.filter.outputs.frontend }}
       openapi: ${{ steps.filter.outputs.openapi }}
       workflows: ${{ steps.filter.outputs.workflows }}
+      changelog-relevant: ${{ steps.filter.outputs.changelog-relevant }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -59,11 +60,13 @@ jobs:
           echo "frontend=$FRONTEND_CHANGED"
           echo "openapi=$OPENAPI_CHANGED"
           echo "workflows=$WORKFLOWS_CHANGED"
+          echo "changelog-relevant=$CHANGELOG_RELEVANT"
         env:
           BACKEND_CHANGED: ${{ steps.filter.outputs.backend }}
           FRONTEND_CHANGED: ${{ steps.filter.outputs.frontend }}
           OPENAPI_CHANGED: ${{ steps.filter.outputs.openapi }}
           WORKFLOWS_CHANGED: ${{ steps.filter.outputs.workflows }}
+          CHANGELOG_RELEVANT: ${{ steps.filter.outputs.changelog-relevant }}
 
   # Issue #378: the security checklists (docs/security/asvs-l2.md,
   # masvs-l1.md, threat-model.md) claim a `file:line` or test citation behind
@@ -140,6 +143,39 @@ jobs:
       - name: Verify docs structure (links, commands, drift)
         working-directory: backend
         run: go run ./cmd/docscheck
+
+  # REL-05 (issue #449): a PR that touches an operator-visible surface
+  # (`changelog-relevant` in .github/filters.yaml — schema migrations, the
+  # config surface, .env.example) must carry an `## Upgrade notes` /
+  # `## Breaking changes` block in its description, so cmd/releasenotes can
+  # harvest it into the release notes, or an explicit `no-changelog: <reason>`.
+  # Pull-request only (there is no PR body on a push); a skipped job reports
+  # success so it can be a required check. Policy: docs/changelog-policy.md.
+  changelog-note:
+    name: Changelog note for operator-visible change
+    runs-on: ubuntu-latest
+    needs: changes
+    if: github.event_name == 'pull_request' && needs.changes.outputs.changelog-relevant == 'true'
+    permissions:
+      contents: read
+    steps:
+      - name: Require an Upgrade notes block or an explicit opt-out
+        env:
+          # Via env, never inline ${{ }} — the PR body is attacker-controlled
+          # (zizmor template-injection).
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -eu
+          if printf '%s' "$PR_BODY" | grep -qiE '^#{1,6}[[:space:]]+(upgrade notes|breaking changes)[[:space:]]*$'; then
+            echo "Found an Upgrade notes / Breaking changes block."
+            exit 0
+          fi
+          if printf '%s' "$PR_BODY" | grep -qiE 'no-changelog:[[:space:]]*\S'; then
+            echo "Found a 'no-changelog: <reason>' opt-out."
+            exit 0
+          fi
+          echo "::error::This PR changes an operator-visible surface (a migration, the config surface, or .env.example) but its description has no '## Upgrade notes' block and no 'no-changelog: <reason>' line. See docs/changelog-policy.md."
+          exit 1
 
   # Issue #630: the backend test suite is split into parallel legs
   # (`backend-tests` matrix) so `controllers` and `services` — each ~20 min

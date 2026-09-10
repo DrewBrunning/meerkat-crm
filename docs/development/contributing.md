@@ -29,6 +29,13 @@ nav_order: 6
 - Keep PRs focused with one feature or fix per PR.
 - AI tools may assist coding but you are responsible for the code quality. Do not open hands-off vibe-coded PRs. In those cases rather open a feature request instead.
 - Describe what changed and why, not how.
+- If the change is operator-visible — a database migration, a configuration
+  variable, a behavior change, a deprecation, or anything needing action before
+  or after upgrading — put an `## Upgrade notes` block in the PR description (and
+  `## Breaking changes` if it applies). It is harvested into the release notes.
+  If a migration/config change genuinely needs no note, write
+  `no-changelog: <reason>` instead. See the
+  [changelog policy](../changelog-policy.md).
 - Sign off every commit — see below.
 
 ## Sign your commits (DCO)
