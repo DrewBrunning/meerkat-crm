@@ -23,13 +23,20 @@ import SettingsPage from './SettingsPage';
 // This codebase's vitest setup has no auto-cleanup and no globals: true.
 afterEach(cleanup);
 
-// WebhooksSettings, ImmichSettings and NotificationSettings are separately
-// tested (their own *.test.tsx files) and fire their own API calls on mount —
-// stub them out so this file can focus on password change and API tokens
-// without needing to also mock their unrelated endpoints.
+// These child sections are separately tested (their own *.test.tsx files) and
+// each fires its own config fetch on mount — stub them out so this file can
+// focus on password change and API tokens without also mocking their unrelated
+// endpoints. Left unmocked, their mount-time fetches reject under jsdom and the
+// async `handleFetchError` console.error lands during vitest worker teardown,
+// surfacing as `EnvironmentTeardownError: Closing rpc while "onUserConsoleLog"
+// was pending` and failing the run even though every assertion passed.
 vi.mock('./components/WebhooksSettings', () => ({ default: () => null }));
 vi.mock('./components/ImmichSettings', () => ({ default: () => null }));
 vi.mock('./components/NotificationSettings', () => ({ default: () => null }));
+vi.mock('./components/PaperlessSettings', () => ({ default: () => null }));
+vi.mock('./components/SeafileSettings', () => ({ default: () => null }));
+vi.mock('./components/NextcloudSettings', () => ({ default: () => null }));
+vi.mock('./components/LinkFieldTypesSettings', () => ({ default: () => null }));
 
 vi.mock('./api/auth', async (importOriginal) => {
   const actual = await importOriginal<typeof import('./api/auth')>();
