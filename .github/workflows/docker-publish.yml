@@ -507,21 +507,32 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Short SHA and an ISO-8601 build timestamp for the version stamp. The
-      # full SHA is 40 chars, which is unwieldy in a UI badge and in a
-      # bug report; buildinfo's own VCS fallback truncates to 12, so match it.
-      #
-      # Read from the checked-out tree, not from github.sha: on a manual run
-      # github.sha is the dispatching branch's head, which would stamp the
-      # binary and tag the image with a commit that is not the one being built.
+      # The commit + a deterministic build date for the version stamp, read from
+      # the checked-out tree -- NOT github.sha, which on a manual recovery run is
+      # the dispatching branch's head, not the tag being built. `commit` is the
+      # 12-char prefix buildinfo's VCS fallback also uses; `sha_full` is for the
+      # OCI revision label.
       - name: Compute build stamp
         id: stamp
         run: |
           sha=$(git rev-parse HEAD)
+          # REL-04 (issue #448): SOURCE_DATE_EPOCH is the release commit's
+          # committer date -- deterministic per tag, so BuildKit can rewrite
+          # every layer/config timestamp to it and two builds of the same tag
+          # produce the same image config digest. `sha_full` and `created` feed
+          # the explicit OCI labels below (revision + created), which otherwise
+          # come from github.sha / wall-clock and are wrong on a manual run.
+          epoch=$(git log -1 --format=%ct HEAD)
+          # `created` (ISO-8601 of the commit date) is the build date the binary
+          # and the image label both carry -- a deterministic value, so a
+          # third-party rebuild of the tag reproduces the same bytes. It is not
+          # the workflow's wall-clock, which was the old behaviour.
           {
             echo "commit=$(echo "$sha" | cut -c1-12)"
             echo "sha7=$(echo "$sha" | cut -c1-7)"
-            echo "date=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo "sha_full=$sha"
+            echo "source_date_epoch=$epoch"
+            echo "created=$(date -u -d "@$epoch" +%Y-%m-%dT%H:%M:%SZ)"
           } >> "$GITHUB_OUTPUT"
 
       - name: Extract metadata (tags, labels)
@@ -538,6 +549,15 @@ jobs:
             type=semver,pattern={{version}},value=${{ env.RELEASE_TAG }}
             type=semver,pattern={{major}}.{{minor}},value=${{ env.RELEASE_TAG }}
             type=raw,value=${{ steps.stamp.outputs.sha7 }}
+          # REL-04 (issue #448): pin the identity labels explicitly. Left to
+          # metadata-action's defaults, `revision` is github.sha and `created`
+          # is the run's wall-clock -- both wrong on a manual recovery run (the
+          # same reason the tags above take explicit values) and `created`
+          # breaks image reproducibility. These come from the checked-out tag.
+          labels: |
+            org.opencontainers.image.revision=${{ steps.stamp.outputs.sha_full }}
+            org.opencontainers.image.version=${{ env.RELEASE_TAG }}
+            org.opencontainers.image.created=${{ steps.stamp.outputs.created }}
 
       # SHA-pinned (trailing comment carries the version) because Scorecard's
       # Pinned-Dependencies check flagged this line and the cosign-installer
@@ -549,6 +569,13 @@ jobs:
       - name: Build and push
         id: build
         uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        env:
+          # REL-04 (issue #448): BuildKit / build-push-action pick this up and
+          # rewrite every layer + config timestamp to it, so a rebuild of the
+          # same tag yields the same image config digest. See
+          # docs/security/reproducible-builds.md for what this does and does not
+          # make bit-reproducible (the multi-arch manifest digest is not gated).
+          SOURCE_DATE_EPOCH: ${{ steps.stamp.outputs.source_date_epoch }}
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
@@ -565,7 +592,7 @@ jobs:
           build-args: |
             APP_VERSION=${{ steps.meta.outputs.version }}
             APP_COMMIT=${{ steps.stamp.outputs.commit }}
-            APP_BUILD_DATE=${{ steps.stamp.outputs.date }}
+            APP_BUILD_DATE=${{ steps.stamp.outputs.created }}
           # scope is required, not cosmetic, once this step runs as a matrix:
           # the GHA cache backend's default scope is shared across the whole
           # workflow, so the three legs -- running concurrently -- read and

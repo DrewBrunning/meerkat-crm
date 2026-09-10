@@ -1,0 +1,166 @@
+name: Reproducible builds
+
+# REL-04 (issue #448): the standing double-build check. Each run builds an
+# artifact twice with identical, fixed inputs and fails if the two results are
+# not byte-identical (Go binary) or do not share the same image config + layer
+# digests (all-in-one image, linux/amd64). The per-run output in the job
+# summary *is* the recorded double-build comparison the issue asks for.
+#
+# What this does NOT gate: the published multi-arch manifest digest (arm64 is
+# built under emulation; the manifest list carries per-arch descriptors), and
+# the Android APK (not bit-reproducible by design — keystore signature).
+# docs/security/reproducible-builds.md is the full per-artifact statement.
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/**'
+      - 'Dockerfile'
+      - 'backend/Dockerfile'
+      - 'frontend/Dockerfile'
+      - 'docker/**'
+      - '.github/workflows/reproducibility.yml'
+  push:
+    branches: [main]
+  schedule:
+    - cron: '40 3 * * 1' # Monday 03:40 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Fixed stamp values: reproducibility is a property of the toolchain + source,
+# not of the ldflags -X strings, so both builds pin the same placeholder values.
+env:
+  REPRO_SOURCE_DATE_EPOCH: '1700000000'
+  REPRO_APP_VERSION: repro
+  REPRO_APP_COMMIT: '0000000000000000000000000000000000000000'
+  REPRO_APP_BUILD_DATE: '1970-01-01T00:00:00Z'
+
+jobs:
+  go-binary:
+    name: Go server binary is byte-reproducible
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          # No build cache: a warm content-addressed cache would still produce
+          # identical output, but a cold double-build is the honest test.
+          cache: false
+
+      - name: Build the server twice from different paths
+        run: |
+          set -eu
+          ldflags="-X mycorrhizal/buildinfo.Version=${REPRO_APP_VERSION} \
+                   -X mycorrhizal/buildinfo.Commit=${REPRO_APP_COMMIT} \
+                   -X mycorrhizal/buildinfo.BuildDate=${REPRO_APP_BUILD_DATE}"
+
+          build() { # $1 = source dir, $2 = output
+            ( cd "$1" && CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
+                SOURCE_DATE_EPOCH="${REPRO_SOURCE_DATE_EPOCH}" \
+                go build -trimpath -buildvcs=false -ldflags "$ldflags" -o "$2" . )
+          }
+
+          # The second build runs from a different absolute path — exactly what
+          # -trimpath has to neutralise. Without -trimpath these two differ.
+          cp -r backend /tmp/src-b
+          build backend /tmp/repro-a
+          build /tmp/src-b /tmp/repro-b
+
+          a=$(sha256sum /tmp/repro-a | cut -d' ' -f1)
+          b=$(sha256sum /tmp/repro-b | cut -d' ' -f1)
+          {
+            echo "### Go server binary — double build"
+            echo
+            echo "| build | path | sha256 |"
+            echo "|---|---|---|"
+            echo "| a | \`backend/\` | \`$a\` |"
+            echo "| b | \`/tmp/src-b/\` | \`$b\` |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if ! cmp -s /tmp/repro-a /tmp/repro-b; then
+            echo "::error::Go server binary is not byte-reproducible ($a != $b). A path or timestamp is leaking into the build."
+            cmp /tmp/repro-a /tmp/repro-b || true
+            exit 1
+          fi
+          echo "Reproducible: $a"
+
+  all-in-one-image:
+    name: All-in-one image (linux/amd64) is reproducible
+    runs-on: ubuntu-latest
+    # Not a hard gate yet: the Go binary check above is proven bit-reproducible,
+    # but the image adds an `apk add` layer and BuildKit's own metadata, and
+    # this has not yet been observed green across enough runs to block a merge
+    # on. It still builds twice and records the config/layer-digest comparison
+    # in the job summary every run -- a red run is a real signal to investigate.
+    # Flip to a hard gate (drop this line) once it is reliably green on `main`.
+    continue-on-error: true
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@37fe631027851001ddb9b187196cc803df7f5f0e # v4.3.0
+
+      - name: Build the all-in-one image twice and compare digests
+        run: |
+          set -eu
+          build() { # $1 = OCI tar dest
+            SOURCE_DATE_EPOCH="${REPRO_SOURCE_DATE_EPOCH}" docker buildx build \
+              --platform linux/amd64 \
+              --no-cache \
+              --build-arg APP_VERSION="${REPRO_APP_VERSION}" \
+              --build-arg APP_COMMIT="${REPRO_APP_COMMIT}" \
+              --build-arg APP_BUILD_DATE="${REPRO_APP_BUILD_DATE}" \
+              --output "type=oci,dest=$1,rewrite-timestamp=true" \
+              -f Dockerfile .
+          }
+          build /tmp/img-a.tar
+          build /tmp/img-b.tar
+
+          rc=0
+          python3 - /tmp/img-a.tar /tmp/img-b.tar > /tmp/cmp.json <<'PY' || rc=$?
+          import json, sys, tarfile
+
+          def summary(path):
+              with tarfile.open(path) as t:
+                  index = json.load(t.extractfile("index.json"))
+                  algo, hexd = index["manifests"][0]["digest"].split(":")
+                  manifest = json.load(t.extractfile(f"blobs/{algo}/{hexd}"))
+                  return {
+                      "config": manifest["config"]["digest"],
+                      "layers": [layer["digest"] for layer in manifest["layers"]],
+                  }
+
+          a, b = summary(sys.argv[1]), summary(sys.argv[2])
+          print(json.dumps({"a": a, "b": b}, indent=2))
+          sys.exit(0 if a == b else 1)
+          PY
+
+          {
+            echo "### All-in-one image (linux/amd64) — double build"
+            echo
+            echo '```json'
+            cat /tmp/cmp.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ "$rc" -ne 0 ]; then
+            echo "::error::All-in-one image is not reproducible: config/layer digests differ between the two builds. See the job summary and docs/security/reproducible-builds.md."
+            exit 1
+          fi
+          echo "Reproducible: image config + layer digests match."

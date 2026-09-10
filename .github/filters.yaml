@@ -27,7 +27,9 @@
 # source-only edit doesn't pay for dependency resolution + a license scan.
 # Gradle is deliberately absent — trivy can only enumerate Gradle licenses
 # from a `gradle.lockfile` (dependency locking), which this repo doesn't emit
-# yet; see license-compliance.yml.
+# yet; see license-compliance.yml. Enabling Gradle dependency locking is
+# deferred to COMPAT-03 (issue #474) — see docs/security/reproducible-builds.md
+# ("Known, accepted limitations").
 go-manifests:
   - 'backend/go.mod'
   - 'backend/go.sum'

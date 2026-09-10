@@ -200,3 +200,15 @@ cosign verify-blob \
 
 Past the 30-day window, use the registry-embedded SBOM instead (step 4 under "Verifying a Docker
 image" above) — it's the same document, just without a portable standalone signature.
+
+## Reproducibility
+
+The checks above prove an artifact came from this repo's CI. A related question — *can I rebuild
+the source and get the same bytes?* — has its own page:
+[Reproducible builds](reproducible-builds.md) (REL-04, issue #448). In short: the Go server
+binary is byte-reproducible and gated every PR by `.github/workflows/reproducibility.yml`
+(`-trimpath -buildvcs=false`, `SOURCE_DATE_EPOCH`); the `linux/amd64` image's config + layer
+digests are double-build-compared every run (not yet a hard gate); the multi-arch manifest
+digest and the signed Android APK are not bit-reproducible by design, and provenance is the
+mitigation. That page carries the exact rebuild-and-compare commands and the full per-artifact
+table.

@@ -93,8 +93,10 @@ backup-verify: ## Reconcile an assembled backup set (DB + PROFILE_PHOTO_DIR + AT
 
 # Version stamping. /health serves these so a bug report can be tied to the
 # binary that produced it. Override APP_VERSION on a release build; the commit
-# and date are derived from the working tree. A bare `go build` still reports a
-# usable commit via Go's embedded VCS stamp (see buildinfo.Get).
+# and date default from the working tree. These recipes always pass APP_COMMIT
+# via -ldflags, so a bare `go build ./...` that bypasses this Makefile still
+# reports a usable commit via Go's embedded VCS stamp (see buildinfo.Get), but
+# the Makefile-built binary carries the -X value.
 APP_VERSION ?= dev
 APP_COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null)
 APP_BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
@@ -102,15 +104,21 @@ LDFLAGS = -X mycorrhizal/buildinfo.Version=$(APP_VERSION) \
           -X mycorrhizal/buildinfo.Commit=$(APP_COMMIT) \
           -X mycorrhizal/buildinfo.BuildDate=$(APP_BUILD_DATE)
 
+# -trimpath drops the builder's absolute paths and -buildvcs=false keeps VCS
+# state out, so with matching -X values a local build reproduces the release
+# binary the Dockerfiles produce (REL-04, issue #448;
+# docs/security/reproducible-builds.md).
+GO_BUILD_FLAGS = -trimpath -buildvcs=false -ldflags "$(LDFLAGS)"
+
 # Development helpers
 dev: ## Build and run the server in development mode
-	@go build -ldflags "$(LDFLAGS)" -o mycorrhizal . && ./mycorrhizal
+	@go build $(GO_BUILD_FLAGS) -o mycorrhizal . && ./mycorrhizal
 
 test: ## Run all tests
 	@go test ./... -v
 
 build: ## Build the application
-	@go build -ldflags "$(LDFLAGS)" -o mycorrhizal .
+	@go build $(GO_BUILD_FLAGS) -o mycorrhizal .
 
 clean: ## Clean build artifacts
 	@rm -f mycorrhizal

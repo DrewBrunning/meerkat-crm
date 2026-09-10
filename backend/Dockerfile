@@ -20,8 +20,12 @@ ARG APP_VERSION=dev
 ARG APP_COMMIT=""
 ARG APP_BUILD_DATE=""
 
-# Build the application
+# Build the application. -trimpath drops the builder's absolute paths and
+# -buildvcs=false keeps VCS state out, so the binary is byte-identical across
+# machines -- the commit comes from the -X ldflag (REL-04, issue #448;
+# docs/security/reproducible-builds.md).
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+    -trimpath -buildvcs=false \
     -ldflags "-X mycorrhizal/buildinfo.Version=${APP_VERSION} \
               -X mycorrhizal/buildinfo.Commit=${APP_COMMIT} \
               -X mycorrhizal/buildinfo.BuildDate=${APP_BUILD_DATE}" \
