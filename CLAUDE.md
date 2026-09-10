@@ -462,11 +462,14 @@ API Security Top 10 (2023), each control mapped to `file:line` or a test with a
 `satisfied`/`partial`/`not-applicable` status. It is the review anchor: a security-sensitive PR
 **updates the row(s) it touches** (status + citation) in the same commit; if the change can't
 point at a row, it doesn't know what it is changing. N/A rows are written-down decisions (single
-process, self-hosted) — they flip to real statuses if the architecture changes. Five documented
+process, self-hosted) — they flip to real statuses if the architecture changes. Eight documented
 positions live there: NIST 800-63B password hashing (bcrypt cost 10, why not Argon2id yet),
 cryptographic agility (direct bcrypt/JWT calls, deliberate pre-1.0), opt-in HIBP (2.1.7), the
-at-rest field-encryption envelope (P4, #380), and the operator-owned backup confidentiality/
-retention boundary (P5, #420).
+at-rest field-encryption envelope (P4, #380), the operator-owned backup confidentiality/
+retention boundary (P5, #420), the opt-in update-availability check (P6, #650), Android
+client-side biometric resume (P7, #722), and — P8, #511 — that external assessment is the
+two-agent #860 engagement, with no commissioned commercial pen test planned or gated (hobby
+project, no security budget).
 
 **What the project actually claims, and when it was last checked, is
 `docs/security/asvs-l2-verification-report.md`** (issue #378) — the dated verification pass over both
