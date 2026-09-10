@@ -129,6 +129,13 @@ FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec4
 # (exit-code: 1 on fixed CRITICAL/HIGH). No base-image digest bump needed;
 # `apk policy libssl3` against this exact digest already lists 3.5.8-r0 from
 # alpine/v3.24/main.
+#
+# `rm -f /var/log/apk.log` is a reproducibility fix (REL-04, issue #448): apk
+# stamps the wall-clock time it ran into the first line of that log
+# ("Running `apk add ...` at 2026-09-10 19:17:50"), and BuildKit's
+# rewrite-timestamp only normalises file mtimes, not file *contents* -- so the
+# log body alone made this layer's digest differ between two otherwise
+# byte-identical builds. The log has no value in an immutable image; drop it.
 RUN apk add --no-cache \
     ca-certificates=20260611-r0 \
     tzdata=2026c-r0 \
@@ -138,6 +145,7 @@ RUN apk add --no-cache \
     libc6-compat=1.1.0-r4 \
     libssl3=3.5.8-r0 \
     libcrypto3=3.5.8-r0 \
+    && rm -f /var/log/apk.log \
     && find / -xdev -type f \( -perm -4000 -o -perm -2000 \) -exec chmod a-s {} +
 
 WORKDIR /app
