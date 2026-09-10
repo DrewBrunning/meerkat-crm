@@ -4,11 +4,26 @@ name: Release
 # is one human action -- dispatch this with a version -- and everything
 # downstream is automatic and gated.
 #
-# What a real run does, in order:
+# FINAL vs RELEASE CANDIDATE (RC-02, issue #446). The `version` input decides:
+#   - `vX.Y.Z`      -> a final release, cut from `main` (the default `ref`).
+#   - `vX.Y.Z-rc.N` -> a release candidate, cut from `ref: release/vX.Y.0`.
+# An RC runs the SAME mandatory gate battery (steps 2-3, 8) -- "RC gates match
+# release gates" (#446 action 7) -- but SKIPS the two final-release-only steps:
+#   - the schema-fixture registration (steps 4-5, 7): an RC ships the same
+#     schema the final will, and you never support in-place upgrade *from* an
+#     RC, so the fixture is registered once, at promotion (promote-rc.yml);
+#   - the ASVS/MASVS re-verification changelog-row gate (step 3): a
+#     final-release obligation. The RC still runs `citecheck`.
+# docker-publish.yml marks an `-rc.` tag's GitHub Release as a pre-release and
+# never `make_latest`, so it stays off the in-app update check and Obtainium.
+# Promotion (RC -> final, same artifact by digest) is promote-rc.yml.
+# Full policy: docs/release-candidate-process.md.
 #
-#   1. validates the version string, that no such tag exists, and that it is
-#      not already registered in SupportedReleases;
-#   2. VERIFIES REPOSITORY STATE -- the checkout is the true tip of origin/main;
+# What a run does, in order (an RC skips 4, 5, 7 and the ASVS row of 3):
+#
+#   1. validates the version string, that no such tag exists, and (final only)
+#      that it is not already registered in SupportedReleases;
+#   2. VERIFIES REPOSITORY STATE -- the checkout is the true tip of the `ref`;
 #   3. runs the MANDATORY GATE BATTERY and refuses to go further on any failure:
 #        - `go run ./cmd/citecheck` (security-doc citations resolve; issue #608);
 #        - `go run ./cmd/releasegatecheck` (the gate registry is coherent);
@@ -26,20 +41,24 @@ name: Release
 #   6. writes release-metadata.json (version, migration version, source
 #      revision, gate results) -- kept as a workflow artifact and, on a real
 #      run, attached to the GitHub Release;
-#   7. commits releases.go + the new dump directly to main and pushes main;
-#   8. triggers + waits on the release-tier suites that do not run on
-#      push: main (min-version-tests, zap-dast) and the ones that do, refusing
-#      to tag on any observed failure;
-#   9. tags <version> at the fixture commit and pushes the tag.
+#   7. (final only) commits releases.go + the new dump directly to `ref` and
+#      pushes it;
+#   8. triggers + waits on the release-tier suites -- for a final release the
+#      two that have no push:main trigger (min-version-tests, zap-dast), for an
+#      RC all of them (a push to release/* triggers nothing) -- refusing to tag
+#      on any observed failure;
+#   9. tags <version> at the release commit (the fixture commit for a final,
+#      the `ref` HEAD for an RC) and pushes the tag.
 #
 # The tag push is what triggers docker-publish.yml (build + sign the three
 # images and the release APK, mint SBOMs + SLSA provenance + SHA256SUMS, create
 # the GitHub Release). That works -- and needs NO change to docker-publish.yml's
 # trigger -- only because the push here uses a GitHub App token, not
 # GITHUB_TOKEN: a tag pushed with GITHUB_TOKEN cannot trigger another workflow.
-# The tag also points at a real commit on main (the one carrying the dump), so
-# docker-publish's schema-fixture-gate passes and source<->release
-# correspondence is exact.
+# For a final release the tag points at a real commit on main (the one carrying
+# the dump), so docker-publish's schema-fixture-gate passes and source<->release
+# correspondence is exact; for an RC the tag points at the release-branch tip
+# and schema-fixture-gate is exempt for `-rc.` tags.
 #
 # DRY RUN (`dry_run: true`): runs steps 1-6 -- every gate, the fixture
 # regeneration, the test gates, the metadata -- but makes NO commit, push or
@@ -57,10 +76,10 @@ name: Release
 #
 # Failure modes:
 #   - steps 1-6 fail  -> nothing was pushed; fix and re-dispatch.
-#   - main pushed, step 8 or the tag push fails -> the fixture commit is on
-#     main; re-push just the tag, or dispatch docker-publish.yml with its `tag`
-#     input (its existing recovery path). Do NOT re-dispatch this workflow -- it
-#     refuses because the tag already exists.
+#   - (final) main pushed, step 8 or the tag push fails -> the fixture commit is
+#     on main; re-push just the tag, or dispatch docker-publish.yml with its
+#     `tag` input. Do NOT re-dispatch this workflow -- it refuses an existing
+#     tag. (An RC pushes nothing before the tag, so this window does not exist.)
 #   - tag pushed, docker-publish.yml fails -> recover the images via
 #     docker-publish.yml -> Run workflow -> `tag` input.
 
@@ -68,9 +87,14 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version to cut, e.g. v0.6.6'
+        description: 'Release version to cut, e.g. v0.6.6 or v1.0.0-rc.1'
         required: true
         type: string
+      ref:
+        description: 'Branch to cut from -- main for a final release, release/vX.Y.0 for an RC (RC-02, issue #446)'
+        required: false
+        type: string
+        default: main
       dry_run:
         description: 'Run every gate + regenerate the fixture, but make no commit/push/tag'
         required: false
@@ -116,14 +140,15 @@ jobs:
           # the tag, nothing else -- even if the App is granted more.
           permission-contents: write
 
-      - name: Checkout main
+      - name: Checkout the release ref
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          # Cut from the true main tip; fetch-depth 0 so the "tag exists" check
-          # and the "previous release tag" lookup see the full ref set.
-          # persist-credentials: false per repo convention -- the push step
-          # scopes its own credential (the App token) via an ephemeral helper.
-          ref: main
+          # `main` for a final release, `release/vX.Y.0` for an RC. fetch-depth 0
+          # so the "tag exists" check and the "previous release tag" lookup see
+          # the full ref set. persist-credentials: false per repo convention --
+          # the push step scopes its own credential (the App token) via an
+          # ephemeral helper.
+          ref: ${{ inputs.ref }}
           fetch-depth: 0
           persist-credentials: false
 
@@ -144,16 +169,20 @@ jobs:
           # Kept byte-identical to the gate in docker-publish.yml; a drift test
           # (internal/versionpolicy) fails if these diverge.
           if ! printf '%s' "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$'; then
-            echo "::error::Version must match the versioning policy: vMAJOR.MINOR.PATCH with an optional -rc.N suffix (e.g. v0.6.6). Got '$VERSION'. See docs/versioning-policy.md."
+            echo "::error::Version must match the versioning policy: vMAJOR.MINOR.PATCH with an optional -rc.N suffix (e.g. v0.6.6 or v1.0.0-rc.1). Got '$VERSION'. See docs/versioning-policy.md."
             exit 1
           fi
-          # RC tags are valid per the versioning policy, but RC publication
-          # mechanics (pre-release flag, no auto-update channel, promotion path)
-          # are RC-02 / issue #446. This workflow only cuts final releases.
+          # RC-02 (issue #446): classify. An `-rc.N` suffix is a release
+          # candidate -- it skips the schema-fixture registration and the ASVS
+          # changelog-row gate, and docker-publish marks its Release as a
+          # pre-release. Everything else is identical.
           if printf '%s' "$VERSION" | grep -qE -- '-rc\.[0-9]+$'; then
-            echo "::error::'$VERSION' is a release-candidate tag. RC publication is issue #446 and not implemented by this workflow yet."
-            exit 1
+            IS_RC=true
+            echo "Release candidate: $VERSION (cut from ${GITHUB_REF_NAME:-the checked-out ref})."
+          else
+            IS_RC=false
           fi
+          echo "IS_RC=$IS_RC" >> "$GITHUB_ENV"
           if git rev-parse "refs/tags/$VERSION" >/dev/null 2>&1; then
             if [ "$DRY_RUN" = "true" ]; then
               echo "::warning::Tag $VERSION already exists -- allowed for a dry run (no tag is pushed)."
@@ -162,7 +191,9 @@ jobs:
               exit 1
             fi
           fi
-          if grep -qF "{Tag: \"$VERSION\"," backend/internal/schemafixture/releases.go; then
+          # SupportedReleases only ever records final releases (you never
+          # upgrade *from* an RC), so this check is final-only.
+          if [ "$IS_RC" != "true" ] && grep -qF "{Tag: \"$VERSION\"," backend/internal/schemafixture/releases.go; then
             if [ "$DRY_RUN" = "true" ]; then
               echo "::warning::$VERSION is already registered in SupportedReleases -- allowed for a dry run."
             else
@@ -174,15 +205,17 @@ jobs:
 
       # --- Step 2: repository state ------------------------------------------
       - name: Verify repository state
+        env:
+          REF: ${{ inputs.ref }}
         run: |
           set -eu
-          git fetch --quiet origin main
+          git fetch --quiet origin "$REF"
           head="$(git rev-parse HEAD)"
-          origin="$(git rev-parse origin/main)"
-          echo "Local HEAD:   $head"
-          echo "origin/main:  $origin"
+          origin="$(git rev-parse "origin/${REF}")"
+          echo "Local HEAD:      $head"
+          echo "origin/${REF}:  $origin"
           if [ "$head" != "$origin" ]; then
-            echo "::error::Checkout is not at the tip of origin/main ($head != $origin). Re-dispatch; do not cut from a stale ref."
+            echo "::error::Checkout is not at the tip of origin/${REF} ($head != $origin). Re-dispatch; do not cut from a stale ref."
             exit 1
           fi
           if [ -n "$(git status --porcelain)" ]; then
@@ -255,7 +288,11 @@ jobs:
             sleep 45
           done
 
+      # Final-release only: an RC re-verifies via the standing per-PR citecheck
+      # (run above) and the RC practice pass; the dated changelog row is a
+      # promotion-time obligation (docs/release-candidate-process.md).
       - name: Gate - ASVS/MASVS re-verification obligation
+        if: ${{ env.IS_RC != 'true' }}
         env:
           ACK_ASVS_CURRENT: ${{ inputs.ack_asvs_current }}
         run: |
@@ -288,6 +325,9 @@ jobs:
           exit 1
 
       # --- Step 4: register + regenerate the schema fixture ---------------
+      # Final-release only. An RC ships the same schema the final will, and no
+      # in-place upgrade is ever supported *from* an RC, so the fixture is
+      # registered once -- at promotion (promote-rc.yml), against the final tag.
       - name: Derive the migration version from the tree
         run: |
           set -eu
@@ -306,6 +346,7 @@ jobs:
           echo "Derived migration version $migver (highest 000NNN_*.up.sql in the tree)."
 
       - name: Register the release
+        if: ${{ env.IS_RC != 'true' }}
         env:
           VERSION: ${{ env.VERSION }}
           MIGRATION_VERSION: ${{ env.MIGRATION_VERSION }}
@@ -326,12 +367,14 @@ jobs:
           git diff -- backend/internal/schemafixture/releases.go
 
       - name: Regenerate schema dumps
+        if: ${{ env.IS_RC != 'true' }}
         working-directory: backend
         run: go run ./cmd/genschema
 
       # The frozen-chain check: genschema rewrites every dump in place, so this
       # asserts exactly one new (untracked) file and zero modifications.
       - name: Assert only the new dump changed
+        if: ${{ env.IS_RC != 'true' }}
         env:
           VERSION: ${{ env.VERSION }}
         run: |
@@ -347,6 +390,7 @@ jobs:
           echo "Frozen chain holds: existing dumps byte-identical; ${VERSION}.sql is the only new file."
 
       - name: Verify test gates
+        if: ${{ env.IS_RC != 'true' }}
         working-directory: backend
         run: go test ./internal/schemafixture/... ./cmd/genschema/... ./cmd/releaselist/...
 
@@ -356,6 +400,8 @@ jobs:
           VERSION: ${{ env.VERSION }}
           MIGRATION_VERSION: ${{ env.MIGRATION_VERSION }}
           RELEASE_COMMIT: ${{ env.RELEASE_COMMIT }}
+          REF: ${{ inputs.ref }}
+          RC: ${{ env.IS_RC }}
           DRY_RUN: ${{ inputs.dry_run }}
           MANDATORY_GATES: ${{ env.MANDATORY_GATES }}
           ASVS_REVERIFICATION: ${{ env.ASVS_REVERIFICATION }}
@@ -366,15 +412,19 @@ jobs:
             --arg version "$VERSION" \
             --argjson migration_version "$MIGRATION_VERSION" \
             --arg source_revision "$RELEASE_COMMIT" \
+            --arg source_ref "$REF" \
+            --argjson rc "${RC:-false}" \
             --arg workflow_run "$RUN_URL" \
             --arg cut_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
             --argjson dry_run "${DRY_RUN:-false}" \
             --arg mandatory_gates "${MANDATORY_GATES:-unknown}" \
-            --arg asvs_reverification "${ASVS_REVERIFICATION:-unknown}" \
+            --arg asvs_reverification "${ASVS_REVERIFICATION:-n/a (rc)}" \
             '{
               version: $version,
+              rc: $rc,
               migration_version: $migration_version,
               source_revision: $source_revision,
+              source_ref: $source_ref,
               workflow_run: $workflow_run,
               cut_at: $cut_at,
               dry_run: $dry_run,
@@ -400,20 +450,20 @@ jobs:
           retention-days: 90
 
       # Every step below is guarded `if: !inputs.dry_run`, so a dry run ends
-      # here: gates passed, the fixture regenerated, metadata emitted, nothing
-      # written.
+      # here: gates passed, the fixture regenerated (final only), metadata
+      # emitted, nothing written.
       - name: Dry run - summary
         if: ${{ inputs.dry_run }}
         run: |
           {
             echo "### Dry run complete"
             echo
-            echo "Every gate passed and \`${VERSION}\` regenerated cleanly. No commit, push or tag was made."
+            echo "Every gate passed and \`${VERSION}\` checked cleanly. No commit, push or tag was made."
           } >> "$GITHUB_STEP_SUMMARY"
 
-      # --- Step 7: commit + push main ----------------------------------
-      - name: Commit to main
-        if: ${{ !inputs.dry_run }}
+      # --- Step 7: commit + push the fixture (final release only) ---------
+      - name: Commit the schema fixture
+        if: ${{ !inputs.dry_run && env.IS_RC != 'true' }}
         env:
           VERSION: ${{ env.VERSION }}
         run: |
@@ -425,7 +475,7 @@ jobs:
           echo "RELEASE_COMMIT=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
 
       - name: Push main
-        if: ${{ !inputs.dry_run }}
+        if: ${{ !inputs.dry_run && env.IS_RC != 'true' }}
         env:
           GH_APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
@@ -441,6 +491,7 @@ jobs:
         if: ${{ !inputs.dry_run }}
         env:
           RELEASE_COMMIT: ${{ env.RELEASE_COMMIT }}
+          REF: ${{ inputs.ref }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
@@ -449,15 +500,19 @@ jobs:
           mapfile -t wfs < <(jq -r '.gates[] | select(.tier == "release-tier") | .workflow' .github/release-gates.json | sort -u)
           echo "Release-tier workflows: ${wfs[*]}"
 
-          # Dispatch the ones with no push:main trigger (they will not have
-          # started from the "Push main" step); the rest already triggered on
-          # the fixture-commit push.
+          # Final release (ref = main): the "Push main" step's fixture-commit
+          # push already started the push:main-triggered suites; only the two
+          # dispatch-only ones (min-version-tests, zap-dast) need kicking off.
+          # RC (ref = release/vX.Y.0): a push to release/* triggers nothing, so
+          # every release-tier suite is dispatched against the RC ref (all have
+          # workflow_dispatch). Either way we poll by commit below.
           for wf in "${wfs[@]}"; do
-            if grep -qE '^[[:space:]]*branches:[[:space:]]*\[main\]' ".github/workflows/${wf}"; then
-              echo "  ${wf}: triggers on push:main -- already running for ${sha}"
+            if [ "$REF" = "main" ] && grep -qE '^[[:space:]]*push:' ".github/workflows/${wf}" \
+               && grep -qE '^[[:space:]]*branches:.*\bmain\b' ".github/workflows/${wf}"; then
+              echo "  ${wf}: push:main-triggered -- already running for ${sha}"
             else
-              echo "  ${wf}: dispatching on main"
-              gh workflow run "$wf" --ref main
+              echo "  ${wf}: dispatching on ${REF}"
+              gh workflow run "$wf" --ref "$REF"
             fi
           done
 
@@ -484,7 +539,7 @@ jobs:
               fi
             done
             if [ "$failed" -eq 1 ]; then
-              echo "::error::A mandatory release-tier suite failed -- the tag will not be pushed. Fix on main and re-dispatch."
+              echo "::error::A mandatory release-tier suite failed -- the tag will not be pushed. Fix on ${REF} and re-dispatch."
               exit 1
             fi
             if [ "$pending" -eq 0 ]; then
@@ -508,9 +563,10 @@ jobs:
           GH_APP_TOKEN: ${{ steps.app-token.outputs.token }}
         run: |
           set -eu
-          # The tag must point at the fixture commit: docker-publish's
-          # schema-fixture-gate checks the tagged tree, and the tag push is
-          # what triggers that workflow.
+          # The tag points at the release commit: the fixture commit for a
+          # final release (docker-publish's schema-fixture-gate checks the
+          # tagged tree), or the release-branch tip for an RC (that gate is
+          # exempt for `-rc.` tags). The tag push triggers docker-publish.yml.
           git tag "$VERSION" "$RELEASE_COMMIT"
           # shellcheck disable=SC2016
           helper='!f() { echo "username=x-access-token"; echo "password=${GH_APP_TOKEN}"; }; f'
@@ -540,15 +596,27 @@ jobs:
         env:
           VERSION: ${{ env.VERSION }}
           MIGRATION_VERSION: ${{ env.MIGRATION_VERSION }}
+          RC: ${{ env.IS_RC }}
+          REF: ${{ inputs.ref }}
+          RELEASE_COMMIT: ${{ env.RELEASE_COMMIT }}
         run: |
           set -eu
           {
-            echo "### Release ${VERSION} cut"
-            echo
-            echo "- \`{Tag: \"${VERSION}\", Version: ${MIGRATION_VERSION}}\` registered in \`backend/internal/schemafixture/releases.go\`"
-            echo "- \`backend/database/testdata/schemas/${VERSION}.sql\` committed to \`main\` ($(git rev-parse --short HEAD))"
-            echo "- every mandatory gate + release-tier suite green (or deadline-warned) before the tag"
-            echo "- tag \`${VERSION}\` pushed to that commit"
+            if [ "$RC" = "true" ]; then
+              echo "### Release candidate ${VERSION} cut"
+              echo
+              echo "- cut from \`${REF}\` at \`$(git rev-parse --short "$RELEASE_COMMIT")\` -- no schema fixture (registered at promotion), no ASVS row gate"
+              echo "- every mandatory gate + release-tier suite green (or deadline-warned) before the tag"
+              echo "- tag \`${VERSION}\` pushed; \`docker-publish.yml\` marks its GitHub Release a **pre-release** (off the update check + Obtainium)"
+              echo "- promote to \`${VERSION%-rc.*}\` with \`promote-rc.yml\` once the exit criteria in docs/release-candidate-process.md are met"
+            else
+              echo "### Release ${VERSION} cut"
+              echo
+              echo "- \`{Tag: \"${VERSION}\", Version: ${MIGRATION_VERSION}}\` registered in \`backend/internal/schemafixture/releases.go\`"
+              echo "- \`backend/database/testdata/schemas/${VERSION}.sql\` committed to \`main\` ($(git rev-parse --short HEAD))"
+              echo "- every mandatory gate + release-tier suite green (or deadline-warned) before the tag"
+              echo "- tag \`${VERSION}\` pushed to that commit"
+            fi
             echo
             echo "\`docker-publish.yml\` is now building + signing the images and APK, minting SBOMs + SLSA provenance + SHA256SUMS, and creating the GitHub Release:"
             echo "<https://github.com/${GITHUB_REPOSITORY}/actions/workflows/docker-publish.yml>"

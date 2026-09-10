@@ -51,7 +51,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, "release/**"]
   schedule:
     - cron: '20 1 * * *' # 01:20 UTC nightly
 

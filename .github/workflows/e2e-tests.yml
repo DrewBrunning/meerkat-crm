@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, "release/**"]
   # 2026-08-28: the nightly run is the full web suite (all specs + loadsmoke)
   # that the PR path deliberately skips for pure backend/** changes — a
   # backend-only change that breaks a shipped *user flow* is caught here, not

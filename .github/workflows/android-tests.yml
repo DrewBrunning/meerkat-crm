@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, "release/**"]
   # Issue #578, B5: the instrumented E2E job (android-e2e) moved OFF the PR
   # path — it stays on push:main and now also sweeps every night + on demand.
   # The `test` job (Robolectric + detekt + lint + assembleDebug) remains the

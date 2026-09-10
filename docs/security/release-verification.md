@@ -16,11 +16,13 @@ registry, and workflow artifacts.
 ## How a release is cut
 
 `release.yml` (REL-06, `workflow_dispatch`) is the whole release process. Inputs: the version
-(e.g. `v0.6.6`); `dry_run` (run every gate + regenerate the fixture, make no commit/push/tag —
-this is how the workflow is exercised without cutting a release); `ack_asvs_current` (a reason to
-proceed when the ASVS/MASVS re-verification row is absent — recorded, not silent). It:
+(e.g. `v0.6.6`, or `v1.0.0-rc.1` for a release candidate); `ref` (`main` for a final release,
+`release/vX.Y.0` for an RC); `dry_run` (run every gate + regenerate the fixture, make no
+commit/push/tag — this is how the workflow is exercised without cutting a release);
+`ack_asvs_current` (a reason to proceed when the ASVS/MASVS re-verification row is absent —
+recorded, not silent). It:
 
-1. **verifies repository state** — the checkout is the exact tip of `origin/main`;
+1. **verifies repository state** — the checkout is the exact tip of `origin/<ref>`;
 2. **runs the mandatory gate battery and refuses to go further on any failure** —
    `go run ./cmd/citecheck` (security-doc citations resolve, issue #608); `go run
    ./cmd/releasegatecheck` (the gate registry is coherent); a deterministic poll of every
@@ -36,10 +38,10 @@ proceed when the ASVS/MASVS re-verification row is absent — recorded, not sile
    URL, dry-run flag, gate results) — kept as a workflow artifact and, on a real run, attached
    to the GitHub Release;
 6. commits those two files to `main` and pushes `main`;
-7. triggers the release-tier suites that have no `push:main` trigger (`min-version-tests`,
-   `zap-dast`) and waits on **every** release-tier run for the fixture commit — an observed
-   failure means the tag is never pushed; a 75-minute deadline with a run still going is a
-   `::warning::` and the tag proceeds;
+7. triggers the release-tier suites (for a final release, the two with no `push:main` trigger —
+   `min-version-tests`, `zap-dast`; for an RC, all of them) and waits on **every** release-tier
+   run for the release commit — an observed failure means the tag is never pushed; a 75-minute
+   deadline with a run still going is a `::warning::` and the tag proceeds;
 8. pushes a **lightweight** tag at the fixture commit.
 
 The tag push triggers `docker-publish.yml`, which builds and signs everything listed below and
@@ -55,6 +57,26 @@ is exact — there is no post-review "move the tag" step.
 
 If `docker-publish.yml` fails after the tag is pushed, re-run it from its own **Run workflow**
 button with the `tag` input; do not re-dispatch `release.yml` (it refuses an existing tag).
+
+### Release candidates and promotion (RC-02)
+
+An `-rc.N` version is a **release candidate** (full policy:
+[`docs/release-candidate-process.md`](../release-candidate-process.md)). `release.yml` runs the
+same gate battery for it, but skips steps 3–4 and 6 (the schema fixture is registered at
+promotion, not per-RC) and the ASVS §10-row gate (a final-release obligation). `docker-publish.yml`
+marks the RC's GitHub Release a **pre-release** and never `make_latest`, keeping it off the in-app
+update check (`/releases/latest` excludes pre-releases) and Obtainium.
+
+**Promotion** (`promote-rc.yml`, `workflow_dispatch`, input `rc_tag`) ships the *tested* artifact,
+not a rebuild: it re-tags the RC's container images **by digest**, copies every Release asset
+byte-for-byte (verified against the RC's `SHA256SUMS`), registers the final schema fixture against
+the RC's tree, merges `release/vX.Y.0` back into `main`, and pushes the final `vX.Y.Z` tag with
+`GITHUB_TOKEN` so `docker-publish.yml` does **not** run. `promotion-metadata.json` on the final
+Release records `digest_rc == digest_final` for every image — the check that promotion copied
+rather than rebuilt (`promote-rc.yml` fails if any digest differs). A promoted image therefore
+carries the RC pipeline's original `cosign` signature and GH build-provenance attestation (both
+digest-scoped, still valid) **plus** an additional `cosign` signature with the `promote-rc.yml`
+identity.
 
 **One pinning exception.** Every other Action in `.github/workflows/` is pinned to a commit SHA.
 The `apk-provenance` job's `slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0`
@@ -128,17 +150,18 @@ echo "$DIGEST"   # ghcr.io/drewbrunning/mycorrhizal-crm@sha256:...
 
 ```sh
 cosign verify "$DIGEST" \
-  --certificate-identity-regexp '^https://github\.com/DrewBrunning/mycorrhizal-crm/\.github/workflows/docker-publish\.yml@refs/tags/v' \
+  --certificate-identity-regexp '^https://github\.com/DrewBrunning/mycorrhizal-crm/\.github/workflows/(docker-publish|promote-rc)\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
 A successful verification prints the signed payload and exits `0`. A tampered or unsigned image
 fails with `Error: no matching signatures`.
 
-The `--certificate-identity-regexp` pins the signature to **the release workflow on a tag ref**
-(#513): only `docker-publish.yml`, running on a `refs/tags/v*` ref, can produce a Sigstore
-certificate whose identity matches. An identity mismatch means the signature was produced by
-some other workflow — treat it as a red flag, not a version-skew nuisance. (Releases signed
+The `--certificate-identity-regexp` pins the signature to **a release workflow on a tag ref**
+(#513): only `docker-publish.yml` (a normal release) or `promote-rc.yml` (a promoted RC), running
+on a `refs/tags/v*` ref, can produce a Sigstore certificate whose identity matches. An identity
+mismatch means the signature was produced by some other workflow — treat it as a red flag, not a
+version-skew nuisance. (Releases signed
 before this pin landed carry the older repo-wide identity; for those, loosen the regexp to
 `https://github\.com/DrewBrunning/mycorrhizal-crm/` and check the run manually.)
 
@@ -184,7 +207,7 @@ transparency log entry in one file — then:
 ```sh
 cosign verify-blob \
   --bundle mycorrhizal-apk.sigstore.json \
-  --certificate-identity-regexp '^https://github\.com/DrewBrunning/mycorrhizal-crm/\.github/workflows/docker-publish\.yml@refs/tags/v' \
+  --certificate-identity-regexp '^https://github\.com/DrewBrunning/mycorrhizal-crm/\.github/workflows/(docker-publish|promote-rc)\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   app-release.apk
 ```

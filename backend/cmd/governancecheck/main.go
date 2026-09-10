@@ -9,9 +9,12 @@
 //     mandatory gates from .github/release-gates.json that have a stable check
 //     context -- the branch-protection required list is generated from the
 //     #447 gate registry, not hand-maintained.
-//  3. docs/development/repo-governance.md references each ruleset file and its
+//  3. release-branches.json (the release/* ruleset, RC-02 / #446) requires the
+//     same status checks as main-protection.json -- "RC gates match release
+//     gates" enforced, not aspirational.
+//  4. docs/development/repo-governance.md references each ruleset file and its
 //     marked table lists the same required checks.
-//  4. docs/security/release-verification.md pins every cosign verify identity
+//  5. docs/security/release-verification.md pins every cosign verify identity
 //     to a specific workflow (#513), never the repo-wide `.../<repo>/.*` form.
 //
 // Exit 0: consistent. Exit 1: at least one finding. Exit 2: could not run.
@@ -31,6 +34,7 @@ var rulesetFiles = []string{
 	".github/rulesets/main-protection.json",
 	".github/rulesets/main-hard-checks.json",
 	".github/rulesets/tags-v.json",
+	".github/rulesets/release-branches.json",
 }
 
 const (
@@ -86,7 +90,9 @@ func runAt(w io.Writer, root string) int {
 	}
 
 	mainProt := rulesets[".github/rulesets/main-protection.json"]
+	relBranches := rulesets[".github/rulesets/release-branches.json"]
 	findings = append(findings, governance.CheckMainProtectionMatchesGates(mainProt, gatesJSON)...)
+	findings = append(findings, governance.CheckReleaseBranchesMatchMain(relBranches, mainProt)...)
 	findings = append(findings, governance.CrossCheckGovernanceDoc(string(govDoc), rulesetFiles, mainProt)...)
 	findings = append(findings, governance.CheckCosignIdentityPinned(string(relVerDoc))...)
 

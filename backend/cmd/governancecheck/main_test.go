@@ -37,6 +37,10 @@ func TestRunAtReportsFindings(t *testing.T) {
 	  {"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"Backend (Go)"}]}}]}`)
 	write(".github/rulesets/main-hard-checks.json", `{"name":"h","target":"branch","enforcement":"active","rules":[{"type":"deletion"}]}`)
 	write(".github/rulesets/tags-v.json", `{"name":"v","target":"tag","enforcement":"active","rules":[{"type":"deletion"}]}`)
+	// Same required set as main-protection so CheckReleaseBranchesMatchMain adds
+	// no finding here -- this fixture exercises the main-protection<->gates path.
+	write(".github/rulesets/release-branches.json", `{"name":"release-branch-protection","target":"branch","enforcement":"active","rules":[
+	  {"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"Backend (Go)"}]}}]}`)
 	write(".github/release-gates.json", `{"gates":[
 	  {"name":"Backend (Go)","workflow":"unit-tests.yml","check_context":"Backend (Go)","check_kind":"check_run","tier":"per-pr","mandatory":true,"release_gate":true,"criterion":"x"},
 	  {"name":"E2E","workflow":"e2e-tests.yml","check_context":"Run E2E Tests","check_kind":"check_run","tier":"per-pr","mandatory":true,"release_gate":true,"criterion":"x"}]}`)

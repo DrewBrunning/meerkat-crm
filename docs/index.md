@@ -28,6 +28,7 @@ The name comes from mycorrhiza, the symbiotic network fungi form with plant root
 - [Field compatibility matrix (DATA-01)](data-01-field-compatibility-matrix.md)
 - [Versioning policy (REL-01)](versioning-policy.md)
 - [Changelog policy (REL-05)](changelog-policy.md)
+- [Release-candidate process (REL-02)](release-candidate-process.md)
 - [Breaking-change policy (MAINT-02)](breaking-change-policy.md)
 - [Deprecation policy (MAINT-01)](deprecation-policy.md) · [deprecation register](deprecations.md)
 - [Dependency upgrade policy (COMPAT-03)](dependency-upgrade-policy.md)

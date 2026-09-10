@@ -1,0 +1,69 @@
+name: RC fix criterion
+
+# RC-02 (issue #446 action 4): every PR into a release/* branch must be
+# traceable to a release-candidate finding. Prose in a milestone description is
+# not a merge criterion; this is.
+#
+# A PR passes if EITHER:
+#   - it links an issue with `Closes #NNN` / `Fixes #NNN` / `Resolves #NNN`
+#     that carries the `rc-finding` label (created once: `gh label create
+#     rc-finding ...`); OR
+#   - its body has an `rc-chore: <reason>` line -- for version bumps, changelog
+#     rows, and the promotion merge, which have no finding to point at.
+#
+# Full policy: docs/release-candidate-process.md. Same shape as
+# unit-tests.yml's `changelog-note` job.
+
+on:
+  pull_request:
+    branches: ['release/**']
+
+permissions:
+  contents: read
+
+jobs:
+  rc-fix-criterion:
+    name: RC fix is traceable to a finding
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    steps:
+      - name: Require an rc-finding link or an explicit rc-chore
+        env:
+          # Via env, never inline ${{ }} -- the PR body is attacker-controlled
+          # (zizmor template-injection).
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_REF: ${{ github.base_ref }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -eu
+          echo "PR targets ${BASE_REF} -- applying the RC fix criterion (docs/release-candidate-process.md)."
+
+          if printf '%s' "$PR_BODY" | grep -qiE 'rc-chore:[[:space:]]*\S'; then
+            echo "Found an 'rc-chore: <reason>' opt-out -- allowed (version bump / changelog / promotion merge)."
+            exit 0
+          fi
+
+          # Collect issue numbers this PR closes.
+          nums="$(printf '%s' "$PR_BODY" \
+            | grep -oiE '(close[sd]?|fixe?[sd]?|resolve[sd]?)[[:space:]]+#[0-9]+' \
+            | grep -oE '[0-9]+' | sort -un || true)"
+          if [ -z "$nums" ]; then
+            echo "::error::PR into ${BASE_REF} links no closing issue. Link the rc-finding issue it fixes (Closes #NNN), or add an 'rc-chore: <reason>' line. See docs/release-candidate-process.md."
+            exit 1
+          fi
+
+          for n in $nums; do
+            labels="$(gh issue view "$n" --repo "$REPO" --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null || echo '')"
+            echo "  #$n labels: ${labels:-<none>}"
+            case ",$labels," in
+              *,rc-finding,*)
+                echo "  #$n is an rc-finding -- criterion satisfied."
+                exit 0 ;;
+            esac
+          done
+
+          echo "::error::None of the closed issues ($(echo "$nums" | tr '\n' ' ')) carries the 'rc-finding' label. An RC fix must trace to a recorded finding, or be marked 'rc-chore: <reason>'. See docs/release-candidate-process.md."
+          exit 1

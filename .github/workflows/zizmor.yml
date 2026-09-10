@@ -16,7 +16,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, "release/**"]
   schedule:
     - cron: '3 3 * * 1' # Monday 03:03 UTC
 

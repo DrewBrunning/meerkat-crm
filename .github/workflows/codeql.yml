@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, "release/**"]
   schedule:
     # Nightly (issue #578: consolidated nightly suite) so fresh query packs get
     # a chance to run against the latest code every day.

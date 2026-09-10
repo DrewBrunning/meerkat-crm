@@ -267,6 +267,17 @@ jobs:
           tag_name: ${{ env.RELEASE_TAG }}
           generate_release_notes: true
           append_body: true
+          # RC-02 (issue #446): an `-rc.` tag is a SemVer pre-release. Marking
+          # the GitHub Release a pre-release and never `make_latest` is what
+          # keeps it off the in-app update check (`/releases/latest` excludes
+          # pre-releases) and Obtainium (default skips pre-releases). The APK is
+          # still attached and still gated by #527 -- an RC exercises the APK
+          # build/sign path. Promotion flips these on the final tag
+          # (promote-rc.yml). The later APK / signature / SBOM / provenance
+          # attach steps pass only `tag_name` + `files`, so they do not reset
+          # this.
+          prerelease: ${{ contains(env.RELEASE_TAG, '-rc.') }}
+          make_latest: ${{ !contains(env.RELEASE_TAG, '-rc.') }}
           body: |
 
             ${{ steps.opnotes.outputs.block }}
@@ -677,6 +688,16 @@ jobs:
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: |
           set -eu
+          # RC-02 (issue #446): a release candidate ships the same schema its
+          # final will, and no in-place upgrade is ever supported *from* an RC,
+          # so an `-rc.` tag carries no fixture -- the final one is registered
+          # at promotion (promote-rc.yml). Without this exemption the RC's run
+          # fails here (v1.0.0-rc.1 is above the v0.6.0 floor and the schemas
+          # dir exists, so the gate would demand v1.0.0-rc.1.sql).
+          if printf '%s' "$RELEASE_TAG" | grep -qE -- '-rc\.[0-9]+$'; then
+            echo "$RELEASE_TAG is a release candidate; the final schema fixture is registered at promotion. Fixture gate not applicable."
+            exit 0
+          fi
           if [ ! -f backend/database/migrations/000001_initial_schema.up.sql ]; then
             echo "Not a mycorrhizal supported-series release ($RELEASE_TAG); fixture gate not applicable."
             exit 0

@@ -120,6 +120,34 @@ func CheckMainProtectionMatchesGates(mainProtection Ruleset, releaseGatesJSON []
 	return out
 }
 
+// CheckReleaseBranchesMatchMain asserts the release-branch ruleset requires
+// exactly the same status checks as main-protection. This is #446 action 7 --
+// "RC gates match release gates" -- made mechanical: an RC series is cut from a
+// release/* branch, and it must be gated identically to main.
+func CheckReleaseBranchesMatchMain(releaseBranches, mainProtection Ruleset) []string {
+	main := map[string]bool{}
+	for _, c := range RequiredContexts(mainProtection) {
+		main[c] = true
+	}
+	rel := map[string]bool{}
+	for _, c := range RequiredContexts(releaseBranches) {
+		rel[c] = true
+	}
+	var out []string
+	for c := range main {
+		if !rel[c] {
+			out = append(out, fmt.Sprintf("release-branches.json is missing required check %q (main-protection.json requires it -- RC gates must match release gates, #446)", c))
+		}
+	}
+	for c := range rel {
+		if !main[c] {
+			out = append(out, fmt.Sprintf("release-branches.json requires %q, which main-protection.json does not (RC gates must match release gates, #446)", c))
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // certIdentityRE pulls the value out of a cosign --certificate-identity-regexp
 // flag in either quoting style.
 var certIdentityRE = regexp.MustCompile(`--certificate-identity-regexp[= ]+['"]([^'"]+)['"]`)

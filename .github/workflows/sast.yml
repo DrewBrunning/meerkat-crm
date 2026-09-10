@@ -20,7 +20,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, "release/**"]
   schedule:
     - cron: '55 2 * * *' # 02:55 UTC nightly (issue #578: consolidated nightly suite)
 
