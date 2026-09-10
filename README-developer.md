@@ -200,6 +200,9 @@
   - If a rule ever false-positives on deliberately-fake test material, add a scoped `[[allowlist]]` entry to `.gitleaks.toml` rather than disabling the rule globally.
 - This is local-only and doesn't replace server-side scanning — repo admins should also enable GitHub's **push protection** (Settings → Code security → Secret scanning → Push protection), which is a repo setting, not something this hook can turn on.
 
+**Commit sign-off (DCO, OSPS-LE-01.01)**
+- Every commit must carry a `Signed-off-by:` trailer matching its author (`git commit -s`) — the [Developer Certificate of Origin](DCO) 1.1. [.github/workflows/dco.yml](.github/workflows/dco.yml) checks every non-merge commit in a PR and fails on a missing or non-matching sign-off; fix a branch with `git rebase --signoff origin/main` then `git push --force-with-lease`. It is not path-gated (it runs on every PR). Add it to the `main` ruleset's required checks alongside the suites listed above. Contributor-facing copy: [docs/development/contributing.md](docs/development/contributing.md#sign-your-commits-dco); project roles and sensitive-resource access: [GOVERNANCE.md](GOVERNANCE.md).
+
 **Data & Integrations**
 - SQLite lives at `SQLITE_DB_PATH` (default mycorrhizal.db); migrations in [backend/database/migrations](backend/database/migrations) are embedded into the binary and auto-run on startup.
 - JWT expiry, HTTP timeouts, trusted proxies, and Resend email settings are declared in [backend/config/config.go](backend/config/config.go) and loaded based on environment variables; use Config.Validate to catch misconfigurations.

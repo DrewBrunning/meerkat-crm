@@ -134,6 +134,14 @@ image is required). The easiest way to run it is with Docker Compose:
 
 ## Contributing
 
+Pull requests are welcome. Please read
+[`docs/development/contributing.md`](docs/development/contributing.md) first —
+one concern per PR, tests with the change, and **every commit signed off**
+under the [Developer Certificate of Origin](DCO) (`git commit -s`), which a
+required status check enforces. Project roles and who holds access to sensitive
+resources are in [`GOVERNANCE.md`](GOVERNANCE.md). Security issues go through
+[`SECURITY.md`](SECURITY.md), not a public issue.
+
 ### Bugs and feature requests
 This application is currently in beta. Bugs are expected in testing, but are hopefully few and far-between. Please submit issues via GitHub.
 
@@ -169,4 +177,11 @@ Ensure you have [Go](https://golang.org/doc/install) installed. Then, set up you
    yarn start
    ```
 
-You can find a more comprehensive overview for developers in the [developer README](README-developer.md).
+The exact toolchain versions required to build from source — Go (pinned in
+`backend/go.mod`), Node.js and Yarn (`frontend/package.json` `engines`), and the
+build tools each layer uses — are documented in
+[`docs/development/backend.md`](docs/development/backend.md),
+[`docs/development/frontend.md`](docs/development/frontend.md), and
+[`docs/development/architecture.md`](docs/development/architecture.md). You can
+find a more comprehensive overview for developers in the
+[developer README](README-developer.md).

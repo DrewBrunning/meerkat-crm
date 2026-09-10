@@ -29,6 +29,40 @@ nav_order: 6
 - Keep PRs focused with one feature or fix per PR.
 - AI tools may assist coding but you are responsible for the code quality. Do not open hands-off vibe-coded PRs. In those cases rather open a feature request instead.
 - Describe what changed and why, not how.
+- Sign off every commit — see below.
+
+## Sign your commits (DCO)
+
+Every commit merged here must carry a `Signed-off-by:` line certifying that you
+wrote the change (or otherwise have the right to submit it) under this project's
+licence. This is the [Developer Certificate of Origin](https://developercertificate.org/)
+(DCO 1.1); the full text is in [`DCO`](https://github.com/DrewBrunning/mycorrhizal-crm/blob/main/DCO)
+at the repository root.
+
+Add the line automatically when you commit:
+
+```sh
+git commit -s -m "your message"
+```
+
+It appends `Signed-off-by: Your Name <your@email>` using your configured
+`user.name` / `user.email`, which must match the commit author.
+
+If you already have unsigned commits on your branch, sign them all off and
+force-push:
+
+```sh
+git rebase --signoff origin/main
+git push --force-with-lease
+```
+
+The `DCO` GitHub Actions check runs on every pull request and fails if any
+non-merge commit is missing a valid sign-off.
+
+## Project governance
+
+Roles, decision-making, and who holds access to sensitive project resources are
+documented in [`GOVERNANCE.md`](https://github.com/DrewBrunning/mycorrhizal-crm/blob/main/GOVERNANCE.md).
 
 ## Reporting Issues
 
