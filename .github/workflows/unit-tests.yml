@@ -4,7 +4,7 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, "release/**"]
   # Issue #578, B4: the nightly run is the full-length fuzz pass — the PR
   # path keeps the short smoke, the schedule event runs the same targets at
   # -fuzztime=2m (see the fuzz step's FUZZTIME env). The schedule also

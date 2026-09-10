@@ -109,11 +109,13 @@ Why `v1.0.0-rc.N` and not `v0.9.0`, `v0.9.1`, …:
   sorts the RCs as ordinary releases *below* `v1.0.0` with no pre-release
   signal.
 
-RC **publication mechanics** — the pre-release flag, excluding RCs from
-auto-update channels, and the promotion path from an RC to the final tag — are
-[RC-02 (issue #446)](https://github.com/DrewBrunning/mycorrhizal-crm/issues/446),
-not this page. `release.yml` today accepts the RC tag *format* but explicitly
-refuses to run its (final-release) publication steps for one until #446 lands.
+RC **publication mechanics** — the pre-release flag, keeping RCs off the
+auto-update channels, the `release/vX.Y.0` branch policy, the RC-fix merge
+criterion and iteration loop, and the digest-verified promotion path from an RC
+to the final tag — are RC-02 ([issue #446](https://github.com/DrewBrunning/mycorrhizal-crm/issues/446)),
+written up in [`release-candidate-process.md`](release-candidate-process.md).
+`release.yml` cuts an RC when `version` carries an `-rc.N` suffix (with
+`ref: release/vX.Y.0`); `promote-rc.yml` promotes it.
 
 ## Where the version comes from
 

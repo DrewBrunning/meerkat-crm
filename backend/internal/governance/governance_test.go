@@ -76,6 +76,33 @@ func TestCheckMainProtectionMatchesGates(t *testing.T) {
 	assert.Contains(t, f[0], `requires "Ghost"`)
 }
 
+func TestCheckReleaseBranchesMatchMain(t *testing.T) {
+	main, _ := ParseRuleset("m", []byte(mainProtJSON)) // {Backend (Go), codecov/patch/backend}
+
+	// Identical required set -> no findings.
+	same, _ := ParseRuleset("r", []byte(`{"name":"r","target":"branch","enforcement":"active","rules":[
+	  {"type":"required_status_checks","parameters":{"required_status_checks":[
+	    {"context":"codecov/patch/backend"},{"context":"Backend (Go)"}]}},
+	  {"type":"deletion"}]}`))
+	assert.Empty(t, CheckReleaseBranchesMatchMain(same, main))
+
+	// Missing one main check -> flagged, and cites #446.
+	missing, _ := ParseRuleset("r", []byte(`{"name":"r","target":"branch","enforcement":"active","rules":[
+	  {"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"Backend (Go)"}]}}]}`))
+	f := CheckReleaseBranchesMatchMain(missing, main)
+	require.Len(t, f, 1)
+	assert.Contains(t, f[0], `missing required check "codecov/patch/backend"`)
+	assert.Contains(t, f[0], "#446")
+
+	// Extra check main does not have -> flagged.
+	extra, _ := ParseRuleset("r", []byte(`{"name":"r","target":"branch","enforcement":"active","rules":[
+	  {"type":"required_status_checks","parameters":{"required_status_checks":[
+	    {"context":"Backend (Go)"},{"context":"codecov/patch/backend"},{"context":"Ghost"}]}}]}`))
+	f = CheckReleaseBranchesMatchMain(extra, main)
+	require.Len(t, f, 1)
+	assert.Contains(t, f[0], `requires "Ghost"`)
+}
+
 func TestCheckCosignIdentityPinned(t *testing.T) {
 	good := "cosign verify --certificate-identity-regexp '^https://github\\.com/o/r/\\.github/workflows/docker-publish\\.yml@refs/tags/v'\n" +
 		"cosign verify-blob --certificate-identity-regexp \"https://github.com/o/r/.github/workflows/syft-sbom.yml@refs/heads/main\"\n"

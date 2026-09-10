@@ -39,6 +39,10 @@ on:
     branches: [main]
   schedule:
     - cron: '30 4 * * *' # 04:30 UTC nightly (deep run; trails the consolidated nightly suite)
+  # RC-02 (#446): release.yml dispatches this against a release/* ref when
+  # cutting a release candidate (an RC-fix push to release/* does not trigger
+  # push:main).
+  workflow_dispatch:
 
 permissions:
   contents: read

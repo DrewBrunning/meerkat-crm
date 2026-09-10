@@ -43,11 +43,15 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
+    branches: [main, "release/**"]
   # Nightly re-run so a schema/chain change elsewhere still exercises the full
   # migration matrix even on a PR that did not touch backend/.
   schedule:
     - cron: '35 3 * * *' # 03:35 UTC nightly
+  # RC-02 (#446): release.yml dispatches this against a release/* ref when
+  # cutting a release candidate -- an RC-fix push to release/* does not trigger
+  # push:main, so the release-tier suites are dispatched instead.
+  workflow_dispatch:
 
 permissions:
   contents: read

@@ -75,6 +75,20 @@ triggers `docker-publish.yml`, which makes it a higher-value target than the bra
 *not* restricted (that is `release.yml`'s job, via the release App); the App is the sole bypass
 actor so an emergency retag is possible through the one-dispatch release path and nothing else.
 
+## Release branches
+
+**`release-branch-protection`** ([`.github/rulesets/release-branches.json`](https://github.com/DrewBrunning/mycorrhizal-crm/blob/main/.github/rulesets/release-branches.json)) —
+a **new** ruleset, `target: branch`, `refs/heads/release/*`, `enforcement: active`. A
+release-candidate series (`v1.0.0-rc.N`) is cut from `release/vX.Y.0` and iterated there while
+`main` keeps moving (RC-02, [issue #446](https://github.com/DrewBrunning/mycorrhizal-crm/issues/446);
+full policy in [`docs/release-candidate-process.md`](../release-candidate-process.md)). The ruleset
+carries **exactly the same required status checks as `main-protection`** — `backend/internal/governance.CheckReleaseBranchesMatchMain`
+fails the build if the two lists ever diverge, so "RC gates match release gates" (#446 action 7)
+is enforced, not aspirational — plus `required_linear_history`, `deletion`, and `non_fast_forward`
+(a published RC's history is immutable). Bypass actors: the repo Admin role and the release
+GitHub App (`release.yml` cuts RC tags from `release/*`; `promote-rc.yml` commits the final schema
+fixture there and merges the branch back into `main`).
+
 ## Protected `release` environment
 
 `docker-publish.yml`'s publishing jobs (`create-release`, `build-and-push`, `build-android-apk`)
@@ -125,9 +139,11 @@ gh api --method PUT /repos/DrewBrunning/mycorrhizal-crm/rulesets/<main-protectio
   --input .github/rulesets/main-protection.json
 gh api --method PUT /repos/DrewBrunning/mycorrhizal-crm/rulesets/<main-hard-checks-id> \
   --input .github/rulesets/main-hard-checks.json
-# tags-v does not exist yet -- create it:
+# tags-v and release-branches do not exist yet -- create them:
 gh api --method POST /repos/DrewBrunning/mycorrhizal-crm/rulesets \
   --input .github/rulesets/tags-v.json
+gh api --method POST /repos/DrewBrunning/mycorrhizal-crm/rulesets \
+  --input .github/rulesets/release-branches.json
 ```
 
 Then verify the protections actually hold (#508 action 7) — each of these must be **refused**:
