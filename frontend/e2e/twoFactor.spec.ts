@@ -130,7 +130,9 @@ test.describe('Two-factor authentication', () => {
       // single-use (issue #873): enrollment above already spent the current
       // step, so this login must present the *next* step's code — still inside
       // the server's ±1 skew window, but strictly greater than the burned step.
-      await page.getByLabel('Verification code *').fill(totp(secret, new Date(Date.now() + 30_000)));
+      await page
+        .getByLabel('Verification code *')
+        .fill(totp(secret, new Date(Date.now() + 30_000)));
       await page.getByRole('button', { name: /login/i }).click();
       await expect(page.getByRole('heading', { name: /dashboard/i })).toBeVisible({
         timeout: 10000,
