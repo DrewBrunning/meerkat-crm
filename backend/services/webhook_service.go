@@ -50,11 +50,30 @@ func TriggerWebhooksAsync(ctx context.Context, db *gorm.DB, cfg config.Config, u
 	})
 }
 
-// Sentinels surfaced by the SSRF-guarded dialer. They are returned as ordinary
-// dial errors and end up in the stored delivery record's Error field.
+// Sentinels surfaced by the SSRF-guarded dialer. ErrWebhookPrivateAddress is
+// the message stored verbatim by the isPrivateURL pre-flight branch (a clear,
+// non-oracle signal for the operator who opted into WEBHOOK_BLOCK_PRIVATE_URLS).
+// When either sentinel instead comes back from the transport during Do — a
+// redirect to an internal target, or DNS rebinding — it is collapsed to
+// genericDeliveryTransportError like any other dial failure (issue #869).
 var (
 	ErrWebhookUnreachable    = errors.New("webhook host could not be resolved")
 	ErrWebhookPrivateAddress = errors.New("webhook URL resolves to a private or loopback address")
+)
+
+// Generic strings stored on / returned for a delivery that failed before it
+// got an HTTP response. The raw Go transport error names the exact host:port
+// dialed and distinguishes "connection refused" (closed) from "i/o timeout"
+// from "no such host" — enough for any authenticated user to enumerate
+// loopback and LAN services through POST /api/v1/webhooks/:id/test and the
+// delivery-health rollup on GET /api/v1/webhooks (issue #869). The delivery
+// record and every API surface that echoes its Error field get one of these
+// instead; the detailed error is logged server-side. The receiver's own HTTP
+// status ("unexpected status N") is the receiver's response, not a probe of
+// our network, and is kept as-is.
+const (
+	genericDeliveryTransportError = "delivery failed: could not connect to target"
+	genericDeliveryInvalidURL     = "delivery failed: invalid URL"
 )
 
 var (
@@ -276,7 +295,9 @@ func deliverWebhook(ctx context.Context, db *gorm.DB, cfg config.Config, wh mode
 	sig := computeSignature(wh.Secret, body)
 	req, err := http.NewRequest("POST", wh.URL, bytes.NewReader(body))
 	if err != nil {
-		errStr := err.Error()
+		logger.Ctx(ctx).Warn().Err(err).Uint("webhook_id", wh.ID).Str("event", eventType).
+			Msg("webhook delivery: could not build request from configured URL")
+		errStr := genericDeliveryInvalidURL
 		return finish(saveDelivery(db, wh.ID, eventType, string(body), nil, &errStr, attempt, retryAt(attempt, 0), false, ""), errStr)
 	}
 	req.Header.Set("Content-Type", "application/json")
@@ -302,7 +323,12 @@ func deliverWebhook(ctx context.Context, db *gorm.DB, cfg config.Config, wh mode
 
 	resp, err := clientFor(cfg).Do(req)
 	if err != nil {
-		errStr := err.Error()
+		// Do NOT store err.Error() — it echoes the dialed host:port and the
+		// refused/timeout/no-host distinction, an internal port-scan oracle for
+		// any authenticated caller (issue #869). Log the detail, store generic.
+		logger.Ctx(ctx).Warn().Err(err).Uint("webhook_id", wh.ID).Str("event", eventType).
+			Msg("webhook delivery transport error")
+		errStr := genericDeliveryTransportError
 		return finish(saveDelivery(db, wh.ID, eventType, string(body), nil, &errStr, attempt, retryAt(attempt, 0), false, ""), errStr)
 	}
 	defer func() {

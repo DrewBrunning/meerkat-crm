@@ -1,9 +1,11 @@
 package services
 
 import (
+	"context"
 	"testing"
 
 	"mycorrhizal/config"
+	"mycorrhizal/models"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -42,6 +44,60 @@ func TestGuardedClientBlocksInternalAddresses(t *testing.T) {
 			assert.ErrorIs(t, err, ErrWebhookPrivateAddress)
 		})
 	}
+}
+
+// Issue #869: a transport-level delivery failure must not reflect the raw Go
+// dial error. The stored delivery record is echoed to any authenticated user
+// through GET /api/v1/webhooks (delivery-health rollup) and
+// POST /api/v1/webhooks/:id/test (delivery.error) — so a raw
+// "dial tcp 127.0.0.1:1: connect: connection refused" is an internal
+// port-scan / service-existence oracle. The stored Error must be generic and
+// carry no host, port, or refused/timeout/no-host wording.
+func TestDeliverWebhookTransportErrorIsNotAPortScanOracle(t *testing.T) {
+	db := setupWebhookRetryTestDB(t)
+
+	// Nothing listens on 127.0.0.1:1, so clientFor(cfg).Do fails with a
+	// *url.Error wrapping "dial tcp 127.0.0.1:1: connect: connection refused".
+	wh := newTestWebhook("http://127.0.0.1:1/hook", "secret")
+	require.NoError(t, db.Create(&wh).Error)
+
+	delivery := deliverWebhook(context.Background(), db, config.Config{WebhookBlockPrivateURLs: false},
+		wh, "contact.created", []byte(`{}`), 1)
+
+	require.NotNil(t, delivery.Error)
+	assert.Equal(t, genericDeliveryTransportError, *delivery.Error,
+		"a transport failure must store the generic string, not the Go dial error")
+
+	// The persisted record is what the webhook API actually serves back.
+	var loaded models.WebhookDelivery
+	require.NoError(t, db.First(&loaded, delivery.ID).Error)
+	require.NotNil(t, loaded.Error)
+	stored := *loaded.Error
+	assert.Equal(t, genericDeliveryTransportError, stored)
+	for _, leak := range []string{
+		"127.0.0.1", "1:", ":1", "connection refused", "dial tcp", "connect:",
+		"no such host", "timeout", "i/o timeout", "refused", "/hook",
+	} {
+		assert.NotContainsf(t, stored, leak,
+			"stored webhook delivery error leaks %q — internal port-scan oracle (issue #869)", leak)
+	}
+}
+
+// The http.NewRequest error branch (a URL malformed enough that request
+// construction itself fails) must likewise not echo the raw parser error,
+// which repeats the offending URL back to the caller.
+func TestDeliverWebhookInvalidURLErrorIsGeneric(t *testing.T) {
+	db := setupWebhookRetryTestDB(t)
+
+	wh := newTestWebhook("http://[::1", "secret") // unbalanced IPv6 bracket
+	require.NoError(t, db.Create(&wh).Error)
+
+	delivery := deliverWebhook(context.Background(), db, config.Config{WebhookBlockPrivateURLs: false},
+		wh, "contact.created", []byte(`{}`), 1)
+
+	require.NotNil(t, delivery.Error)
+	assert.Equal(t, genericDeliveryInvalidURL, *delivery.Error)
+	assert.NotContains(t, *delivery.Error, "[::1")
 }
 
 func TestIsPrivateURLFailsClosed(t *testing.T) {
