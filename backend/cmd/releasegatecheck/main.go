@@ -47,11 +47,13 @@ func run(w io.Writer) int {
 		return 2                                          // # pragma: no cover
 	}
 
+	// #nosec G304 -- root is the repo root from findRepoRoot, the leaf is a constant
 	regBytes, err := os.ReadFile(filepath.Join(root, registryFile))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "releasegatecheck: read", registryFile, err)
 		return 2
 	}
+	// #nosec G304 -- root is the repo root from findRepoRoot, the leaf is a constant
 	docBytes, err := os.ReadFile(filepath.Join(root, docFile))
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "releasegatecheck: read", docFile, err)
