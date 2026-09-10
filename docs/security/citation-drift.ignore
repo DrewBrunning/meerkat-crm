@@ -61,7 +61,7 @@ docs/security/asvs-l2.md | `sync_conflict_controller_test.go:109` | backend/cont
 docs/security/masvs-l1.md | `app/src/main/AndroidManifest.xml:38-39` | android/app/src/main/AndroidManifest.xml  # allowBackup="false" + dataExtractionRules; row's word is "domain", from the sentence about excluded backup domains
 docs/security/masvs-l1.md | `app/src/debug/res/xml/network_security_config.xml:19-28` | android/app/src/debug/res/xml/network_security_config.xml  # the debug-only cleartext domain-config (P2)
 docs/security/masvs-l1.md | `feature/settings/.../SettingsScreen.kt:268` | android/feature/settings/src/main/kotlin/com/mycorrhizal/crm/feature/settings/SettingsScreen.kt  # the KeyboardType.Password field; row's words come from the neighbouring screens it lists
-docs/security/masvs-l1.md | `docker-publish.yml:225` | .github/workflows/docker-publish.yml  # the ./gradlew assembleRelease gate; the row's "signing secrets required, fail-fast" refers to the *other* cited workflow, android-apk-build.yml
+docs/security/masvs-l1.md | `docker-publish.yml:255` | .github/workflows/docker-publish.yml  # the ./gradlew assembleRelease gate; the row's "signing secrets required, fail-fast" refers to the *other* cited workflow, android-apk-build.yml
 
 # --- Threat model ------------------------------------------------------------
 docs/security/threat-model.md | `backend/controllers/user_controller.go:234-243` | backend/controllers/user_controller.go  # the auth_token SetCookie block with all three flags; the row's lead-in is "Keep, verified against the exact code"
