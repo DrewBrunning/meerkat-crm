@@ -111,6 +111,23 @@ jobs:
         working-directory: android
         run: ./gradlew assembleDebug
 
+      # REL-03 / issue #527: stamp the tester build too. Without any
+      # -PMYCORRHIZAL_VERSION_* the plugin falls back to versionCode = 1 /
+      # versionName = "0.1.0", so two tester builds collide and neither can be
+      # installed over anything. Use the run number as the versionCode --
+      # deliberately BELOW the 1000 + run_number a real release carries
+      # (docs/development/release-gates.md), so a tester APK is self-consistent
+      # but never shadows a published release.
+      - name: Compute tester version
+        if: inputs.variant == 'release'
+        id: tester-version
+        run: |
+          short="$(git rev-parse --short HEAD)"
+          {
+            echo "name=0.0.0-dev+${short}"
+            echo "code=${GITHUB_RUN_NUMBER}"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Assemble release APK
         if: inputs.variant == 'release'
         working-directory: android
@@ -119,7 +136,12 @@ jobs:
           SIGNING_STORE_PASSWORD: ${{ secrets.SIGNING_STORE_PASSWORD }}
           SIGNING_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
           SIGNING_KEY_PASSWORD: ${{ secrets.SIGNING_KEY_PASSWORD }}
-        run: ./gradlew assembleRelease
+          MYCORRHIZAL_VERSION_NAME: ${{ steps.tester-version.outputs.name }}
+          MYCORRHIZAL_VERSION_CODE: ${{ steps.tester-version.outputs.code }}
+        run: |
+          ./gradlew assembleRelease \
+            -PMYCORRHIZAL_VERSION_NAME="$MYCORRHIZAL_VERSION_NAME" \
+            -PMYCORRHIZAL_VERSION_CODE="$MYCORRHIZAL_VERSION_CODE"
 
       # Artifact names cannot contain '/', so sanitize the ref in a shell step
       # (GitHub's expression language has no replace() function).
