@@ -455,7 +455,10 @@ resolved in the affirmative and are now `satisfied`.
 A re-pass is a diff against this file, not a rewrite. In order:
 
 1. `cd backend && go run ./cmd/citecheck` — must exit 0. Any failure is a citation to fix before
-   anything else; the rest of the report means little on top of broken citations.
+   anything else; the rest of the report means little on top of broken citations. This is no
+   longer only a per-PR check: it is `release_gate: true` in `.github/release-gates.json` (polled
+   on the release commit) and the REL-06 release workflow (`.github/workflows/release.yml`) runs
+   it directly as a hard gate, so a release cannot be cut on a broken citation (issue #608).
 2. `cd backend && go run ./cmd/citecheck -drift` — read every candidate, **including the ones
    `citation-drift.ignore` already accepts**: a verification pass is exactly when a standing
    suppression should be re-justified or deleted. Correct the range, or accept it with a reason.
@@ -482,8 +485,29 @@ A re-pass is a diff against this file, not a rewrite. In order:
    neither is the gap this whole section exists to prevent.
 7. Re-check every P1–P5 revisit trigger in §7.
 8. Update the header (pass number, date, commit), the census (from `citecheck`), §6 findings, and add
-   a changelog row (§10). If a mechanism in §9 has been superseded — most likely by #608 folding this
-   into the release workflow — update §9 to describe what actually runs, and delete what it replaced.
+   a changelog row (§10). If a mechanism in §9 has been superseded, update §9 to describe what
+   actually runs, and delete what it replaced. **#608 did the first such supersession** (2026-09-10):
+   the per-milestone citation checkbox and the re-verification obligation both moved into the REL-06
+   release workflow — §9's "Every release" tier and the CI-credential row below reflect that.
+
+### The re-verification obligation, and where it now lives (issue #608)
+
+The dated ASVS/MASVS claim needs a *forcing function* so it does not silently rot between
+milestones. As of #608 that function is mechanical and lives in exactly one place, the REL-06
+release workflow (`.github/workflows/release.yml`):
+
+> Before it pushes the tag, `release.yml` fails the release if
+> `docs/security/asvs-l2-verification-report.md`'s §10 changelog carries **no new row** since the
+> previous release tag (`git describe --tags --abbrev=0 … HEAD`, then a diff for an added
+> `| N.N | … |` line). The only escape is dispatching with `ack_asvs_current=<reason>`, which
+> downgrades the block to a `::warning::` and records the reason in `release-metadata.json`.
+
+This is #608's option 1 ("the strongest option") with option 2 as the named, recorded escape
+hatch. It does **not** attempt to judge whether the re-verification was *adequate* — only that
+one happened and is dated. The adequacy check is this procedure, run by a human, cited by the row.
+The 16 hand-maintained gate-issue checkboxes and the `milestone_gate.md` standing criterion that
+duplicated this are retired (`.github/ISSUE_TEMPLATE/milestone_gate.md` now points here instead of
+restating it).
 
 ## 9. Keeping this true between passes
 
@@ -497,28 +521,26 @@ that cites nothing, an unaccepted drift candidate, or a stale entry in
 `docs/security/citation-drift.ignore`. This is what keeps §2 true continuously rather than at
 audit time, and it is the reason a re-pass is an hour instead of a rebuild.
 
-**Every milestone — one citable checkbox.** All 16 gate issues (#531–#543 plus #500/#503/#525) carry
-a standing criterion: the citation job is green on the merge commit and no unjustified suppression
-was added. `.github/ISSUE_TEMPLATE/milestone_gate.md` carries it forward so a future gate inherits it
-rather than depending on someone remembering this issue existed.
+**Every milestone — nothing hand-maintained (as of #608).** This tier *was* 16 gate-issue
+checkboxes (#531–#543 plus #500/#503/#525) plus a `milestone_gate.md` standing criterion, each
+asserting the citation job was green on the merge commit. #608 retired all of it: the `citecheck`
+gate now runs unconditionally per-PR, is `release_gate: true` (polled on the release commit), and
+is a direct hard step in `release.yml`. The template points at §8 instead of restating the
+obligation. Nothing here depends on someone remembering this issue existed.
 
-**Every release — a full re-pass.** The three release gates (#500 `0.8.0`, #503 `0.9.0`, #525
-`1.0.0`) additionally require the ASVS/MASVS claim to be re-verified against the *shipped* code, with
-a dated changelog row below as the citation. Re-running the whole pass every milestone would be
-disproportionate and would get skipped; letting a published claim go unverified from v0.6.1 through
-1.0.0 is the failure this tier exists to prevent. #525 had no security criterion at all before this
-pass — it would have shipped the 1.0.0 stability contract on a claim last checked thousands of
-commits earlier.
+**Every release — a full re-pass, now with a mechanical forcing function.** The three release
+gates (#500 `0.8.0`, #503 `0.9.0`, #525 `1.0.0`) require the ASVS/MASVS claim to be re-verified
+against the *shipped* code, with a dated §10 changelog row as the citation. As of #608 that is no
+longer only a checkbox: `release.yml` refuses to push the tag if §10 carries no new row since the
+previous release tag (escape hatch: dispatch with `ack_asvs_current=<reason>`, recorded in
+`release-metadata.json`). Re-running the whole pass every *milestone* would be disproportionate and
+would get skipped; letting a published claim go unverified from v0.6.1 through 1.0.0 is the failure
+this tier exists to prevent. #525 had no security criterion at all before this pass — it would have
+shipped the 1.0.0 stability contract on a claim last checked thousands of commits earlier.
 
-Two things about that model are worth being honest about:
-
-- **The middle tier is scaffolding.** Sixteen hand-maintained checkboxes are exactly the kind of
-  duplication this report criticises elsewhere. It is the right thing *now* — waiting for a release
-  process to exist would let several milestones ship with no check — but it should be superseded by
-  the automated release workflow (#499), which is issue **#608**. That issue's explicit instruction
-  is to end with *fewer* homes for the obligation, not more.
-- **None of the three sees genuinely new surface.** They prove existing claims still hold; they
-  cannot notice that something was added that *deserves* a row. What covers what today:
+One thing about that model is worth being honest about: **none of the three cadences sees
+genuinely new surface.** They prove existing claims still hold; they cannot notice that something
+was added that *deserves* a row. What covers what today:
 
 | New surface | Enforced today? |
 |---|---|
@@ -529,7 +551,7 @@ Two things about that model are worth being honest about:
 | An entity or table | **Yes.** `controllers/delete_cascade_coverage_test.go` enumerates every table from the real migrated schema and requires a declared deletion bucket (`go-cascade-user`/`go-cascade-contact`/`fk-cascade-user`/`exempt`), failing on an unclassified table and on a stale declaration; it asserts `fk-cascade-user` tables really carry an `ON DELETE CASCADE` FK to `users`, rejects a contact-scoped table relying on a cascade from the soft-deleted `contacts` row (trap 6), and behaviorally verifies `DeleteUser`/`deleteContactAssociations` empty every declared table. Built by issue **#611**. |
 | A crypto call site | **Yes.** `cmd/citecheck`'s crypto-surface gate enumerates every non-test Go file importing `crypto/*`, `golang.org/x/crypto/*` or a JWT/signing library and requires each to be cited by a V6 row in `asvs-l2.md` or to carry a justified entry in `docs/security/crypto-surface.ignore` — failing in both directions (a new unaccounted call site, and a declared one that stops importing crypto). Lands in the existing `Security-doc citations` job, so it fails the build at the moment of introduction. Built by issue **#612**. |
 | A persistence target for instance data | **Partly.** `v0.6.2` added several: `system_events` (#424), `job_runs` (#391), `import_runs` (#651), `storage_samples` (#652) and `alert_states` (#428), plus the `webhook_deliveries` retention window (#622). All are system-generated operational/telemetry records, admin-only (or per-user non-sensitive), hard-delete, with a retention knob (`SYSTEM_EVENT_RETENTION_DAYS`, `JOB_RUN_RETENTION_DAYS`, `STORAGE_SAMPLE_RETENTION_DAYS`, `WEBHOOK_DELIVERY_RETENTION_DAYS`), and are recorded in `data-retention-lifecycle.md` (§3, §16–§20). Free-text fields are sanitized and length-capped (row 7.3.1; `import_runs` stores counts only, no messages). They are outside the cascade-coverage concern above (no user-data parent, nothing cascades into them — `import_runs` is the one exception, explicitly swept by `DeleteUser` in `admin_user_controller.go` and asserted by #611's behavioral sweep). No mechanical check yet asserts a *new* diagnostic/telemetry table gets a retention-lifecycle row — folded into #611's schema-driven coverage scope. |
-| A privileged CI credential (repo-write outside PR review) | **Partly.** `release.yml` (interim REL-06, #499) mints a GitHub App token to push the release commit + tag directly to `main`, bypassing branch protection — the first non-human writer to `main`. Constrained by: the App's own installation scope; `permission-contents: write` on the minted token (nothing else); a single `workflow_dispatch`-only workflow with no PR-triggered or `push`-triggered path to it; and the App being the only non-human entry on `main`'s branch-protection / tag-ruleset bypass lists. No mechanical check asserts a *second* such credential or bypass entry does not appear — that judgement sits with the milestone gate until #499/#608 fold release into one audited workflow. |
+| A privileged CI credential (repo-write outside PR review) | **Partly.** `release.yml` (REL-06, #499) mints a GitHub App token to push the release commit + tag directly to `main`, bypassing branch protection — the first non-human writer to `main` — and holds `actions: write` to dispatch the two release-tier suites with no `push:main` trigger (#499). Constrained by: the App's own installation scope; `permission-contents: write` on the minted token (nothing else); a single `workflow_dispatch`-only workflow with no PR-triggered or `push`-triggered path to it; the App being the only non-human entry on `main`'s branch-protection / tag-ruleset bypass lists; and the full mandatory-gate battery (citecheck, releasegatecheck, the `release_gate` poll, the ASVS-row check, the release-tier wait) running before any write, so a compromised dispatch still cannot publish past a red gate. No mechanical check asserts a *second* such credential or bypass entry does not appear — that judgement sits with the milestone gate (the "no new class of security-relevant surface" checkbox). |
 
 The pattern worth generalising from the one row that *is* enforced: the authorization matrix is strong
 evidence because it derives its subject list from the running system and **fails on an undeclared
@@ -585,3 +607,4 @@ govulncheck).
 | 1.14 | 2026-09-09 | (see PR) | ASVS L2 with **28** documented exceptions; MASVS-L1 with 1 | Issue #873 (credentialed pen test, Tester B), not a full re-pass. **One control flipped `partial → satisfied`: 2.8.4** (TOTP single-use within validity). A TOTP code that passed `valid2FAProof` was not burned, so it could be replayed to authenticate a second independent session inside its ±1 step (~90 s) window — recovery codes were already single-use, TOTP was not. Fix: `users.totp_last_used_step` (migration `000054`) records the RFC 6238 counter step of the last accepted code; `services.ValidateTOTPStep` reports a code's step and `services.BurnTOTPStep` does a single conditional `UPDATE … WHERE totp_last_used_step IS NULL OR totp_last_used_step < ?`, so a replay (or an older step) loses the compare and is rejected — the same atomic-`WHERE` single-use shape `ConsumeRecoveryCode` uses (V2.6.1, V11.1.6). `valid2FAProof` (login, 2FA disable, recovery-code regen) and `ConfirmTwoFactor` (enrollment) both burn the step; disable / admin 2FA reset clear it to NULL. **2.8.5** stays `partial` but is reworded: a replayed code is now rejected and recorded as a failed 2FA step (`AuditOpLoginFailed`) that counts toward the account lockout, so reuse is detected and logged — the residual gap is only the absence of a proactive owner notification (the 2.2.3 / 2.5.5 gap). **No new class of security-relevant surface** — no new route, client, outbound integration, or authentication path; `totp_last_used_step` is a derived monotonic marker on the already-inventoried `users` row (`data-retention-lifecycle.md` §4), not a new copy of user content. Tests: `backend/services/twofactor_replay_test.go`, `backend/controllers/two_factor_controller_test.go` (`TestTwoFactor_TOTPReplayRejectedWithinWindow`, `TestTwoFactor_ConfirmRecordsStepSoEnrollmentCodeCannotLogin`), each hand-verified to fail without the burn. Exception count 29 → 28. |
 | 1.15 | 2026-09-09 | (see PR) | ASVS L2 with **26** documented exceptions; MASVS-L1 with 1 | Pen-test #860 (Tester B) findings **#869** and **#872**, not a full re-pass. **Two controls flipped `partial → satisfied`:** `SecurityHeadersMiddleware` (`backend/middleware/security_headers.go:49-57`) now sets `Cache-Control: no-store` on every `/api/` response. **8.1.1** and **8.2.1** — both were in §7's "known small gaps with an obvious fix" group with the identical gap text ("no `no-store` on API responses"); the header closes the shared/intermediary-cache and browser-bfcache retention of authenticated JSON. Scoped to the `/api/` prefix, which is the whole boundary — this Go process serves no static assets (the SPA's hashed, ETag'd files are nginx's and keep their long-cache). Pinned by `backend/middleware/security_headers_test.go` (`TestSecurityHeadersMiddleware_CacheControlNoStoreOnAPI`, `TestSecurityHeadersMiddleware_NoCacheControlOffAPI`), hand-verified to fail with the header removed. Issue **#869** is the paired change and does **not** move a row: `deliverWebhook` (`backend/services/webhook_service.go`) stopped storing the raw Go transport/URL-parse error on the webhook delivery record (an internal port-scan oracle echoed via `GET /api/v1/webhooks` and `POST /api/v1/webhooks/:id/test`), collapsing it to two generic constants with the detail logged server-side — row **7.4.1** gains a sentence alongside the existing notification-endpoint exception; the receiver's own `"unexpected status N"` is unchanged. **No new class of security-relevant surface** — no new route, client, outbound integration, authentication path, persistence, or CI credential; both changes are within existing middleware/service code. Drifted `security_headers.go` citations (the `strings` import shifted every line) re-pointed in-commit across `asvs-l2.md`, `citation-drift.ignore`, and `deployment-baseline.md`. Exception count 28 → 26 (this pass follows #873's pass 1.14). |
 | 1.16 | 2026-09-10 | (see PR) | ASVS L2 with 26 documented exceptions; MASVS-L1 with 1 | The v0.6.12 milestone-gate closure (issue #542). Not a full re-pass — records the milestone's surfaces for §9's "new class" question, and records the external-assessment decision. **External assessment (#511):** closed against a standing position, now written down as `asvs-l2.md` **P8** and reflected in the header "Performed by" row and §6's "what this pass could not verify" — no commissioned commercial pen test (hobby project, no budget), not deferred to a gate; the #860 two-agent credentialed engagement (Opus 4.8 + DeepSeek V4 Pro, live Caddy-fronted server, 15-area methodology) is the external assessment, every finding filed (#861–#874, #876, #877) and dispositioned, limitations and not-tested scope enumerated in #860's coverage record. **No new class of security-relevant surface.** The milestone's security fixes landed as their own passes above: #866 server-side session store (`sessions` table, `sid` claim, ADR 0017) in pass 1.12 — the one new persistence target *and* new auth mechanism, both already recorded there; #873 `users.totp_last_used_step` (migration `000054`) in pass 1.14 — a derived column on the already-inventoried `users` row; #862/#867 lockout re-keying in pass 1.13 — in-memory, no persistence; #869/#872 `Cache-Control: no-store` + webhook error scrub in pass 1.15 — existing middleware/service code; #566 credential-persona authorization matrix in pass 1.11 — test-only. **No new client, no new outbound integration.** The pen-test environment (`backend/cmd/pentestseed`, `docker-compose.pentest.yml` + hardened overlay, `docs/development/pentest-environment.md`, #849/#857) is dev/test infrastructure with no runtime network or privilege surface — same disposition class as `internal/perfbench` / `chaos-tests.yml` in pass 1.9. **No new privileged CI credential** — `release.yml`'s GitHub App token is unchanged from v0.6.10 (§9 CI-credential row). The §9 mechanical checks (`authorization_matrix_test.go`, the semgrep unguarded-dialer rule, `delete_cascade_coverage_test.go`, `citecheck`'s crypto-surface gate) pass on the merge commit. No control flipped, no count change. |
+| 1.17 | 2026-09-10 | (see PR) | ASVS L2 with 26 documented exceptions; MASVS-L1 with 1 | Issue #608, a **verification-process change**, not a re-pass over code. The `citecheck` citation gate and the ASVS/MASVS re-verification obligation both moved into the REL-06 release workflow (`.github/workflows/release.yml`, issue #499): `citecheck` is now `release_gate: true` in `.github/release-gates.json` (polled on the release commit) **and** a direct hard step in `release.yml`, and `release.yml` refuses to push the release tag if this report's §10 changelog carries no new row since the previous release tag (recorded escape: dispatch input `ack_asvs_current=<reason>`, captured in `release-metadata.json`). The 16 hand-maintained gate-issue checkboxes and the `.github/ISSUE_TEMPLATE/milestone_gate.md` standing criterion that duplicated the citation obligation are **retired** — the template now points at §8 (#608's "end with fewer homes"). §8 gains "The re-verification obligation, and where it now lives"; §9's "Every milestone" / "Every release" tiers and the privileged-CI-credential row are rewritten to describe what actually runs (that row also notes `release.yml` now holds `actions: write` to dispatch the two release-tier suites lacking a `push:main` trigger, per #499). Related, same PR: #355 attaches a real SLSA provenance `mycorrhizal-apk.intoto.jsonl` + a `SHA256SUMS` manifest to each Release (`docker-publish.yml` `apk-provenance` job via the `slsa-github-generator` reusable workflow). **No new class of security-relevant surface** — no new route, client, outbound integration, persistence, or authentication path; the `actions: write` scope is a new privilege on an existing `workflow_dispatch`-only workflow, recorded in the §9 row. No control flipped, no count change. |

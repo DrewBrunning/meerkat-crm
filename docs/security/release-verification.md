@@ -15,14 +15,32 @@ registry, and workflow artifacts.
 
 ## How a release is cut
 
-`release.yml` (`workflow_dispatch`, one input: the version, e.g. `v0.6.6`) is the whole release
-process. It:
+`release.yml` (REL-06, `workflow_dispatch`) is the whole release process. Inputs: the version
+(e.g. `v0.6.6`); `dry_run` (run every gate + regenerate the fixture, make no commit/push/tag —
+this is how the workflow is exercised without cutting a release); `ack_asvs_current` (a reason to
+proceed when the ASVS/MASVS re-verification row is absent — recorded, not silent). It:
 
-1. registers the release in `backend/internal/schemafixture/releases.go` and regenerates its
+1. **verifies repository state** — the checkout is the exact tip of `origin/main`;
+2. **runs the mandatory gate battery and refuses to go further on any failure** —
+   `go run ./cmd/citecheck` (security-doc citations resolve, issue #608); `go run
+   ./cmd/releasegatecheck` (the gate registry is coherent); a deterministic poll of every
+   `release_gate: true` context in `.github/release-gates.json` on the commit `main` is at; and
+   the ASVS/MASVS re-verification obligation — `docs/security/asvs-l2-verification-report.md`'s
+   §10 changelog must carry a new row since the previous release tag, unless `ack_asvs_current`
+   was supplied;
+3. registers the release in `backend/internal/schemafixture/releases.go` and regenerates its
    committed schema dump (`cmd/genschema`), failing if any *other* dump changes — the frozen,
    append-only migration chain must reproduce byte-identical;
-2. runs the schemafixture + genschema + releaselist test gates;
-3. commits those two files to `main` and pushes a **lightweight** tag at that commit.
+4. runs the schemafixture + genschema + releaselist test gates;
+5. writes `release-metadata.json` (version, migration version, **source revision**, workflow-run
+   URL, dry-run flag, gate results) — kept as a workflow artifact and, on a real run, attached
+   to the GitHub Release;
+6. commits those two files to `main` and pushes `main`;
+7. triggers the release-tier suites that have no `push:main` trigger (`min-version-tests`,
+   `zap-dast`) and waits on **every** release-tier run for the fixture commit — an observed
+   failure means the tag is never pushed; a 75-minute deadline with a run still going is a
+   `::warning::` and the tag proceeds;
+8. pushes a **lightweight** tag at the fixture commit.
 
 The tag push triggers `docker-publish.yml`, which builds and signs everything listed below and
 creates the GitHub Release. That hand-off works only because the push uses a **GitHub App token**
@@ -38,6 +56,17 @@ is exact — there is no post-review "move the tag" step.
 If `docker-publish.yml` fails after the tag is pushed, re-run it from its own **Run workflow**
 button with the `tag` input; do not re-dispatch `release.yml` (it refuses an existing tag).
 
+**One pinning exception.** Every other Action in `.github/workflows/` is pinned to a commit SHA.
+The `apk-provenance` job's `slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0`
+is referenced by **semver tag** because the trusted-builder model requires the reusable workflow
+resolve its own ref to establish the builder identity — a commit pin is unsupported and breaks
+the provenance this job produces. This is a permanent, accepted exception:
+`zizmor`'s `unpinned-uses` finding is suppressed inline with `# zizmor: ignore[unpinned-uses]`,
+and OSSF Scorecard's Pinned-Dependencies check (which has no suppression mechanism) flags it at
+sub-score 9 by design — the reasoning is recorded in
+[`docs/dependency-upgrade-policy.md`](../dependency-upgrade-policy.md). Generator version bumps
+are a deliberate, reviewed tag change.
+
 ## What's attached to a release, and what it proves
 
 | Artifact | Signal | Proves | Expires? |
@@ -48,7 +77,10 @@ button with the `tag` input; do not re-dispatch `release.yml` (it refuses an exi
 | Docker images | Standalone signed SBOM (SPDX + CycloneDX, cosign-signed) | Same dependency list, as a portable file + signature | **Yes — 30-day GitHub Actions artifact retention** |
 | Android release APK | Keystore signature (`SIGNING_*` secrets) | The APK is installable and matches every other release signed with the same key (Android's own trust mechanism) | No |
 | Android release APK | GitHub-native SLSA build provenance | Which commit/workflow run built this exact APK; shows a "Verified" badge on the Release page | No — permanent |
-| Android release APK | cosign keyless co-signature (additive, does not replace keystore signing) | Independent Sigstore-backed verifier on top of the GitHub attestation; also what Scorecard's `Signed-Releases` check sees | No — attached to the Release as `mycorrhizal-apk.sigstore.json` (a copy is also kept as a 30-day workflow artifact) |
+| Android release APK | cosign keyless co-signature (additive, does not replace keystore signing) | Independent Sigstore-backed verifier on top of the GitHub attestation; what Scorecard's `Signed-Releases` check counts for the 8/10 tier | No — attached to the Release as `mycorrhizal-apk.sigstore.json` (a copy is also kept as a 30-day workflow artifact) |
+| Android release APK | SLSA build provenance from the `slsa-github-generator` reusable workflow (`apk-provenance` job) | A verifiable in-toto SLSA statement over the APK's sha256, signed keyless; what Scorecard's `Signed-Releases` check counts for the **10/10** tier | No — attached to the Release as `mycorrhizal-apk.intoto.jsonl` |
+| All release assets | `SHA256SUMS` — a plain `sha256sum` manifest over every asset on the Release, generated last by `verify-release-assets` | One file to check the integrity of everything you downloaded from the Release | No — attached to the Release as `SHA256SUMS` |
+| The release run itself | `release-metadata.json` — version, migration version, source revision, gate results | Which commit `release.yml` cut the release from and which gates it verified | No — attached to the Release (also a 90-day workflow artifact) |
 
 The one "expires" row is a workflow *run* artifact (`actions/upload-artifact`), not a GitHub
 Release asset — it is only downloadable from the specific `docker-publish.yml` run's Actions
@@ -150,11 +182,34 @@ cosign verify-blob \
   app-release.apk
 ```
 
-**3. Installability** — the keystore signature that actually lets Android install/upgrade the
-APK is separate from both of the above and is checked automatically by the OS (or by `apksigner
+**3. SLSA in-toto provenance** (`mycorrhizal-apk.intoto.jsonl`, attached to the Release): a real
+SLSA statement produced by the `slsa-framework/slsa-github-generator` reusable workflow, not a
+renamed attestation. Verify the APK against it with [`slsa-verifier`](https://github.com/slsa-framework/slsa-verifier):
+
+```sh
+slsa-verifier verify-artifact app-release.apk \
+  --provenance-path mycorrhizal-apk.intoto.jsonl \
+  --source-uri github.com/DrewBrunning/mycorrhizal-crm
+```
+
+**4. Installability** — the keystore signature that actually lets Android install/upgrade the
+APK is separate from all of the above and is checked automatically by the OS (or by `apksigner
 verify app-release.apk` if you want to confirm it yourself); it's what proves this release was
 built with the same signing key as every prior release, so an update can't be substituted by
 someone without that key.
+
+## Verifying the SHA256SUMS manifest
+
+Every Release carries a `SHA256SUMS` file listing the sha256 of every other asset. After
+downloading the assets you want plus `SHA256SUMS` into one directory:
+
+```sh
+sha256sum --check --ignore-missing SHA256SUMS
+```
+
+`SHA256SUMS` is not itself signed; it is a convenience over the per-artifact signatures above,
+which are the real integrity roots. Cross-check at least one asset's line against its cosign /
+SLSA verification, then trust the manifest for the rest.
 
 ## Verifying source↔release correspondence
 

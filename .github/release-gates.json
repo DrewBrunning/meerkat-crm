@@ -134,8 +134,8 @@
       "check_kind": "check_run",
       "tier": "per-pr",
       "mandatory": true,
-      "release_gate": false,
-      "criterion": "citecheck + depexceptions + deprecations + docscheck + releasegatecheck all exit 0. Runs on every PR and nightly; not yet in the main-protection ruleset (candidate for #508)."
+      "release_gate": true,
+      "criterion": "citecheck + depexceptions + deprecations + docscheck + releasegatecheck all exit 0. Runs on every PR and nightly, is polled on the release commit by the release-gate job, and the REL-06 workflow (release.yml) additionally runs `go run ./cmd/citecheck` directly as a hard gate (issue #608)."
     },
     {
       "name": "Migration Tests",
@@ -205,7 +205,17 @@
       "tier": "release-internal",
       "mandatory": true,
       "release_gate": false,
-      "criterion": "the release APK assembles, is keystore-signed, `apksigner verify` passes (and matches ANDROID_SIGNING_CERT_SHA256 when set), its versionCode equals the computed value and is > 1, and provenance + a cosign bundle are produced and attached to the Release."
+      "criterion": "the release APK assembles, is keystore-signed, `apksigner verify` passes (and matches ANDROID_SIGNING_CERT_SHA256 when set), its versionCode equals the computed value and is > 1, a GH build-provenance attestation + a cosign bundle are produced and attached to the Release, and its sha256 subject is exported for the SLSA generator."
+    },
+    {
+      "name": "apk-provenance",
+      "workflow": "docker-publish.yml",
+      "check_context": null,
+      "check_kind": "internal",
+      "tier": "release-internal",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "the slsa-github-generator reusable workflow signs the APK sha256 subject keyless and emits mycorrhizal-apk.intoto.jsonl (SLSA build provenance) as a workflow artifact (issue #355)."
     },
     {
       "name": "verify-release-assets",
@@ -215,7 +225,7 @@
       "tier": "release-internal",
       "mandatory": true,
       "release_gate": false,
-      "criterion": "the GitHub Release carries app-release.apk and mycorrhizal-apk.sigstore.json, and every published image tag resolves in the registry."
+      "criterion": "attaches mycorrhizal-apk.intoto.jsonl and a SHA256SUMS manifest to the Release, then asserts the Release carries app-release.apk, mycorrhizal-apk.sigstore.json, mycorrhizal-apk.intoto.jsonl and SHA256SUMS, and every published image tag resolves in the registry."
     },
     {
       "name": "Test minimum supported versions",
