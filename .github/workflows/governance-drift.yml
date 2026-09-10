@@ -63,12 +63,12 @@ jobs:
                     then .parameters.required_status_checks |=
                            (map(del(.integration_id)) | sort_by(.context))
                     else . end) | sort_by(.type))
-                | (.conditions.ref_name.include // []) |= sort
-                | (.conditions.ref_name.exclude // []) |= sort
-                | (.bypass_actors // []) |= sort_by(.actor_type, .actor_id)'
+                | .conditions.ref_name.include |= (. // [] | sort)
+                | .conditions.ref_name.exclude |= (. // [] | sort)
+                | .bypass_actors |= (. // [] | sort_by(.actor_type, .actor_id))'
 
           if ! live_index="$(gh api "repos/${GITHUB_REPOSITORY}/rulesets" --jq '[.[] | {name, id}]' 2>/tmp/e)"; then
-            echo "::warning::cannot read repository rulesets ($(cat /tmp/e | head -1)). Set the GOVERNANCE_READ_TOKEN secret (fine-grained PAT, Administration: read) to enable ruleset-drift detection."
+            echo "::warning::cannot read repository rulesets ($(head -1 /tmp/e)). Set the GOVERNANCE_READ_TOKEN secret (fine-grained PAT, Administration: read) to enable ruleset-drift detection."
             echo "### :information_source: ruleset-drift skipped -- GOVERNANCE_READ_TOKEN not set" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
@@ -92,7 +92,9 @@ jobs:
               echo "ok: $name matches $f"
             fi
           done
-          [ "$drift" -eq 0 ] && echo "### Governance drift: all rulesets match \`.github/rulesets/\`" >> "$GITHUB_STEP_SUMMARY" || true
+          if [ "$drift" -eq 0 ]; then
+            echo "### Governance drift: all rulesets match \`.github/rulesets/\`" >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   cosign-identity-probe:
     name: Latest release verifies against the pinned identity
