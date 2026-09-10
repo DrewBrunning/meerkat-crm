@@ -24,14 +24,19 @@ import (
 // sizing plus the storage-growth trend and tiered threshold (issue #652), and
 // the opt-in update-availability block (issue #650).
 //
-// This is the counterpart to the unauthenticated GET /health surface, which
-// deliberately withholds build/version, migration numbers and storage facts,
-// and to GET /metrics, which is Prometheus-only behind METRICS_TOKEN. Like the
-// other /admin diagnostic endpoints it is instance-wide (not user-scoped),
-// read-only, and gated by AuthMiddleware + AdminMiddleware. The one exception
-// to "no writes": the storage threshold computation persists its current tier
-// into the alert_states row keyed storage_threshold, so the -5% hysteresis band
-// survives restarts (the same state diskSpaceCondition keeps there).
+// This is the counterpart to the unauthenticated GET /health surface: /health
+// reports only the rolled-up status word plus build identity and the
+// client-compatibility fields, and this endpoint is the sole home of the
+// per-facet deep-health breakdown (job names, integrity-check /
+// restore-drill / data-integrity state, integration reachability — issue
+// #864), the migration numbers and the storage facts. It is also the
+// counterpart to GET /metrics, which is Prometheus-only behind METRICS_TOKEN.
+// Like the other /admin diagnostic endpoints it is instance-wide (not
+// user-scoped), read-only, and gated by AuthMiddleware + AdminMiddleware. The
+// one exception to "no writes": the storage threshold computation persists its
+// current tier into the alert_states row keyed storage_threshold, so the -5%
+// hysteresis band survives restarts (the same state diskSpaceCondition keeps
+// there).
 //
 // No secret (JWT secret, metrics token, SMTP host, OIDC client secret) appears
 // anywhere in the response: the feature block is booleans only, and

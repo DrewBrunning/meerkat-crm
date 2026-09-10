@@ -11924,11 +11924,6 @@
           "required": false
         },
         {
-          "name": "checks",
-          "type": "object",
-          "required": false
-        },
-        {
           "name": "commit",
           "type": "string",
           "required": false

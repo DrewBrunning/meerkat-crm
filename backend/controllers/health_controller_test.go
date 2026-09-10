@@ -78,10 +78,11 @@ func TestHealthCheck(t *testing.T) {
 	require.NotEmpty(t, body["version"])
 	require.NotEmpty(t, body["timestamp"])
 
-	checks, _ := body["checks"].(map[string]any)
-	require.NotNil(t, checks, "deep /health must carry a per-facet checks object")
-	mig, _ := checks["migrations"].(map[string]any)
-	require.Equal(t, "ok", mig["status"])
+	// The per-facet deep-health breakdown is admin-only (issue #864): the
+	// unauthenticated endpoint carries the rolled-up status word and build
+	// identity, never the checks object.
+	_, hasChecks := body["checks"]
+	require.False(t, hasChecks, "deep facet breakdown must not be on the unauthenticated /health")
 }
 
 func TestHealthCheck_UnhealthyDatabase(t *testing.T) {

@@ -179,11 +179,15 @@ func doJSON(t *testing.T, router http.Handler, method, path, token string, body 
 	return w
 }
 
-func totpCode(t *testing.T, secret string) string {
+func totpCodeAt(t *testing.T, secret string, when time.Time) string {
 	t.Helper()
-	code, err := totp.GenerateCode(secret, time.Now())
+	code, err := totp.GenerateCode(secret, when)
 	require.NoError(t, err)
 	return code
+}
+
+func totpCode(t *testing.T, secret string) string {
+	return totpCodeAt(t, secret, time.Now())
 }
 
 // enableTwoFactor drives setup + confirm for the caller and returns the stored
@@ -199,7 +203,12 @@ func enableTwoFactor(t *testing.T, router http.Handler, token string) (secret st
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &setup))
 	require.NotEmpty(t, setup.Secret)
 
-	w = doJSON(t, router, http.MethodPost, "/api/v1/users/2fa/confirm", token, map[string]string{"code": totpCode(t, setup.Secret)})
+	// Confirm with a code from the previous 30s step (still inside the server's
+	// ±1 step window). Enrollment burns the confirming code's step for single
+	// use (issue #873), so spending step S-1 here leaves the current step free
+	// for the TOTP operation each test does next.
+	w = doJSON(t, router, http.MethodPost, "/api/v1/users/2fa/confirm", token,
+		map[string]string{"code": totpCodeAt(t, setup.Secret, time.Now().Add(-30*time.Second))})
 	require.Equal(t, http.StatusOK, w.Code, "confirm: %s", w.Body.String())
 	var confirm struct {
 		RecoveryCodes []string `json:"recovery_codes"`

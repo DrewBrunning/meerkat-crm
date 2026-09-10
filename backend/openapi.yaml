@@ -120,13 +120,18 @@ paths:
     get:
       summary: Deep health check
       description: >
-        Is the CRM actually operational? Everything /health/ready checks, plus
-        the last recorded DB-integrity-check and restore-drill outcomes,
+        Is the CRM actually operational? Rolls everything /health/ready checks,
+        plus the last recorded DB-integrity-check and restore-drill outcomes,
         background-job lock state, and reachability of server-scoped
-        integrations. status is healthy | degraded | unhealthy; only a
-        database read failure returns 503. "degraded" (an optional integration
-        unreachable, a scheduled job stale) is still 200 — degraded-but-alive
-        is not down.
+        integrations, into a single status word: healthy | degraded |
+        unhealthy. Only a database read failure returns 503. "degraded" (an
+        optional integration unreachable, a scheduled job stale) is still 200 —
+        degraded-but-alive is not down. This endpoint is unauthenticated and
+        deliberately does NOT return the per-facet breakdown (job names,
+        integrity/restore-drill/data-integrity state, integration
+        reachability); that is admin-only at GET /admin/system-status (issue
+        #864). It does report the running build's version/commit and the
+        client-compatibility fields.
       operationId: getHealth
       security: []
       responses:
@@ -10162,7 +10167,10 @@ components:
       type: object
       description: >
         The flat status/database/version fields are retained from the
-        pre-split /health; the per-facet breakdown is under checks.
+        pre-split /health. The unauthenticated endpoint reports only the
+        rolled-up status word; the per-facet deep-health breakdown (job names,
+        integrity/restore-drill/data-integrity state, integration
+        reachability) is admin-only at GET /admin/system-status (issue #864).
         api_contract_version / min_client_version are the client/server
         compatibility contract (issue #528,
         docs/client-compatibility-policy.md): api_contract_version is always
@@ -10194,31 +10202,6 @@ components:
             is compatible. Present only when a breaking API change (MAINT-02,
             issue #491) has deliberately stranded older clients.
           example: "0.6.0"
-        checks:
-          type: object
-          properties:
-            status: { type: string, enum: [healthy, degraded, unhealthy] }
-            database: { $ref: "#/components/schemas/HealthCheckDetail" }
-            migrations: { $ref: "#/components/schemas/HealthCheckDetail" }
-            integrity_check: { $ref: "#/components/schemas/HealthCheckDetail" }
-            restore_drill: { $ref: "#/components/schemas/HealthCheckDetail" }
-            background_jobs:
-              type: object
-              properties:
-                status: { type: string, enum: [ok, degraded] }
-                reason: { type: string }
-                jobs:
-                  type: array
-                  items:
-                    type: object
-                    properties:
-                      name: { type: string }
-                      last_run_at: { type: string, format: date-time }
-                      locked: { type: boolean }
-                      stuck: { type: boolean }
-            integrations:
-              type: object
-              additionalProperties: { $ref: "#/components/schemas/HealthCheckDetail" }
 
     # --- Auth & users ---
     UserRegistrationInput:
@@ -11615,10 +11598,10 @@ components:
         overall:
           type: string
           enum: [healthy, degraded, unhealthy]
-          description: "services.DeepHealthSnapshot(...).Status verbatim — the same roll-up GET /health returns"
+          description: "services.DeepHealthSnapshot(...).Status verbatim — the same roll-up GET /health returns as its bare status word"
         health:
           type: object
-          description: "The full deep-health breakdown (identical shape to HealthResponse.checks); reason strings are already sanitized for an unauthenticated caller"
+          description: "The full services.DeepHealth breakdown. This admin endpoint is its only HTTP home — the unauthenticated GET /health returns only the rolled-up status word (issue #864). reason strings are still sanitized (no paths, hosts, table names or row counts)."
           properties:
             status: { type: string, enum: [healthy, degraded, unhealthy] }
             database: { $ref: "#/components/schemas/HealthCheckDetail" }

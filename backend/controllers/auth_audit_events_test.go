@@ -310,7 +310,12 @@ func TestAuthAuditEvents_TwoFactorLifecycle(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &setup))
 	require.NotEmpty(t, setup.Secret)
 
-	code, err := totp.GenerateCode(setup.Secret, time.Now())
+	// TOTP codes are single-use per step now (issue #873): this lifecycle spends
+	// three codes back-to-back, so walk the step counter S-1 -> S -> S+1 (all
+	// inside the server's ±1 step window, strictly increasing) instead of
+	// reusing one code three times the way a millisecond-fast test otherwise
+	// would.
+	code, err := totp.GenerateCode(setup.Secret, time.Now().Add(-30*time.Second))
 	require.NoError(t, err)
 	w = auditDoJSON(router, "POST", "/users/2fa/confirm", map[string]string{"code": code})
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
@@ -322,7 +327,7 @@ func TestAuthAuditEvents_TwoFactorLifecycle(t *testing.T) {
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
 
 	// Disable (needs a live TOTP code).
-	code, err = totp.GenerateCode(setup.Secret, time.Now())
+	code, err = totp.GenerateCode(setup.Secret, time.Now().Add(30*time.Second))
 	require.NoError(t, err)
 	w = auditDoJSON(router, "POST", "/users/2fa/disable", map[string]string{"code": code})
 	require.Equal(t, http.StatusOK, w.Code, w.Body.String())

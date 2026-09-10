@@ -1,0 +1,21 @@
+-- TOTP single-use / anti-replay (issue #873, RFC 6238 §5.2).
+--
+-- Until this migration a TOTP code that passed once stayed valid for the rest
+-- of its ±1 step (~90 s) window: valid2FAProof only asked "is this code valid
+-- right now", never "has this code already been spent". A code lifted by an
+-- AITM proxy, a shoulder-surf, or a code echoed into a log could be replayed
+-- to authenticate a second, independent session. Recovery codes were already
+-- single-use (their row is deleted on use); TOTP now matches.
+--
+--   * totp_last_used_step -- the RFC 6238 counter step (unix_seconds / 30) of
+--     the most recently accepted TOTP code for this user. A later code is
+--     accepted only if its step is strictly greater; a replay of the same (or
+--     an older) code fails the conditional UPDATE in services.BurnTOTPStep.
+--     NULL means "no TOTP code has been spent yet" (never enrolled, or enrolled
+--     but not yet used past confirmation).
+--
+-- Existing rows need no backfill: NULL is the correct "nothing spent yet"
+-- state, and steps are wall-clock monotonic so the first post-upgrade login
+-- establishes the baseline.
+
+ALTER TABLE users ADD COLUMN totp_last_used_step BIGINT;

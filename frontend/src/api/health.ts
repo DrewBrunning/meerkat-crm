@@ -42,9 +42,10 @@ export interface HealthResponse {
    * absence means no floor has ever been declared.
    */
   min_client_version?: string;
-  /** Per-facet deep-health breakdown. Present on the deep /health response;
-   * shape mirrors backend services.DeepHealth. Not consumed by the build card. */
-  checks?: Record<string, unknown>;
+  // No `checks` field: the per-facet deep-health breakdown was removed from
+  // the unauthenticated /health (issue #864). The full services.DeepHealth
+  // snapshot is admin-only at GET /api/v1/admin/system-status (see
+  // api/systemStatus.ts).
 }
 
 // GET /health — unauthenticated, but auth headers are sent when present so the

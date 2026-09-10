@@ -150,6 +150,42 @@ func TestGetSystemStatus_MigratedDB_ReportsCleanState(t *testing.T) {
 	assert.GreaterOrEqual(t, resp.Storage.Filesystem.FreeBytes, int64(0))
 }
 
+// TestGetSystemStatus_CarriesDeepHealthBreakdownForAdmins pins the other half
+// of issue #864: the per-facet deep-health breakdown that the unauthenticated
+// GET /health no longer returns is still fully served here, behind
+// AuthMiddleware + AdminMiddleware. A stuck job lock must surface under
+// resp.Health.BackgroundJobs.Jobs (by name) and the integrations map must be
+// present — proving the data moved, not vanished.
+func TestGetSystemStatus_CarriesDeepHealthBreakdownForAdmins(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "x.db")
+	db := dbtest.NewAt(t, dbPath)
+	admin := seedAdmin(t, db)
+
+	locked := time.Now().Add(-30 * time.Minute)
+	require.NoError(t, db.Create(&models.JobExecution{
+		JobName: "calendar_sync", LastRunAt: locked, LockedAt: &locked, LockedBy: "dead-worker",
+	}).Error)
+
+	router := systemStatusEnv(t, db, validSystemStatusConfig(t, dbPath), admin.ID)
+
+	w, body := getSystemStatus(t, router)
+	require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+	var resp SystemStatusResponse
+	require.NoError(t, json.Unmarshal(body, &resp))
+
+	require.NotEmpty(t, resp.Health.BackgroundJobs.Jobs, "admin system-status must carry the per-job breakdown")
+	var names []string
+	for _, j := range resp.Health.BackgroundJobs.Jobs {
+		names = append(names, j.Name)
+	}
+	assert.Contains(t, names, "calendar_sync")
+	assert.Equal(t, services.DeepStatusDegraded, resp.Health.BackgroundJobs.Status)
+	assert.Contains(t, resp.Health.BackgroundJobs.Reason, "calendar_sync")
+	assert.NotNil(t, resp.Health.Integrations, "the integrations facet map must be present")
+	assert.Contains(t, string(body), "calendar_sync", "the job name is exposed here — this endpoint is admin-gated")
+}
+
 func TestGetSystemStatus_CleanConfig_ValidationMarshalsAsEmptyArray_NoSecrets(t *testing.T) {
 	dbPath := filepath.Join(t.TempDir(), "x.db")
 	db := dbtest.NewAt(t, dbPath)
