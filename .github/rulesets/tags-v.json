@@ -1,0 +1,20 @@
+{
+  "_comment": "Governance settings as code (#508). Desired state for a NEW tag ruleset. Release tags (v*) trigger docker-publish.yml, so they are a higher-value target than the branch: once created they must be immutable. `creation` is deliberately NOT restricted here -- release.yml (via the release GitHub App) creates them -- but `update`, `deletion`, and `non_fast_forward` block anyone from moving or removing a published release tag. Apply with: gh api --method POST /repos/DrewBrunning/mycorrhizal-crm/rulesets --input .github/rulesets/tags-v.json (this ruleset does not exist yet). governance-drift.yml will track it once applied. bypass_actors: the release GitHub App only, so an emergency retag is possible through the one-dispatch release path and nothing else.",
+  "name": "v-tag-protection",
+  "target": "tag",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": ["refs/tags/v*"],
+      "exclude": []
+    }
+  },
+  "rules": [
+    { "type": "update" },
+    { "type": "deletion" },
+    { "type": "non_fast_forward" }
+  ],
+  "bypass_actors": [
+    { "actor_id": 4796904, "actor_type": "Integration", "bypass_mode": "always" }
+  ]
+}

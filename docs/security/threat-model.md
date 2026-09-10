@@ -96,6 +96,7 @@ Each actor sits on a boundary, is neutralized by a control, and is verified by a
 | Obtains JWT/API credentials | →session | secret strength validation, `TokenVersion`, token expiry/revocation | `asvs-l2.md` V1.6.1, V3.3.3; issues #393, #372, #413, #411 |
 | Malicious data via CardDAV/CalDAV sync (reconcile path) | integrations→DB | parser validation on reconcile, same bar as import | **gap** — tracked in open issue [#512](https://github.com/DrewBrunning/mycorrhizal-crm/issues/512); the import assistant (#375) neutralizes hostile input, the sync reconcile path does not yet have equivalent E2E coverage |
 | Lost/stolen Android device | device→local DB | SQLCipher-encrypted Room mirror, Keystore-backed session token, logout purge | `masvs-l1.md` STORAGE-1/P4, issue #385 |
+| Compromised CI/CD pipeline (malicious Action, untrusted-PR injection, forged publish trust) | source→release | SHA-pinned Actions, no `pull_request_target`, least-privilege per-job tokens, OIDC-only signing, workflow-pinned cosign identity, reproducibility as divergence detection | [The CI/CD pipeline as a trust boundary](#the-cicd-pipeline-as-a-trust-boundary) below; issues #508, #513; `docs/development/release-gates.md`, `docs/development/repo-governance.md` |
 
 ## Controls → threat mapping
 
@@ -112,6 +113,68 @@ checklists), this maps each actor class above to the *chapter* that answers it i
 - **Data-at-rest (stolen disk/backup, lost device)** → `asvs-l2.md` V6 (Stored Cryptography), V8 (Data
   Protection); `masvs-l1.md` V2 (Data Storage and Privacy), V3 (Cryptography).
 - **Misconfiguration / deployment** → `asvs-l2.md` V14 (Configuration), V1.14 (Architecture).
+- **CI/CD pipeline as the attacker** → the section immediately below (#513).
+
+## The CI/CD pipeline as a trust boundary
+
+Everything above treats the *application* as the thing under attack. The **release path is a
+trust boundary in its own right** (#513): a compromised third-party Action, a malicious commit,
+workflow injection from an untrusted PR, a forged OIDC publish identity, or a hijacked
+dependency all reach users through the same `build → sign → publish → install` chain, without
+touching the app's own attack surface. This is the cell #377's boundary matrix left empty.
+
+### Attack surface
+
+| Surface | What an attacker controls |
+|---|---|
+| **PR events** | Branch name, title, body, diff, and — on `pull_request` — a runner with the repo checked out. |
+| **Dependency resolution** | The Go module graph, `frontend/yarn.lock`, Gradle deps, Docker base images, and the third-party Actions each workflow calls. |
+| **The artifact path** | `docker-publish.yml` builds → cosign-signs (keyless) → mints SLSA provenance → pushes to GHCR + attaches assets to the GitHub Release → operators `docker pull` / Obtainium installs. |
+| **CI secrets** | `GITHUB_TOKEN` (scoped per job), the four `SIGNING_*` Android keystore secrets, `RELEASE_APP_PRIVATE_KEY`. |
+
+### Trust assumptions
+
+| Component | Trusted for | If compromised | Containment + detection |
+|---|---|---|---|
+| GitHub platform (Actions, GHCR, rulesets) | Running workflows honestly, enforcing branch/tag rulesets | Total — nothing below matters | Out of scope; the whole model assumes GitHub is honest, same as any GitHub-hosted project |
+| Third-party Actions | Doing only what their pinned commit does | Arbitrary code in a job with that job's token scope | **Every** `uses:` is pinned to a full commit SHA (Dependabot bumps SHA+comment together); `zizmor` lints the workflows; a compromised low-priv job still has only `contents: read` |
+| GHCR / the image registry | Serving the digest we pushed | A swapped image | cosign signature over the **digest** (not the tag); buildkit + GitHub SLSA provenance; `governance-drift.yml` re-verifies the latest release nightly |
+| Sigstore (Fulcio CA, Rekor log) | Issuing a cert only to the real OIDC identity, logging every signature | Forged signatures that still name our identity | The identity is **workflow-pinned** (below); Rekor inclusion proof is part of `cosign verify` |
+| Go proxy / npm registry / Gradle | Serving the exact versions the lockfiles name | A poisoned dependency | Lockfiles + `go.sum` hashes; Dependabot + Dependency Review + Grype/Trivy; toolchain + base-image pins; COMPAT-03 ([#474](https://github.com/DrewBrunning/mycorrhizal-crm/issues/474)) governs abandoned-dep / name-squat response |
+
+### Threat → control
+
+- **Workflow injection.** No workflow uses `pull_request_target`. No job triggered by
+  `pull_request` has `id-token: write`, `contents: write`, `packages: write`, or reads a deploy
+  secret — a fork PR runs with `contents: read` and nothing else. Untrusted PR text is never
+  interpolated into a `run:` block (zizmor's template-injection audit is a required check).
+  `persist-credentials: false` on every checkout (#358) keeps the token out of the workspace.
+- **CI secret blast radius.** Least-privilege per job (`docker-publish.yml`: `create-release`
+  `contents: write`, `build-and-push` `packages: write` + `id-token` + `attestations`,
+  `build-android-apk` the same plus `contents: write`; everything else read-only —
+  `docs/development/repo-governance.md`). Every signature is OIDC-federated keyless Sigstore; the
+  only long-lived credential is `RELEASE_APP_PRIVATE_KEY`, minted to a `contents: write`-only
+  token used by one `workflow_dispatch`-only workflow with no PR path.
+- **Forged publish trust.** `docs/security/release-verification.md`'s `cosign verify` commands
+  pin `--certificate-identity-regexp` to
+  `.github/workflows/docker-publish.yml@refs/tags/v*` (images/APK) or `syft-sbom.yml@refs/heads/main`
+  (main-branch SBOM). A compromised low-privilege workflow that somehow obtained `id-token:
+  write` would get a Fulcio cert naming *its own* path — which no longer matches. `#513`'s
+  `governance-drift.yml` runs `cosign verify` against the latest real release with the exact
+  documented regexp, so a drift between the doc and the pipeline's identity is caught.
+- **Dependency hijack.** Covered by the trust-assumptions row above; the response *policy* (how
+  fast, who decides) is COMPAT-03.
+- **Compromised build (detection, not prevention).** The Go server binary and the `linux/amd64`
+  image are reproducible (REL-04, `docs/security/reproducible-builds.md`); `reproducibility.yml`
+  double-builds them every relevant PR. A build that was tampered with in the pipeline diverges
+  from an independent rebuild, and the SLSA provenance names the exact source commit and
+  workflow run that produced a given digest.
+
+### What is *not* covered
+
+A compromise of GitHub itself, of Sigstore's roots, or of the maintainer's own credentials is
+out of scope — the model assumes those are honest, the same assumption every GitHub-hosted
+project makes. The mitigations above raise the bar for everything short of that.
 
 ## Gating decisions
 

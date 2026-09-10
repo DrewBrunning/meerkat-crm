@@ -169,6 +169,10 @@ jobs:
   create-release:
     runs-on: ubuntu-latest
     needs: [validate-tag, release-gate, build-android-apk]
+    # #508: the protected `release` environment. Add required reviewers to it
+    # (Settings -> Environments -> release) to gate publication behind a human;
+    # until then it is a no-op. See docs/development/repo-governance.md.
+    environment: release
     permissions:
       contents: write
 
@@ -307,6 +311,8 @@ jobs:
     # decision"). `needs: release-gate` so it does not build for a commit whose
     # mandatory gates failed.
     needs: [validate-tag, release-gate]
+    # #508: same protected `release` environment as create-release / build-and-push.
+    environment: release
     timeout-minutes: 45
     permissions:
       contents: write
@@ -702,6 +708,8 @@ jobs:
     # REL-03 / issue #527: also needs build-android-apk -- the images do not
     # publish unless the release APK built and passed its signature check.
     needs: [schema-fixture-gate, build-android-apk]
+    # #508: the protected `release` environment (see create-release).
+    environment: release
     permissions:
       contents: read
       packages: write

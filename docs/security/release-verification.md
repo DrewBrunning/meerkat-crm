@@ -128,12 +128,19 @@ echo "$DIGEST"   # ghcr.io/drewbrunning/mycorrhizal-crm@sha256:...
 
 ```sh
 cosign verify "$DIGEST" \
-  --certificate-identity-regexp 'https://github.com/DrewBrunning/mycorrhizal-crm/.*' \
+  --certificate-identity-regexp '^https://github\.com/DrewBrunning/mycorrhizal-crm/\.github/workflows/docker-publish\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
 
 A successful verification prints the signed payload and exits `0`. A tampered or unsigned image
 fails with `Error: no matching signatures`.
+
+The `--certificate-identity-regexp` pins the signature to **the release workflow on a tag ref**
+(#513): only `docker-publish.yml`, running on a `refs/tags/v*` ref, can produce a Sigstore
+certificate whose identity matches. An identity mismatch means the signature was produced by
+some other workflow — treat it as a red flag, not a version-skew nuisance. (Releases signed
+before this pin landed carry the older repo-wide identity; for those, loosen the regexp to
+`https://github\.com/DrewBrunning/mycorrhizal-crm/` and check the run manually.)
 
 **3. Verify SLSA build provenance** (GitHub-native attestation — shows which commit and workflow
 run produced this digest):
@@ -177,7 +184,7 @@ transparency log entry in one file — then:
 ```sh
 cosign verify-blob \
   --bundle mycorrhizal-apk.sigstore.json \
-  --certificate-identity-regexp 'https://github.com/DrewBrunning/mycorrhizal-crm/.*' \
+  --certificate-identity-regexp '^https://github\.com/DrewBrunning/mycorrhizal-crm/\.github/workflows/docker-publish\.yml@refs/tags/v' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   app-release.apk
 ```
@@ -248,7 +255,7 @@ and verify:
 ```sh
 cosign verify-blob \
   --bundle sbom.spdx.json.sigstore.json \
-  --certificate-identity-regexp 'https://github.com/DrewBrunning/mycorrhizal-crm/.*' \
+  --certificate-identity-regexp '^https://github\.com/DrewBrunning/mycorrhizal-crm/\.github/workflows/(docker-publish|syft-sbom)\.yml@refs/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
   sbom.spdx.json
 ```

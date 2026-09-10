@@ -1,0 +1,17 @@
+{
+  "_comment": "Governance settings as code (#508). Desired state for the `main-hard-checks` repository ruleset: main cannot be deleted or force-pushed, by anyone (no bypass_actors). Apply and diff the same way as main-protection.json.",
+  "name": "main-hard-checks",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": ["refs/heads/main"],
+      "exclude": []
+    }
+  },
+  "rules": [
+    { "type": "deletion" },
+    { "type": "non_fast_forward" }
+  ],
+  "bypass_actors": []
+}

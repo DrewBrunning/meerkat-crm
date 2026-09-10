@@ -155,6 +155,16 @@ jobs:
         working-directory: backend
         run: go run ./cmd/releasegatecheck
 
+      # #508 / #513: the governance settings. governancecheck verifies
+      # .github/rulesets/*.json parse, that main-protection.json's required
+      # checks are exactly the per-PR mandatory gates in .github/release-gates.json
+      # (the required list is derived from #447, never hand-drifted),
+      # docs/development/repo-governance.md matches, and every cosign verify
+      # identity in release-verification.md is pinned to a workflow (#513).
+      - name: Verify governance settings
+        working-directory: backend
+        run: go run ./cmd/governancecheck
+
   # REL-05 (issue #449): a PR that touches an operator-visible surface
   # (`changelog-relevant` in .github/filters.yaml — schema migrations, the
   # config surface, .env.example) must carry an `## Upgrade notes` /
