@@ -26,17 +26,27 @@ for the `go run` command above.
 |---|---|
 | **per-pr** | Fast enough for every pull request. Blocks merge via the `main-protection` ruleset, and is **re-checked on the release commit** by the `release-gate` job (for the subset marked `release_gate` in the JSON). |
 | **release-internal** | A job inside `docker-publish.yml`. Enforced by that workflow's `needs:` graph — if it fails, no release, no images, no APK. |
-| **release-tier** | Too slow for every PR (nightly / `push: main` / on-dispatch). The [REL-06 release workflow (#499)](https://github.com/DrewBrunning/mycorrhizal-crm/issues/499) will trigger these and wait for them. **Until #499 lands** the ones that run on the release commit's `push: main` cover it; wiring the rest is the one documented gap #499 closes. |
+| **release-tier** | Too slow for every PR (nightly / `push: main` / on-dispatch). The [REL-06 release workflow (#499)](https://github.com/DrewBrunning/mycorrhizal-crm/issues/499), `release.yml`, triggers the ones with no `push: main` trigger (`min-version-tests`, `zap-dast`) and waits on every release-tier run for the fixture commit before it pushes the tag — an observed failure means the tag is never pushed, a 75-minute deadline with a run still going is a `::warning::` and the tag proceeds. |
 | **advisory** | Runs and is visible, but a failure does not block a release. A regression is triaged, not gating. |
 
 ## How publication is blocked
 
-Three mechanisms, in order of when they fire:
+Four mechanisms, in order of when they fire:
 
 1. **Merge time** — the `main-protection` branch ruleset requires the per-PR check contexts, so
    a failing gate cannot reach `main` in the first place (the merge-time counterpart is
    [#508](https://github.com/DrewBrunning/mycorrhizal-crm/issues/508)).
-2. **Publication time** — `docker-publish.yml`'s **`release-gate`** job is the first thing that
+2. **Cut time** — the [REL-06 workflow (#499)](https://github.com/DrewBrunning/mycorrhizal-crm/issues/499),
+   `release.yml`, is the single human action that cuts a release. Before it commits the schema
+   fixture or pushes anything it runs the mandatory gate battery: `go run ./cmd/citecheck` and
+   `go run ./cmd/releasegatecheck` directly; a deterministic poll of every `release_gate: true`
+   context on the commit `main` is at; and the ASVS/MASVS re-verification obligation
+   ([#608](https://github.com/DrewBrunning/mycorrhizal-crm/issues/608)) — the report's §10
+   changelog must carry a new row since the previous release tag, unless the dispatch supplied
+   `ack_asvs_current` with a reason. After the fixture commit it triggers and waits on the
+   release-tier suites (above). Any failure means no tag is pushed, so `docker-publish.yml`
+   never starts. `dry_run: true` runs this whole battery and stops before any write.
+3. **Publication time** — `docker-publish.yml`'s **`release-gate`** job is the first thing that
    runs on a tag push. It polls the release commit's check-runs and commit statuses for every
    gate marked `release_gate: true`. The semantics are deliberately asymmetric:
    - an **observed** `failure` / `cancelled` / `timed_out` / `action_required` on a mandatory
@@ -49,7 +59,7 @@ Three mechanisms, in order of when they fire:
      aggregation job that has not run yet) is not a quality signal, and the deterministic
      trigger-and-wait belongs to the [#499 release workflow](https://github.com/DrewBrunning/mycorrhizal-crm/issues/499),
      which this interim job stands in for.
-3. **The `needs:` graph** — the `release-internal` gates enforce themselves: `build-and-push`
+4. **The `needs:` graph** — the `release-internal` gates enforce themselves: `build-and-push`
    `needs: build-android-apk`, `create-release` `needs: build-android-apk`, everything
    `needs: release-gate`. `verify-release-assets` is the final belt-and-suspenders check that
    the APK and its cosign bundle actually landed on the Release and every image tag resolves.
@@ -107,15 +117,16 @@ matching registry entry (name, tier, mandatory) and every `workflow` file exists
 | `codecov/patch/frontend` | per-pr | yes | changed TypeScript lines are >= 90% covered. Merge-time only. | `unit-tests.yml` |
 | `codecov/patch/android` | per-pr | yes | changed Kotlin lines are >= 80% covered. Merge-time only. | `android-tests.yml` |
 | `Detect Changes` | per-pr | yes | the shared path-filter job completes; always green (structural). Required so path-skipped suites can be required checks (#264). | `unit-tests.yml` |
-| `Docs & security-doc citations` | per-pr | yes | citecheck + depexceptions + deprecations + docscheck + releasegatecheck all exit 0. Runs on every PR and nightly; not yet in the main-protection ruleset (candidate for #508). | `unit-tests.yml` |
+| `Docs & security-doc citations` | per-pr | yes | citecheck + depexceptions + deprecations + docscheck + releasegatecheck all exit 0. Runs on every PR and nightly. `release_gate: true` — polled on the release commit, and `release.yml` also runs `citecheck` directly as a hard gate (#608). | `unit-tests.yml` |
 | `Migration Tests` | per-pr | yes | every supported-release upgrade leg, adjacent hop, and down round-trip passes. Per-leg check names make polling impractical; the release commit only adds a frozen schema dump, which schema-fixture-gate verifies, and the push:main run covers the chain. | `migration-tests.yml` |
 | `Go binary reproducible` | per-pr | yes | two builds from different paths are byte-identical (REL-04). Runs on the release commit's push:main; not in the ruleset. | `reproducibility.yml` |
 | `validate-tag` | release-internal | yes | the pushed tag matches the versioning-policy pattern (REL-01, backend/internal/versionpolicy). Blocks every downstream job. | `docker-publish.yml` |
 | `release-gate` | release-internal | yes | no mandatory release_gate:true gate is observed FAILED on the release commit; all-green passes; a 60-minute deadline with a gate still not reporting is a warning and publication proceeds (the deterministic trigger-and-wait is #499). A workflow_dispatch run with a non-empty override_reason skips the poll and records the override with the actor. | `docker-publish.yml` |
 | `schema-fixture-gate` | release-internal | yes | a committed backend/database/testdata/schemas/<tag>.sql exists for a mycorrhizal-supported-series tag (MIG-01, #436/#529). | `docker-publish.yml` |
 | `build-and-push` | release-internal | yes | the multi-arch images build and push; each digest gets a cosign keyless signature, an SBOM, and SLSA build provenance. | `docker-publish.yml` |
-| `build-android-apk` | release-internal | yes | the release APK assembles, is keystore-signed, `apksigner verify` passes (and matches ANDROID_SIGNING_CERT_SHA256 when set), its versionCode equals the computed value and is > 1, and provenance + a cosign bundle are produced and attached to the Release. | `docker-publish.yml` |
-| `verify-release-assets` | release-internal | yes | the GitHub Release carries app-release.apk and mycorrhizal-apk.sigstore.json, and every published image tag resolves in the registry. | `docker-publish.yml` |
+| `build-android-apk` | release-internal | yes | the release APK assembles, is keystore-signed, `apksigner verify` passes (and matches ANDROID_SIGNING_CERT_SHA256 when set), its versionCode equals the computed value and is > 1, a GH build-provenance attestation + a cosign bundle are produced and attached to the Release, and its sha256 subject is exported for the SLSA generator. | `docker-publish.yml` |
+| `apk-provenance` | release-internal | yes | the `slsa-github-generator` reusable workflow signs the APK subject and emits `mycorrhizal-apk.intoto.jsonl` (SLSA build provenance) as a workflow artifact (issue #355). | `docker-publish.yml` |
+| `verify-release-assets` | release-internal | yes | attaches `mycorrhizal-apk.intoto.jsonl` and a `SHA256SUMS` manifest to the Release, then asserts the Release carries `app-release.apk`, `mycorrhizal-apk.sigstore.json`, `mycorrhizal-apk.intoto.jsonl` and `SHA256SUMS`, and every published image tag resolves in the registry. | `docker-publish.yml` |
 | `Test minimum supported versions` | release-tier | yes | the app builds and the suite passes against each declared minimum runtime (COMPAT-02, #473). | `min-version-tests.yml` |
 | `Migration at scale (large dataset)` | release-tier | yes | with MYCORRHIZAL_LARGE_TESTS=1, every supported release migrates to current at ~134x the canonical manifest with row counts and integrity intact (#495). | `migration-tests.yml` |
 | `CardDAV real-server E2E` | release-tier | yes | a full round trip against the real reference servers matches the divergence register (#496). | `carddav-e2e.yml` |

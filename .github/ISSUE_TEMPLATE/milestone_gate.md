@@ -42,10 +42,13 @@ Check a box only with a citation — a test, a CI run, a document, or a `file:li
 Carried by every gate. Do not delete them when adapting this template — if one
 genuinely does not apply to a milestone, say so here rather than dropping it.
 
-- [ ] Security-doc citations still hold — the `Security-doc citations` job is green on the
-      merge commit, and any line added to `docs/security/citation-drift.ignore` carries a
-      justification. Cite the run. (Standing criterion, issue #378. The job is unfiltered by
-      path because moving code, not editing the doc, is what orphans a citation.)
+> **Security-doc citations are no longer a per-milestone checkbox.** As of issue #608 the
+> `citecheck` gate is enforced in three places with no human in the loop: the per-PR
+> `Security-doc citations` job, the `release_gate: true` poll on the release commit, and a
+> direct `go run ./cmd/citecheck` hard step in the REL-06 release workflow (`release.yml`).
+> The obligation has one home — the release process — so this gate does not restate it. See
+> `docs/security/asvs-l2-verification-report.md` §8–§9.
+
 - [ ] No new *class* of security-relevant surface went unrecorded — if this milestone added
       one (a new client, a new outbound integration, a new persistence target, a new
       authentication path), §9 of `docs/security/asvs-l2-verification-report.md` has a row

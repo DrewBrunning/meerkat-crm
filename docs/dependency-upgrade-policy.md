@@ -149,6 +149,24 @@ This is the one place today where the stated pinning rule and what CI
 enforces genuinely diverge; recorded here with its owner rather than
 pretending the pinning is complete.
 
+**Permanent exception — the SLSA generator reusable workflow.** The
+`apk-provenance` job in `docker-publish.yml` calls
+`slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0`
+by **semver tag**, and Scorecard's Pinned-Dependencies check flags it as
+"third-party GitHubAction not pinned by hash" (dropping that sub-score to 9).
+This one is **by design and will not be fixed**: the SLSA trusted-builder model
+requires the reusable workflow to resolve its own ref to establish the builder
+identity in the provenance, so `slsa-github-generator` explicitly refuses to
+run when referenced by commit SHA — a hash pin would break the very artifact
+(`mycorrhizal-apk.intoto.jsonl`) the job exists to produce. Scorecard has no
+suppression mechanism for Pinned-Dependencies, so the finding stays visible;
+it is accepted here. Upgrades to the generator are a deliberate tag bump
+(Dependabot's `github-actions` ecosystem proposes them), reviewed like any
+other dependency major. `zizmor`'s equivalent `unpinned-uses` finding is
+suppressed inline with `# zizmor: ignore[unpinned-uses]` on that line, and the
+verification consequence is documented in
+`docs/security/release-verification.md`.
+
 **Gradle is not locked yet, and that is a recorded decision, not an
 oversight.** `license-compliance.yml`'s Trivy license scan can only enumerate
 Gradle dependency licenses from a `gradle.lockfile`, which this repo does not
