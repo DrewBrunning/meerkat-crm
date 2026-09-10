@@ -27,7 +27,7 @@ grep for it below, and get a status + citation. No row is left `satisfied` witho
 
 ## Documented positions
 
-Five deliberate, written-down decisions this project has made. They are positions, not code
+Eight deliberate, written-down decisions this project has made. They are positions, not code
 changes; revisit each pre-1.0 or when the cited trigger happens.
 
 ### P1 — Password hashing: bcrypt, not Argon2id (NIST 800-63B §5.1.1.2)
@@ -212,6 +212,46 @@ events. An expired-but-valid session resumes via the grant on the next 401 (one 
 existing `clearSession` fallback); a revoked grant still ends the session exactly as a 401 always has.
 The client-side rationale, threat model and decision are recorded in `masvs-l1.md` P7 and
 `docs/adrs/0014-local-app-lock-and-biometric-resume.md`.
+
+### P8 — External assessment is adversarial-agent-based, not commissioned (#511, #860)
+
+Everything in the security programme through v0.6.11 was produced by the person who built the
+system: `0.6.1` hardened it, this checklist maps the controls, and issue #378 runs the
+verification pass. Issue #511 asked whether the *application* can be broken by someone who was
+not in the room. The answer for this project is a settled position, not a deferral:
+
+- **No commissioned third-party penetration test will be performed.** This is a single-maintainer
+  hobby project with no security budget. A funded engagement is out of reach, and **no pre-1.0
+  gate is held open for one** — #511 is closed against this position, not against a future date.
+  The milestone `v0.6.12` acceptance criterion ("an external penetration test or third-party
+  review is completed, **or** its deferral is recorded with a named pre-1.0 gate") is met by the
+  first branch, via the engagement below.
+- **The external assessment is the #860 engagement.** Two independent LLM agents — Anthropic
+  Opus 4.8 and DeepSeek V4 Pro — each ran a *credentialed* penetration test against a live
+  server deployed behind the recommended Caddy reverse-proxy configuration, working a fixed
+  15-area methodology (recon, auth incl. JWT/TOTP/API-token/reset, the multi-tenant IDOR
+  matrix, the sensitivity model, injection, XSS, SSRF, CSRF, CardDAV/CalDAV, rate-limit/XFF,
+  concurrency, the audit chain, data lifecycle, business logic, infra). Runs were sequential
+  against one hardened instance with a reset between them; the maintainer consolidated,
+  reproduced each finding from a fresh instance, and discarded the non-reproducible.
+- **Every finding from both agents was filed and dispositioned.** Confirmed findings became
+  issues #861–#874, plus #876 and #877 found while verifying the reports against source; all
+  are closed, each fix landing with a regression test and the ASVS row updated in-commit
+  (verification-report §10 passes 1.11–1.15). Two non-"fix it" dispositions are recorded
+  explicitly: #861 (the full-fidelity CSV backup withholds nothing *by design* — a
+  documentation claim was wrong, not the code; see P-note at 1.5.1) and #873 (a
+  previously-accepted `partial` on TOTP single-use, now closed).
+- **Accepted limitations.** No independent human security expertise and no signed report; the
+  agents have no security certification. Android / MASVS was out of engagement scope. The areas
+  neither agent reached — device-grant replay lifecycle, WebDAV verbs, vCard/JSContact export
+  sensitivity via the (then-broken) export path, the nginx layer in general, and two of the
+  three post-reset revocations — are enumerated in #860's consolidated coverage record. Some
+  have follow-up issues; the rest are named so the gap is known rather than silent.
+- **Compensating controls.** The standing ASVS/MASVS verification programme (#378), the tiered
+  SAST/DAST/dependency gates (row 1.1.1), and the full re-verification each release gate
+  (#500 / #503 / #525) requires.
+- **Revisit when:** the project's nature or funding materially changes — a hosted deployment
+  mode, a sponsor, or a security-focused contributor with the time to run an independent pass.
 
 ---
 
