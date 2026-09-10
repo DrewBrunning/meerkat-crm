@@ -101,8 +101,21 @@ jobs:
           VERSION: ${{ inputs.version }}
         run: |
           set -eu
-          if ! printf '%s' "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
-            echo "::error::Version must look like vMAJOR.MINOR.PATCH (e.g. v0.6.6); got '$VERSION'."
+          # Canonical release-tag pattern (REL-01, issue #445):
+          # docs/versioning-policy.md and backend/internal/versionpolicy/tagpattern.go.
+          # Kept byte-identical to the gate in docker-publish.yml; a drift test
+          # (internal/versionpolicy) fails if these diverge.
+          if ! printf '%s' "$VERSION" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$'; then
+            echo "::error::Version must match the versioning policy: vMAJOR.MINOR.PATCH with an optional -rc.N suffix (e.g. v0.6.6). Got '$VERSION'. See docs/versioning-policy.md."
+            exit 1
+          fi
+          # RC tags are valid per the versioning policy, but RC publication
+          # mechanics (pre-release flag, no auto-update channel, promotion path)
+          # are RC-02 / issue #446. This interim REL-06 workflow only cuts final
+          # releases -- it would otherwise register a SupportedReleases entry and
+          # a schema dump for an RC, which is wrong. Refuse until #446 lands.
+          if printf '%s' "$VERSION" | grep -qE -- '-rc\.[0-9]+$'; then
+            echo "::error::'$VERSION' is a release-candidate tag. RC publication is issue #446 and not implemented by this workflow yet."
             exit 1
           fi
           if git rev-parse "refs/tags/$VERSION" >/dev/null 2>&1; then

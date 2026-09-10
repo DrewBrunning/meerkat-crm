@@ -464,7 +464,7 @@ func Render() string {
 	var b strings.Builder
 	b.WriteString("---\n")
 	b.WriteString("title: Field Compatibility Matrix\n")
-	b.WriteString("nav_order: 14\n")
+	b.WriteString("nav_order: 15\n")
 	b.WriteString("---\n\n")
 	b.WriteString("# DATA-01 — Field compatibility matrix\n\n")
 	b.WriteString("> **Generated artifact — do not hand-edit.** The source of truth is the locked\n")

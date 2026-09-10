@@ -34,8 +34,33 @@ permissions:
   contents: read
 
 jobs:
+  # REL-01 (issue #445): the release-tag format gate. This workflow publishes
+  # on `push: tags: ['v*']`, so without this a malformed or stray tag
+  # (the v1.7.0 class, issue #545) would build, sign, and publish a GitHub
+  # Release. The pattern is the canonical one from the versioning policy
+  # (docs/versioning-policy.md) and backend/internal/versionpolicy/tagpattern.go;
+  # a drift test fails if this copy diverges from either. The three roots
+  # below (create-release, build-android-apk, schema-fixture-gate) depend on
+  # this job, so a bad tag produces no release, no images, no APK.
+  validate-tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Validate release tag against the versioning policy
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          set -eu
+          if ! printf '%s' "$RELEASE_TAG" | grep -qE '^v[0-9]+\.[0-9]+\.[0-9]+(-rc\.[0-9]+)?$'; then
+            echo "::error::Tag '$RELEASE_TAG' violates the versioning policy (vMAJOR.MINOR.PATCH, optional -rc.N). Refusing to publish. See docs/versioning-policy.md."
+            exit 1
+          fi
+          echo "Tag '$RELEASE_TAG' is a valid release tag."
+
   create-release:
     runs-on: ubuntu-latest
+    needs: validate-tag
     permissions:
       contents: write
 
@@ -113,6 +138,11 @@ jobs:
   build-android-apk:
     name: Build Android release APK
     runs-on: ubuntu-latest
+    # Gate on the tag being a valid release tag (REL-01, issue #445). This is
+    # orthogonal to this job's deliberate lack of a `needs: create-release`
+    # (issue #527): it does not order the APK against the release or the
+    # images, it only refuses to build for a tag that is not a real release.
+    needs: validate-tag
     timeout-minutes: 45
     permissions:
       contents: write
@@ -328,6 +358,7 @@ jobs:
   # never tested. That must fail the publish, not be noticed later.
   schema-fixture-gate:
     runs-on: ubuntu-latest
+    needs: validate-tag
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

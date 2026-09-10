@@ -26,6 +26,7 @@ The name comes from mycorrhiza, the symbiotic network fungi form with plant root
 - [Upgrade compatibility & supported-upgrade floor](upgrade-compatibility.md)
 - [Service-worker updates & the recovery page](service-worker-updates.md)
 - [Field compatibility matrix (DATA-01)](data-01-field-compatibility-matrix.md)
+- [Versioning policy (REL-01)](versioning-policy.md)
 - [Breaking-change policy (MAINT-02)](breaking-change-policy.md)
 - [Deprecation policy (MAINT-01)](deprecation-policy.md) · [deprecation register](deprecations.md)
 - [Dependency upgrade policy (COMPAT-03)](dependency-upgrade-policy.md)

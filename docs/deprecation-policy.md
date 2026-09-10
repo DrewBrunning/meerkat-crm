@@ -1,6 +1,6 @@
 ---
 title: Deprecation Policy
-nav_order: 20
+nav_order: 21
 ---
 
 # Deprecation policy
