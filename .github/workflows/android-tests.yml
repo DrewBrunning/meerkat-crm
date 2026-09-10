@@ -493,23 +493,10 @@ jobs:
           arch: x86_64
           profile: pixel_6
           working-directory: ./android
-          script: |
-            apk="$(find app/build/outputs/apk/debug -name '*.apk' | head -n1)"
-            echo "Installing $apk on an API 24 (below minSdk 26) emulator..."
-            set +e
-            output="$(adb install "$apk" 2>&1)"
-            status=$?
-            set -e
-            echo "$output"
-            if [ "$status" -eq 0 ]; then
-              echo "::error::apk installed successfully on API 24 -- minSdk 26 is no longer enforced, or this job stopped testing it"
-              exit 1
-            fi
-            if ! echo "$output" | grep -qi 'OLDER_SDK'; then
-              echo "::error::install failed as expected but not with the comprehensible INSTALL_FAILED_OLDER_SDK error: $output"
-              exit 1
-            fi
-            echo "OK: install failed clearly (INSTALL_FAILED_OLDER_SDK)."
+          # The action runs each physical line of an inline `script:` in its own
+          # shell, so the multi-line assertion (shared `$apk`, `set +e`) has to
+          # live in a real script file -- see its header.
+          script: bash "$GITHUB_WORKSPACE/.github/scripts/assert-below-min-sdk-install.sh"
 
   # Issue #263: startup + dashboard-render macrobenchmark. Same emulator + same
   # docker-compose.test.yml backend as android-e2e, and the same triggers

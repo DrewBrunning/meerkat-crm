@@ -9,6 +9,7 @@ import com.mycorrhizal.crm.data.local.CachedContact
 import com.mycorrhizal.crm.data.local.PhoneKey
 import com.mycorrhizal.crm.data.local.PendingInteraction
 import com.mycorrhizal.crm.data.local.RoomCacheEncryption
+import java.io.DataInputStream
 import java.io.File
 import java.io.FileInputStream
 import kotlinx.coroutines.runBlocking
@@ -189,6 +190,13 @@ class RoomCacheEncryptionTest {
         reopened.close()
     }
 
-    private fun headerOf(file: File): String =
-        String(FileInputStream(file).use { it.readNBytes(16) }, Charsets.ISO_8859_1)
+    private fun headerOf(file: File): String {
+        // InputStream.readNBytes(int) is API 33+ (java.io desugaring does not
+        // cover it), and this suite also runs on the API 26 minSdk floor
+        // (android-tests.yml's android-e2e-min-sdk job). DataInputStream.readFully
+        // has been the fixed-length read since API 1.
+        val header = ByteArray(16)
+        DataInputStream(FileInputStream(file)).use { it.readFully(header) }
+        return String(header, Charsets.ISO_8859_1)
+    }
 }

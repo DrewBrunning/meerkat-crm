@@ -93,7 +93,7 @@ jobs:
       # actionlint's shellcheck of `run:` blocks cannot see it — shellcheck
       # the scripts here explicitly, where shellcheck is already installed.
       - name: Shellcheck repo scripts
-        run: shellcheck .github/scripts/run-fuzz-targets.sh .github/scripts/tests/run-fuzz-targets.test.sh .github/scripts/min-browser-check.sh
+        run: shellcheck .github/scripts/run-fuzz-targets.sh .github/scripts/tests/run-fuzz-targets.test.sh .github/scripts/min-browser-check.sh .github/scripts/assert-below-min-sdk-install.sh
 
       # Issue #712: exercise the fuzz runner's hardening against a stubbed
       # `go` binary (pass / deadline-race / crash / seed-replay), asserting
