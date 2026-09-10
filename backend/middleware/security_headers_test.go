@@ -52,6 +52,74 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 	}
 }
 
+// Issue #872: authenticated /api/v1 JSON responses must carry
+// Cache-Control: no-store so a shared/intermediary cache or the browser
+// bfcache cannot retain one context's view of private data. Scoped to the
+// /api/ prefix; everything else is left alone (this process serves no static
+// assets, but the scoping is what keeps it that way if that ever changes).
+func TestSecurityHeadersMiddleware_CacheControlNoStoreOnAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	apiPaths := []string{"/api/v1/contacts", "/api/v1/users/me", "/api/v1/audit", "/api/v2/anything"}
+	for _, p := range apiPaths {
+		for _, hsts := range []bool{false, true} {
+			t.Run(p, func(t *testing.T) {
+				router := gin.New()
+				router.Use(SecurityHeadersMiddleware(hsts))
+				router.GET("/*any", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+				req := httptest.NewRequest(http.MethodGet, p, nil)
+				w := httptest.NewRecorder()
+				router.ServeHTTP(w, req)
+
+				assert.Equal(t, "no-store", w.Header().Get("Cache-Control"),
+					"%s must carry Cache-Control: no-store", p)
+			})
+		}
+	}
+}
+
+// The header is set before the handler runs, so it lands even on an error
+// response — a cached 4xx/5xx carrying a private-data fragment is the same risk.
+func TestSecurityHeadersMiddleware_CacheControlNoStoreOnAPIError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	router := gin.New()
+	router.Use(SecurityHeadersMiddleware(false))
+	router.GET("/api/v1/contacts/:id", func(c *gin.Context) { c.Status(http.StatusNotFound) })
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/contacts/999", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusNotFound, w.Code)
+	assert.Equal(t, "no-store", w.Header().Get("Cache-Control"))
+}
+
+// Non-/api/ paths (health probes, and any static asset a future edge might
+// route through this process) must NOT get no-store — a hashed, ETag'd SPA
+// asset stays cacheable.
+func TestSecurityHeadersMiddleware_NoCacheControlOffAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, p := range []string{"/health", "/metrics", "/assets/app.4f2a.js", "/", "/apiary"} {
+		t.Run(p, func(t *testing.T) {
+			router := gin.New()
+			router.Use(SecurityHeadersMiddleware(false))
+			router.GET("/*any", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+			req := httptest.NewRequest(http.MethodGet, p, nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			assert.Empty(t, w.Header().Get("Cache-Control"),
+				"%s must not have Cache-Control forced by the security middleware", p)
+			// The rest of the security headers still apply everywhere.
+			assert.Equal(t, "nosniff", w.Header().Get("X-Content-Type-Options"))
+		})
+	}
+}
+
 func TestSecurityHeadersMiddleware_CSPAppliesToAllResponses(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

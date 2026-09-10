@@ -45,7 +45,7 @@ docs/security/asvs-l2.md | `tag_controller.go:242` | backend/controllers/tag_con
 docs/security/asvs-l2.md | `relationship_edge_controller.go:104-106` | backend/controllers/relationship_edge_controller.go  # the self-edge rejection; row lists it after the gift currency rule
 docs/security/asvs-l2.md | `models/import.go:126` | backend/models/import.go  # the `max=500` bulk-import row cap
 docs/security/asvs-l2.md | `config/config.go:56-57` | backend/config/config.go  # the ReadTimeout/WriteTimeout struct fields; row cites them beside main.go's http.Server
-docs/security/asvs-l2.md | `backend/middleware/security_headers.go:23` | backend/middleware/security_headers.go  # the contentSecurityPolicy const, cited for "the CSP admits no external origin"
+docs/security/asvs-l2.md | `backend/middleware/security_headers.go:25` | backend/middleware/security_headers.go  # the contentSecurityPolicy const, cited for "the CSP admits no external origin"
 docs/security/asvs-l2.md | `docker/nginx.conf:19` | docker/nginx.conf  # the nosniff add_header
 docs/security/asvs-l2.md | `docker/nginx.conf:21` | docker/nginx.conf  # the CSP add_header, cited for frame-ancestors 'none'
 docs/security/asvs-l2.md | `RegisterPage.tsx:134` | frontend/src/RegisterPage.tsx  # the type="password" input; row says "masked inputs"
