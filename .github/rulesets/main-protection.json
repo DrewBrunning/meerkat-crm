@@ -1,0 +1,55 @@
+{
+  "_comment": "Governance settings as code (#508). Desired state for the `main-protection` repository ruleset. Apply with: gh api --method PUT /repos/DrewBrunning/mycorrhizal-crm/rulesets/<id> --input .github/rulesets/main-protection.json (find <id> via `gh api /repos/DrewBrunning/mycorrhizal-crm/rulesets`). backend/cmd/governancecheck asserts required_status_checks below == the per-PR mandatory gates in .github/release-gates.json (#447). .github/workflows/governance-drift.yml diffs this against the live ruleset weekly. bypass_actors.actor_id values are instance-specific (the repo Admin role and the release GitHub App); adjust to your install.",
+  "name": "main-protection",
+  "target": "branch",
+  "enforcement": "active",
+  "conditions": {
+    "ref_name": {
+      "include": ["refs/heads/main"],
+      "exclude": []
+    }
+  },
+  "rules": [
+    {
+      "type": "required_status_checks",
+      "parameters": {
+        "strict_required_status_checks_policy": true,
+        "do_not_enforce_on_create": true,
+        "required_status_checks": [
+          { "context": "Detect Changes" },
+          { "context": "Backend (Go)" },
+          { "context": "Frontend (Vitest)" },
+          { "context": "Run E2E Tests" },
+          { "context": "Android (Gradle)" },
+          { "context": "Android E2E (emulator)" },
+          { "context": "Android scan (mobsfscan)" },
+          { "context": "Scan workflows (zizmor)" },
+          { "context": "CIS container hardening scan" },
+          { "context": "Docs & security-doc citations" },
+          { "context": "Go server binary is byte-reproducible" },
+          { "context": "codecov/patch/backend" },
+          { "context": "codecov/patch/frontend" },
+          { "context": "codecov/patch/android" }
+        ]
+      }
+    },
+    {
+      "type": "pull_request",
+      "parameters": {
+        "required_approving_review_count": 0,
+        "dismiss_stale_reviews_on_push": true,
+        "require_code_owner_review": false,
+        "require_last_push_approval": false,
+        "required_review_thread_resolution": false,
+        "require_extra_approval_for_unattributed_changes": true,
+        "required_reviewers": [],
+        "allowed_merge_methods": ["squash", "rebase"]
+      }
+    },
+    { "type": "required_linear_history" }
+  ],
+  "bypass_actors": [
+    { "actor_id": 5, "actor_type": "RepositoryRole", "bypass_mode": "always" },
+    { "actor_id": 4796904, "actor_type": "Integration", "bypass_mode": "always" }
+  ]
+}
