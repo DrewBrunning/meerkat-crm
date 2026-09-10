@@ -21,6 +21,15 @@ on:
         description: 'Existing tag to build and publish (e.g. v0.3.0)'
         required: true
         type: string
+      # REL-03 (issue #447): the only way past a failed release-gate. Empty on a
+      # tag push (there is no dispatch), so a push always enforces. A non-empty
+      # value is logged to the run summary with the actor. Policy:
+      # docs/development/release-gates.md.
+      override_reason:
+        description: 'REL-03: reason to bypass the release-gate check (leave blank to enforce)'
+        required: false
+        default: ''
+        type: string
 
 env:
   REGISTRY: ghcr.io
@@ -58,9 +67,108 @@ jobs:
           fi
           echo "Tag '$RELEASE_TAG' is a valid release tag."
 
-  create-release:
+  # REL-03 (issue #447): the publication-time enforcement. Nothing else in this
+  # workflow runs until this job passes. It polls the release commit's
+  # check-runs for every gate marked `release_gate: true` in
+  # .github/release-gates.json and fails -- blocking every publish job that
+  # `needs:` it -- if any concluded failure/cancelled/timed-out, or if they do
+  # not all conclude inside the timeout. A `workflow_dispatch` run with a
+  # non-empty `override_reason` skips the poll and records the override.
+  # Rationale + the full gate list: docs/development/release-gates.md.
+  release-gate:
     runs-on: ubuntu-latest
     needs: validate-tag
+    permissions:
+      contents: read
+      checks: read
+      statuses: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ env.RELEASE_TAG }}
+          persist-credentials: false
+
+      - name: Enforce mandatory gates on the release commit
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+          OVERRIDE_REASON: ${{ inputs.override_reason }}
+          EVENT_NAME: ${{ github.event_name }}
+          ACTOR: ${{ github.actor }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          sha="$(git rev-parse HEAD)"
+          echo "Release commit: $sha ($RELEASE_TAG)"
+
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ -n "$OVERRIDE_REASON" ]; then
+            msg="RELEASE GATE OVERRIDDEN by ${ACTOR}: ${OVERRIDE_REASON}"
+            echo "::warning::${msg}"
+            echo "### :warning: ${msg}" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+
+          mapfile -t want < <(jq -r '.gates[] | select(.release_gate == true) | .check_context' .github/release-gates.json)
+          if [ "${#want[@]}" -eq 0 ]; then
+            echo "::error::.github/release-gates.json has no release_gate:true gates -- refusing to publish a release with nothing gating it."
+            exit 1
+          fi
+          printf 'Polling %d mandatory gate(s):\n' "${#want[@]}"
+          printf '  - %s\n' "${want[@]}"
+          want_json="$(printf '%s\n' "${want[@]}" | jq -R . | jq -s .)"
+
+          # Enforcement semantics (deliberately asymmetric, see
+          # docs/development/release-gates.md):
+          #  - an observed failure/cancelled/timed_out/action_required on a
+          #    mandatory gate is a HARD BLOCK -- this is #447's core promise;
+          #  - all gates green -> pass;
+          #  - the 60-minute deadline with something still pending or not
+          #    reporting -> a loud WARNING, and publish proceeds. GitHub check
+          #    timing (a slow fuzz leg, an aggregation job that has not run yet)
+          #    is not a quality signal, and #499's release workflow will do the
+          #    deterministic trigger-and-wait this interim job cannot.
+          deadline=$(( $(date +%s) + 60 * 60 ))
+          while :; do
+            runs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs" --jq '.check_runs' | jq -s 'add')"
+            statuses="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${sha}/status" --jq '[.statuses[] | {name: .context, status: "completed", conclusion: (if .state=="success" then "success" elif .state=="pending" then "" else .state end)}]' | jq -s 'add')"
+            state="$(jq -c -n --argjson runs "$runs" --argjson st "$statuses" --argjson want "$want_json" '
+              (($runs + $st) | group_by(.name) | map(max_by(.started_at // "")) | map({(.name): {status, conclusion}}) | add // {}) as $latest
+              | $want | map({name: ., status: ($latest[.].status // "missing"), conclusion: ($latest[.].conclusion // "")})')"
+
+            failed="$(printf '%s' "$state" | jq -r '.[] | select(.status == "completed" and .conclusion != "" and ([.conclusion] | inside(["success","neutral","skipped"]) | not)) | .name')"
+            if [ -n "$failed" ]; then
+              echo "::error::Mandatory release gate(s) FAILED on ${sha} -- refusing to publish:"
+              printf '%s' "$state" | jq -r '.[] | "  \(.name): \(.status)/\(.conclusion)"'
+              printf '%s\n' "$failed" | sed 's/^/::error::failed gate: /'
+              exit 1
+            fi
+
+            unfinished="$(printf '%s' "$state" | jq -r '.[] | select(.status != "completed" or .conclusion == "") | .name')"
+            if [ -z "$unfinished" ]; then
+              echo "All ${#want[@]} mandatory gates passed on ${sha}."
+              {
+                echo "### Release gate: all ${#want[@]} mandatory gates green on \`${sha}\`"
+                printf '%s' "$state" | jq -r '.[] | "- `\(.name)`: \(.conclusion)"'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::warning::Release gate: 60-minute deadline reached with gate(s) not yet reporting a conclusion. No FAILED gate was observed, so publication proceeds -- verify these manually:"
+              printf '%s' "$state" | jq -r '.[] | "  \(.name): \(.status)/\(.conclusion)"'
+              {
+                echo "### :warning: Release gate: deadline reached, no failure observed, published anyway"
+                printf '%s' "$state" | jq -r '.[] | "- `\(.name)`: \(.status)/\(.conclusion)"'
+              } >> "$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
+            echo "Not concluded yet: $(printf '%s' "$unfinished" | tr '\n' ',' | sed 's/,$//'); re-checking in 60s..."
+            sleep 60
+          done
+
+  create-release:
+    runs-on: ubuntu-latest
+    needs: [validate-tag, release-gate, build-android-apk]
     permissions:
       contents: write
 
@@ -186,11 +294,15 @@ jobs:
   build-android-apk:
     name: Build Android release APK
     runs-on: ubuntu-latest
-    # Gate on the tag being a valid release tag (REL-01, issue #445). This is
-    # orthogonal to this job's deliberate lack of a `needs: create-release`
-    # (issue #527): it does not order the APK against the release or the
-    # images, it only refuses to build for a tag that is not a real release.
-    needs: validate-tag
+    # REL-03 / issue #527: the Android APK is a mandatory release gate. A
+    # signed, apksigner-verified APK that lands on the Release is now a
+    # precondition for the whole release -- `create-release` and
+    # `build-and-push` both `needs:` this job, so a build or signing failure
+    # blocks the Docker images too. This deliberately reverses the earlier
+    # decoupling; rationale in docs/development/release-gates.md ("The Android
+    # decision"). `needs: release-gate` so it does not build for a commit whose
+    # mandatory gates failed.
+    needs: [validate-tag, release-gate]
     timeout-minutes: 45
     permissions:
       contents: write
@@ -304,6 +416,69 @@ jobs:
             -PMYCORRHIZAL_VERSION_NAME="$MYCORRHIZAL_VERSION_NAME" \
             -PMYCORRHIZAL_VERSION_CODE="$MYCORRHIZAL_VERSION_CODE"
 
+      # REL-03 / issue #527: `assembleRelease` only checks the signing *secrets*
+      # are present (the "Materialize release keystore" step) -- a misconfigured
+      # signing block still produces an unsigned, uninstallable APK. Verify the
+      # actual output. If the repo variable ANDROID_SIGNING_CERT_SHA256 is set,
+      # also assert the signer certificate matches; otherwise warn. On failure,
+      # the message names the PKCS12 trap.
+      - name: Verify APK signature
+        env:
+          EXPECTED_CERT_SHA256: ${{ vars.ANDROID_SIGNING_CERT_SHA256 }}
+        run: |
+          set -eu
+          apk="android/app/build/outputs/apk/release/app-release.apk"
+          apksigner="$(find "$ANDROID_HOME"/build-tools -name apksigner 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$apksigner" ]; then
+            echo "::error::apksigner not found under $ANDROID_HOME/build-tools"
+            exit 1
+          fi
+          out="$("$apksigner" verify --print-certs --verbose "$apk" 2>&1)" || {
+            echo "$out"
+            echo "::error::apksigner could not verify $apk -- the release APK is not validly signed."
+            echo "::error::Common cause: for this PKCS12 keystore, SIGNING_KEY_PASSWORD must EQUAL SIGNING_STORE_PASSWORD; a mismatch fails signing with an opaque padding error."
+            exit 1
+          }
+          echo "$out"
+          if ! printf '%s' "$out" | grep -qE 'Verified using v[23] scheme: true'; then
+            echo "::error::APK is not signed with the v2 or v3 signature scheme; Android will refuse to install it."
+            exit 1
+          fi
+          got="$(printf '%s' "$out" | grep -oiE 'certificate SHA-256 digest: [0-9a-f]{64}' | head -1 | awk '{print $NF}' | tr 'A-F' 'a-f')"
+          echo "Signer certificate SHA-256: ${got:-<unparsed>}"
+          if [ -n "${EXPECTED_CERT_SHA256:-}" ]; then
+            if [ "$got" != "$(printf '%s' "$EXPECTED_CERT_SHA256" | tr 'A-F' 'a-f')" ]; then
+              echo "::error::APK signer certificate ($got) does not match ANDROID_SIGNING_CERT_SHA256 -- wrong keystore."
+              exit 1
+            fi
+            echo "Signer certificate matches ANDROID_SIGNING_CERT_SHA256."
+          else
+            echo "::warning::ANDROID_SIGNING_CERT_SHA256 repo variable is not set; the APK is signature-verified but the certificate is not pinned. See docs/development/release-gates.md."
+          fi
+
+      # REL-03 / issue #527: pin the plugin's version-code override wiring so an
+      # in-place upgrade keeps working. The built APK's versionCode must equal
+      # the value the workflow computed (1000 + run number, strictly increasing
+      # per docs/versioning-policy.md) and be > 1 (the plugin's static
+      # placeholder). The full "install N then N+1" emulator test is issue #480.
+      - name: Assert APK versionCode
+        env:
+          MYCORRHIZAL_VERSION_CODE: ${{ steps.version.outputs.code }}
+        run: |
+          set -eu
+          apk="android/app/build/outputs/apk/release/app-release.apk"
+          aapt2="$(find "$ANDROID_HOME"/build-tools -name aapt2 2>/dev/null | sort -V | tail -1)"
+          got="$("$aapt2" dump badging "$apk" | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p")"
+          echo "APK versionCode=$got, expected=$MYCORRHIZAL_VERSION_CODE"
+          if [ "$got" != "$MYCORRHIZAL_VERSION_CODE" ]; then
+            echo "::error::APK versionCode ($got) != computed release versionCode ($MYCORRHIZAL_VERSION_CODE) -- the -PMYCORRHIZAL_VERSION_CODE override did not take. Check MycorrhizalAndroidApplicationPlugin.kt."
+            exit 1
+          fi
+          if [ "$got" -le 1 ]; then
+            echo "::error::APK versionCode is $got (the static placeholder); an in-place upgrade over a real release would be refused by Android."
+            exit 1
+          fi
+
       # No body/generate_release_notes here -- this only uploads the asset, and
       # deliberately leaves whatever create-release wrote untouched regardless
       # of which job happens to finish first.
@@ -397,6 +572,24 @@ jobs:
             ${{ runner.temp }}/mycorrhizal-apk.sigstore.json
           retention-days: 30
 
+      # REL-03 / issue #527: asset upload is a separate operation that can fail
+      # independently of the build (action-gh-release can exit 0 without the
+      # file landing). Assert the two APK assets are actually on the Release.
+      - name: Assert APK assets landed on the Release
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          assets="$(gh release view "$RELEASE_TAG" --json assets --jq '[.assets[].name] | join(" ")')"
+          echo "Release assets: $assets"
+          for want in app-release.apk mycorrhizal-apk.sigstore.json; do
+            case " $assets " in
+              *" $want "*) echo "  ok: $want" ;;
+              *) echo "::error::Expected release asset '$want' is missing from $RELEASE_TAG."; exit 1 ;;
+            esac
+          done
+
   # Issue #436 / #529: the "new release without a schema fixture fails CI"
   # gate. The upgrade test matrix (MIG-01 fixtures, internal/schemafixture) is
   # bounded by the v0.6.0 floor and requires a committed per-release schema
@@ -406,7 +599,7 @@ jobs:
   # never tested. That must fail the publish, not be noticed later.
   schema-fixture-gate:
     runs-on: ubuntu-latest
-    needs: validate-tag
+    needs: [validate-tag, release-gate]
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -453,7 +646,9 @@ jobs:
 
   build-and-push:
     runs-on: ubuntu-latest
-    needs: schema-fixture-gate
+    # REL-03 / issue #527: also needs build-android-apk -- the images do not
+    # publish unless the release APK built and passed its signature check.
+    needs: [schema-fixture-gate, build-android-apk]
     permissions:
       contents: read
       packages: write
@@ -814,3 +1009,54 @@ jobs:
         uses: github/codeql-action/upload-sarif@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4.37.9
         with:
           sarif_file: 'trivy-results.sarif'
+
+  # REL-03 / issue #527: the final "the artifacts actually landed" gate. The
+  # `needs:` graph above already blocks publication on a failed build; this
+  # additionally asserts the outputs are present after upload -- a separate
+  # operation that can fail on its own. It is a mandatory gate
+  # (docs/development/release-gates.md); its failure is a red, attributed run.
+  verify-release-assets:
+    name: Verify release assets
+    runs-on: ubuntu-latest
+    needs: [create-release, build-and-push, build-android-apk, scan]
+    if: github.event_name == 'push'
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - name: Log in to Container Registry
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Assert the Release and images are complete
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          fail=0
+
+          assets="$(gh release view "$RELEASE_TAG" --json assets --jq '[.assets[].name] | join(" ")')"
+          echo "Release assets: $assets"
+          for want in app-release.apk mycorrhizal-apk.sigstore.json; do
+            case " $assets " in
+              *" $want "*) echo "  ok: $want" ;;
+              *) echo "::error::Release $RELEASE_TAG is missing asset '$want'."; fail=1 ;;
+            esac
+          done
+
+          repo="${GITHUB_REPOSITORY,,}"
+          tag="${RELEASE_TAG#v}"
+          for img in "ghcr.io/${repo}:${tag}" "ghcr.io/${repo}-backend:${tag}" "ghcr.io/${repo}-frontend:${tag}"; do
+            if docker buildx imagetools inspect "$img" >/dev/null 2>&1; then
+              echo "  ok: $img"
+            else
+              echo "::error::Published image $img does not resolve in the registry."
+              fail=1
+            fi
+          done
+
+          exit "$fail"

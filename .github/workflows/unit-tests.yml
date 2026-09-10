@@ -144,6 +144,17 @@ jobs:
         working-directory: backend
         run: go run ./cmd/docscheck
 
+      # REL-03 (issue #447): the release-gate registry. releasegatecheck
+      # verifies .github/release-gates.json is well-formed, every gate names a
+      # workflow file that exists, and docs/development/release-gates.md's table
+      # matches the registry — so a listed gate can never lack a real job.
+      # Same job/rationale as the checks above: unconditional, because a change
+      # to a workflow file or the doc must exercise it and .github/** doesn't
+      # map here.
+      - name: Verify release-gate registry
+        working-directory: backend
+        run: go run ./cmd/releasegatecheck
+
   # REL-05 (issue #449): a PR that touches an operator-visible surface
   # (`changelog-relevant` in .github/filters.yaml — schema migrations, the
   # config surface, .env.example) must carry an `## Upgrade notes` /
