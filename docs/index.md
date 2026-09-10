@@ -45,4 +45,5 @@ The name comes from mycorrhiza, the symbiotic network fungi form with plant root
 - [Verifying release artifacts](security/release-verification.md)
 - [Reproducible builds (REL-04)](security/reproducible-builds.md)
 - [Release gates — what must pass before a tag publishes (REL-03)](development/release-gates.md)
+- [Repository governance — branch/tag rulesets, required checks, commit signing (#508)](development/repo-governance.md)
 
