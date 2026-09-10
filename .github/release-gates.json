@@ -1,0 +1,371 @@
+{
+  "_comment": "REL-03 (issue #447): the machine-readable release-gate registry. Human view + rationale: docs/development/release-gates.md. Validated by `go run ./cmd/releasegatecheck` (every `workflow` exists; the doc table matches this file). The `release-gate` job in docker-publish.yml reads `release_gate:true` gates and blocks publication if any is observed FAILED on the release commit. Do not hand-edit this or the doc table without the other.",
+  "tiers": {
+    "per-pr": "Fast enough to run on every pull request; blocks merge via the main-protection ruleset and is re-checked on the release commit by the release-gate job.",
+    "release-internal": "A job inside docker-publish.yml; enforced by that workflow's needs: graph, so the release cannot publish if it fails.",
+    "release-tier": "Too slow for every PR (nightly / push:main / on-dispatch). The #499 release workflow will trigger and wait for these; until then the ones that run on the release commit's push:main cover it.",
+    "advisory": "Runs and is visible, but a failure does not block a release. A regression is triaged, not gating."
+  },
+  "gates": [
+    {
+      "name": "Backend (Go)",
+      "workflow": "unit-tests.yml",
+      "check_context": "Backend (Go)",
+      "check_kind": "check_run",
+      "tier": "per-pr",
+      "mandatory": true,
+      "release_gate": true,
+      "criterion": "go build + go vet + gofmt clean and `go test ./... -race` passes; no package exceeds its -timeout."
+    },
+    {
+      "name": "Frontend (Vitest)",
+      "workflow": "unit-tests.yml",
+      "check_context": "Frontend (Vitest)",
+      "check_kind": "check_run",
+      "tier": "per-pr",
+      "mandatory": true,
+      "release_gate": true,
+      "criterion": "`tsc --noEmit` and `vitest run` both pass."
+    },
+    {
+      "name": "Run E2E Tests",
+      "workflow": "e2e-tests.yml",
+      "check_context": "Run E2E Tests",
+      "check_kind": "check_run",
+      "tier": "per-pr",
+      "mandatory": true,
+      "release_gate": true,
+      "criterion": "the route-stubbed Playwright suite (including @perf specs) passes."
+    },
+    {
+      "name": "Android (Gradle)",
+      "workflow": "android-tests.yml",
+      "check_context": "Android (Gradle)",
+      "check_kind": "check_run",
+      "tier": "per-pr",
+      "mandatory": true,
+      "release_gate": true,
+      "criterion": "`testDebugUnitTest`, `lintDebug`, `detekt`, and `assembleDebug` all pass."
+    },
+    {
+      "name": "Android E2E (emulator)",
+      "workflow": "android-tests.yml",
+      "check_context": "Android E2E (emulator)",
+      "check_kind": "check_run",
+      "tier": "per-pr",
+      "mandatory": true,
+      "release_gate": true,
+      "criterion": "the instrumented suite passes against the docker-compose.test.yml backend on an API-26 emulator."
+    },
+    {
+      "name": "Android scan (mobsfscan)",
+      "workflow": "sast.yml",
+      "check_context": "Android scan (mobsfscan)",
+      "check_kind": "check_run",
+      "tier": "per-pr",
+      "mandatory": true,
+      "release_gate": true,
+      "criterion": "mobsfscan reports no new high-severity finding on the Android sources."
+    },
+    {
+      "name": "Scan workflows (zizmor)",
+      "workflow": "zizmor.yml",
+      "check_context": "Scan workflows (zizmor)",
+      "check_kind": "check_run",
+      "tier": "per-pr",
+      "mandatory": true,
+      "release_gate": true,
+      "criterion": "zizmor exits 0 \u2014 no finding above what zizmor.yml's ignore list accepts."
+    },
+    {
+      "name": "CIS container hardening scan",
+      "workflow": "container-hardening.yml",
+      "check_context": "CIS container hardening scan",
+      "check_kind": "check_run",
+      "tier": "per-pr",
+      "mandatory": true,
+      "release_gate": true,
+      "criterion": "the all-in-one image passes docker/cis-hardening.sh and the Trivy misconfig/secret scan with no CRITICAL/HIGH."
+    },
+    {
+      "name": "codecov/patch/backend",
+      "workflow": "unit-tests.yml",
+      "check_context": "codecov/patch/backend",
+      "check_kind": "commit_status",
+      "tier": "per-pr",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "changed Go lines are >= 95% covered (codecov.yml). Merge-time only: a PR-diff concept, not re-polled at publication."
+    },
+    {
+      "name": "codecov/patch/frontend",
+      "workflow": "unit-tests.yml",
+      "check_context": "codecov/patch/frontend",
+      "check_kind": "commit_status",
+      "tier": "per-pr",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "changed TypeScript lines are >= 90% covered. Merge-time only."
+    },
+    {
+      "name": "codecov/patch/android",
+      "workflow": "android-tests.yml",
+      "check_context": "codecov/patch/android",
+      "check_kind": "commit_status",
+      "tier": "per-pr",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "changed Kotlin lines are >= 80% covered. Merge-time only."
+    },
+    {
+      "name": "Detect Changes",
+      "workflow": "unit-tests.yml",
+      "check_context": "Detect Changes",
+      "check_kind": "check_run",
+      "tier": "per-pr",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "the shared path-filter job completes; always green (structural). Required so path-skipped suites can be required checks (#264)."
+    },
+    {
+      "name": "Docs & security-doc citations",
+      "workflow": "unit-tests.yml",
+      "check_context": "Docs & security-doc citations",
+      "check_kind": "check_run",
+      "tier": "per-pr",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "citecheck + depexceptions + deprecations + docscheck + releasegatecheck all exit 0. Runs on every PR and nightly; not yet in the main-protection ruleset (candidate for #508)."
+    },
+    {
+      "name": "Migration Tests",
+      "workflow": "migration-tests.yml",
+      "check_context": null,
+      "check_kind": "check_run",
+      "tier": "per-pr",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "every supported-release upgrade leg, adjacent hop, and down round-trip passes. Per-leg check names make polling impractical; the release commit only adds a frozen schema dump, which schema-fixture-gate verifies, and the push:main run covers the chain."
+    },
+    {
+      "name": "Go binary reproducible",
+      "workflow": "reproducibility.yml",
+      "check_context": "Go server binary is byte-reproducible",
+      "check_kind": "check_run",
+      "tier": "per-pr",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "two builds from different paths are byte-identical (REL-04). Runs on the release commit's push:main; not in the ruleset."
+    },
+    {
+      "name": "validate-tag",
+      "workflow": "docker-publish.yml",
+      "check_context": null,
+      "check_kind": "internal",
+      "tier": "release-internal",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "the pushed tag matches the versioning-policy pattern (REL-01, backend/internal/versionpolicy). Blocks every downstream job."
+    },
+    {
+      "name": "release-gate",
+      "workflow": "docker-publish.yml",
+      "check_context": null,
+      "check_kind": "internal",
+      "tier": "release-internal",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "no mandatory release_gate:true gate is observed FAILED on the release commit; all-green passes; a 60-minute deadline with a gate still not reporting is a warning and publication proceeds (the deterministic trigger-and-wait is #499). A workflow_dispatch run with a non-empty override_reason skips the poll and records the override with the actor."
+    },
+    {
+      "name": "schema-fixture-gate",
+      "workflow": "docker-publish.yml",
+      "check_context": null,
+      "check_kind": "internal",
+      "tier": "release-internal",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "a committed backend/database/testdata/schemas/<tag>.sql exists for a mycorrhizal-supported-series tag (MIG-01, #436/#529)."
+    },
+    {
+      "name": "build-and-push",
+      "workflow": "docker-publish.yml",
+      "check_context": null,
+      "check_kind": "internal",
+      "tier": "release-internal",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "the multi-arch images build and push; each digest gets a cosign keyless signature, an SBOM, and SLSA build provenance."
+    },
+    {
+      "name": "build-android-apk",
+      "workflow": "docker-publish.yml",
+      "check_context": null,
+      "check_kind": "internal",
+      "tier": "release-internal",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "the release APK assembles, is keystore-signed, `apksigner verify` passes (and matches ANDROID_SIGNING_CERT_SHA256 when set), its versionCode equals the computed value and is > 1, and provenance + a cosign bundle are produced and attached to the Release."
+    },
+    {
+      "name": "verify-release-assets",
+      "workflow": "docker-publish.yml",
+      "check_context": null,
+      "check_kind": "internal",
+      "tier": "release-internal",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "the GitHub Release carries app-release.apk and mycorrhizal-apk.sigstore.json, and every published image tag resolves in the registry."
+    },
+    {
+      "name": "Test minimum supported versions",
+      "workflow": "min-version-tests.yml",
+      "check_context": null,
+      "check_kind": "check_run",
+      "tier": "release-tier",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "the app builds and the suite passes against each declared minimum runtime (COMPAT-02, #473)."
+    },
+    {
+      "name": "Migration at scale (large dataset)",
+      "workflow": "migration-tests.yml",
+      "check_context": null,
+      "check_kind": "check_run",
+      "tier": "release-tier",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "with MYCORRHIZAL_LARGE_TESTS=1, every supported release migrates to current at ~134x the canonical manifest with row counts and integrity intact (#495)."
+    },
+    {
+      "name": "CardDAV real-server E2E",
+      "workflow": "carddav-e2e.yml",
+      "check_context": null,
+      "check_kind": "check_run",
+      "tier": "release-tier",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "a full round trip against the real reference servers matches the divergence register (#496)."
+    },
+    {
+      "name": "Constrained-resource chaos",
+      "workflow": "chaos-tests.yml",
+      "check_context": null,
+      "check_kind": "check_run",
+      "tier": "release-tier",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "the disk-full / mem-limited / cpu-limited jobs fail closed with no corruption (#498)."
+    },
+    {
+      "name": "Schemathesis API fuzzing",
+      "workflow": "schemathesis.yml",
+      "check_context": null,
+      "check_kind": "check_run",
+      "tier": "release-tier",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "no unhandled 500, no response that violates backend/openapi.yaml, no BOLA finding."
+    },
+    {
+      "name": "Differential E2E (calcard)",
+      "workflow": "differential-e2e.yml",
+      "check_context": null,
+      "check_kind": "check_run",
+      "tier": "release-tier",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "our JSContact / iCalendar output matches the pinned reference implementations (#680)."
+    },
+    {
+      "name": "Reference-clients E2E",
+      "workflow": "reference-clients-e2e.yml",
+      "check_context": null,
+      "check_kind": "check_run",
+      "tier": "release-tier",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "vdirsyncer round-trips against our server with no data loss (#681)."
+    },
+    {
+      "name": "ZAP DAST",
+      "workflow": "zap-dast.yml",
+      "check_context": null,
+      "check_kind": "check_run",
+      "tier": "release-tier",
+      "mandatory": true,
+      "release_gate": false,
+      "criterion": "the baseline scan raises no new high-risk dynamic finding."
+    },
+    {
+      "name": "OpenSSF Scorecard",
+      "workflow": "scorecard.yml",
+      "check_context": "Scorecard analysis",
+      "check_kind": "check_run",
+      "tier": "advisory",
+      "mandatory": false,
+      "release_gate": false,
+      "criterion": "informational supply-chain posture; a score drop is reviewed, never release-blocking."
+    },
+    {
+      "name": "CodeQL",
+      "workflow": "codeql.yml",
+      "check_context": null,
+      "check_kind": "check_run",
+      "tier": "advisory",
+      "mandatory": false,
+      "release_gate": false,
+      "criterion": "SARIF is uploaded; a new alert is triaged in the Security tab, not release-blocking."
+    },
+    {
+      "name": "Grype vulnerability scan",
+      "workflow": "grype.yml",
+      "check_context": "Scan dependencies (grype, critical/high)",
+      "check_kind": "check_run",
+      "tier": "advisory",
+      "mandatory": false,
+      "release_gate": false,
+      "criterion": "second-opinion CVE scan; the critical/high hard gate is on main + nightly, advisory at release time."
+    },
+    {
+      "name": "TruffleHog secret scan",
+      "workflow": "trufflehog.yml",
+      "check_context": null,
+      "check_kind": "check_run",
+      "tier": "advisory",
+      "mandatory": false,
+      "release_gate": false,
+      "criterion": "verified-secret git-history scan; a hit is investigated immediately but is not a release job."
+    },
+    {
+      "name": "Stryker mutation testing",
+      "workflow": "stryker.yml",
+      "check_context": "Mutation test (core modules)",
+      "check_kind": "check_run",
+      "tier": "advisory",
+      "mandatory": false,
+      "release_gate": false,
+      "criterion": "mutation-score trend for the core modules; advisory."
+    },
+    {
+      "name": "Android macrobenchmark",
+      "workflow": "android-tests.yml",
+      "check_context": null,
+      "check_kind": "check_run",
+      "tier": "advisory",
+      "mandatory": false,
+      "release_gate": false,
+      "criterion": "cold/warm/hot startup and dashboard frame timing trend; continue-on-error by design (emulator variance)."
+    },
+    {
+      "name": "Reproducible image (all-in-one)",
+      "workflow": "reproducibility.yml",
+      "check_context": null,
+      "check_kind": "check_run",
+      "tier": "advisory",
+      "mandatory": false,
+      "release_gate": false,
+      "criterion": "double-build config + layer digest compare for the linux/amd64 image; continue-on-error until reliably green on main (REL-04, #448)."
+    }
+  ]
+}

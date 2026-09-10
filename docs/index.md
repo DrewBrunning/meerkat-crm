@@ -44,4 +44,5 @@ The name comes from mycorrhiza, the symbiotic network fungi form with plant root
 - [Derived-data inventory (what is denormalized, how it rebuilds)](derived-data-inventory.md)
 - [Verifying release artifacts](security/release-verification.md)
 - [Reproducible builds (REL-04)](security/reproducible-builds.md)
+- [Release gates — what must pass before a tag publishes (REL-03)](development/release-gates.md)
 
