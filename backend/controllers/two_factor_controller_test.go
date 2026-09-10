@@ -147,8 +147,13 @@ func enableTwoFactor(t *testing.T, db *gorm.DB, router *gin.Engine, cfg *config.
 	w, _ = doRequest(router, req)
 	require.Equal(t, http.StatusBadRequest, w.Code)
 
-	// correct code confirms
-	req = sessionRequest("POST", "/users/2fa/confirm", map[string]string{"code": totpCode(t, setup.Secret)}, token)
+	// Confirm with a code from the PREVIOUS 30s step (still inside the server's
+	// ±1 step window). Enrollment now burns the confirming code's step for
+	// single use (issue #873, RFC 6238 §5.2); spending step S-1 here leaves the
+	// current step free for whatever TOTP operation the caller does next. Real
+	// users are 30s apart between codes; these tests are milliseconds apart.
+	req = sessionRequest("POST", "/users/2fa/confirm",
+		map[string]string{"code": totpCodeAt(t, setup.Secret, time.Now().Add(-30*time.Second))}, token)
 	w, cookies := doRequest(router, req)
 	require.Equal(t, http.StatusOK, w.Code, "confirm: %s", w.Body.String())
 	var confirm struct {
@@ -528,4 +533,70 @@ func loginWith2FA(router *gin.Engine, user models.User, code string) *http.Reque
 	req := sessionRequest("POST", "/login/2fa", map[string]string{"code": code}, "")
 	req.AddCookie(&http.Cookie{Name: "2fa_pending", Value: cookies["2fa_pending"].Value})
 	return req
+}
+
+// TestTwoFactor_TOTPReplayRejectedWithinWindow is the issue #873 repro: a TOTP
+// code that authenticated one session cannot be replayed to authenticate a
+// second, independent session inside its ±1 step validity window. Before the
+// single-use burn the second /login/2fa returned 200 with a fresh auth_token.
+func TestTwoFactor_TOTPReplayRejectedWithinWindow(t *testing.T) {
+	db, router, cfg, user := twoFactorTestEnv(t)
+	secret, _, _ := enableTwoFactor(t, db, router, cfg, user)
+
+	// enrollment burned step S-1; this code is step S.
+	code := totpCode(t, secret)
+
+	// Session A: first use authenticates.
+	w, cookies := doRequest(router, loginWith2FA(router, user, code))
+	require.Equal(t, http.StatusOK, w.Code, "first use: %s", w.Body.String())
+	require.NotNil(t, cookies["auth_token"])
+
+	// Session B: a brand-new pending challenge (fresh /login), same code — must
+	// be rejected now.
+	w, cookies = doRequest(router, loginWith2FA(router, user, code))
+	require.Equal(t, http.StatusBadRequest, w.Code, "replayed TOTP code must be rejected: %s", w.Body.String())
+	assert.Nil(t, cookies["auth_token"])
+
+	// A code from the next step still authenticates — the burn spends the used
+	// step, it does not disable the authenticator.
+	next := totpCodeAt(t, secret, time.Now().Add(30*time.Second))
+	require.NotEqual(t, code, next)
+	w, cookies = doRequest(router, loginWith2FA(router, user, next))
+	require.Equal(t, http.StatusOK, w.Code, "a fresh code must still authenticate: %s", w.Body.String())
+	assert.NotNil(t, cookies["auth_token"])
+
+	var stored models.User
+	require.NoError(t, db.First(&stored, user.ID).Error)
+	require.NotNil(t, stored.TOTPLastUsedStep)
+}
+
+// TestTwoFactor_ConfirmRecordsStepSoEnrollmentCodeCannotLogin pins that the code
+// used to *enable* 2FA is itself burned: an attacker who observes the enrollment
+// code cannot replay it at the account's first login.
+func TestTwoFactor_ConfirmRecordsStepSoEnrollmentCodeCannotLogin(t *testing.T) {
+	db, router, cfg, user := twoFactorTestEnv(t)
+
+	// Enroll manually so the test holds the exact confirming code.
+	token, err := services.IssueSession(db, user, cfg, "", "")
+	require.NoError(t, err)
+	w, _ := doRequest(router, sessionRequest("POST", "/users/2fa/setup", nil, token))
+	require.Equal(t, http.StatusOK, w.Code, "setup: %s", w.Body.String())
+	var setup struct {
+		Secret string `json:"secret"`
+	}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &setup))
+	require.NotEmpty(t, setup.Secret)
+
+	enrollCode := totpCode(t, setup.Secret)
+	w, _ = doRequest(router, sessionRequest("POST", "/users/2fa/confirm", map[string]string{"code": enrollCode}, token))
+	require.Equal(t, http.StatusOK, w.Code, "confirm: %s", w.Body.String())
+
+	var stored models.User
+	require.NoError(t, db.First(&stored, user.ID).Error)
+	require.NotNil(t, stored.TOTPLastUsedStep, "confirm must record the consumed step")
+
+	// The same enrollment code must not complete a login.
+	w, cookies := doRequest(router, loginWith2FA(router, user, enrollCode))
+	require.Equal(t, http.StatusBadRequest, w.Code, "enrollment code must not be replayable at login: %s", w.Body.String())
+	assert.Nil(t, cookies["auth_token"])
 }

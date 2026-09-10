@@ -141,7 +141,8 @@ func ConfirmTwoFactor(c *gin.Context) {
 	}
 
 	secret, err := services.DecryptCredential(currentConfig(c).JWTSecretKey, *user.TOTPSecretEncrypted)
-	if err != nil || !services.ValidateTOTP(secret, input.Code) {
+	confirmStep, stepOK := services.ValidateTOTPStep(secret, input.Code)
+	if err != nil || !stepOK {
 		apperrors.AbortWithError(c, apperrors.ErrInvalidInput("code", "Invalid code. Please try again."))
 		return
 	}
@@ -156,9 +157,10 @@ func ConfirmTwoFactor(c *gin.Context) {
 	now := time.Now()
 	err = db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&user).Updates(map[string]any{
-			"totp_enabled":      true,
-			"totp_confirmed_at": now,
-			"token_version":     gorm.Expr("token_version + 1"),
+			"totp_enabled":        true,
+			"totp_confirmed_at":   now,
+			"token_version":       gorm.Expr("token_version + 1"),
+			"totp_last_used_step": confirmStep,
 		}).Error; err != nil {
 			return err
 		}
@@ -243,6 +245,7 @@ func DisableTwoFactor(c *gin.Context) {
 			"totp_enabled":          false,
 			"totp_confirmed_at":     nil,
 			"totp_secret_encrypted": nil,
+			"totp_last_used_step":   nil,
 			"token_version":         gorm.Expr("token_version + 1"),
 		}).Error; err != nil {
 			return err
@@ -457,14 +460,21 @@ func Complete2FALogin(c *gin.Context, cfg *config.Config) {
 }
 
 // valid2FAProof reports whether code is either the account's current TOTP code
-// or an unused recovery code. Recovery-code consumption deletes the row, so a
-// successful recovery login burns that code permanently. jwtSecret decrypts the
-// stored TOTP secret.
+// or an unused recovery code, and consumes whichever it was so it cannot be
+// replayed. Recovery-code consumption deletes the row; TOTP consumption burns
+// the code's counter step (services.BurnTOTPStep) so the same — or an older —
+// code is rejected for the rest of its ±1 step window (issue #873, RFC 6238
+// §5.2). jwtSecret decrypts the stored TOTP secret.
 func valid2FAProof(db *gorm.DB, user *models.User, code, jwtSecret string) bool {
 	if user.TOTPSecretEncrypted != nil && *user.TOTPSecretEncrypted != "" {
 		secret, err := services.DecryptCredential(jwtSecret, *user.TOTPSecretEncrypted)
-		if err == nil && services.ValidateTOTP(secret, code) {
-			return true
+		if err == nil {
+			if step, ok := services.ValidateTOTPStep(secret, code); ok {
+				// A valid TOTP code: accept only if the single-use burn wins.
+				// A replay fails the conditional UPDATE and is rejected here —
+				// it must not fall through to the recovery-code path.
+				return services.BurnTOTPStep(db, user.ID, step)
+			}
 		}
 	}
 	return services.ConsumeRecoveryCode(db, user.ID, code)

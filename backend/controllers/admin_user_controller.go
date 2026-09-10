@@ -563,6 +563,7 @@ func ResetUserTwoFactor(c *gin.Context) {
 			"totp_enabled":          false,
 			"totp_confirmed_at":     nil,
 			"totp_secret_encrypted": nil,
+			"totp_last_used_step":   nil,
 			"token_version":         gorm.Expr("token_version + 1"),
 		}).Error; err != nil {
 			return err
