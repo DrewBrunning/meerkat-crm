@@ -18,6 +18,40 @@ update cadence: **Go modules** (`backend/go.mod`), **npm/Yarn**
 (`android/**/build.gradle.kts`), **Docker base images** (the three
 `Dockerfile`s), and **GitHub Actions** (`.github/workflows/*.yml`).
 
+## Selecting a new dependency
+
+Before the tiers below (which govern *updating* what is already here), a note
+on *adding* something new. A new direct dependency is a deliberate choice, made
+in its own reviewed pull request — never bundled into an unrelated change, and
+never vendored by copying source in. The bar:
+
+- **Is it needed at all?** A few lines of first-party code beat a dependency
+  whose transitive tree, release cadence, and abandonment risk we now own.
+  This is why the frontend has no lodash-style utility grab-bag and the
+  backend leans on the standard library.
+- **Is it maintained?** A recent release history, a real issue tracker, and
+  more than one contributor. An unmaintained package is a future security
+  exception waiting to happen.
+- **Is the license compatible?** MIT/BSD/Apache-2.0/ISC and similar are fine;
+  copyleft (GPL/AGPL/LGPL) is rejected. This is enforced, not just intended —
+  [`license-compliance.yml`](../.github/workflows/license-compliance.yml)
+  gates the Go and npm trees, and
+  [`dependency-review.yml`](../.github/workflows/dependency-review.yml) runs a
+  vulnerability / license / typosquat check on the added dependency in the PR
+  diff.
+- **How is it obtained?** Through the ecosystem's own package manager into the
+  committed lockfile (`go.sum`, `frontend/yarn.lock`, the Gradle version
+  catalog) — see the pinning rules below. Nothing is fetched at build time
+  from anywhere but the registry the lockfile records.
+
+Once merged, a dependency is **tracked** three ways: the lockfile is the
+authoritative list of what resolves; [`syft-sbom.yml`](../.github/workflows/syft-sbom.yml)
+publishes a signed SBOM per merge to `main` and per release (see
+[`docs/security/release-verification.md`](security/release-verification.md));
+and bundled non-manifest content (fonts, icons) is listed in
+[`THIRD_PARTY_SOURCES.md`](../THIRD_PARTY_SOURCES.md). Updates from there on
+follow the tiers below.
+
 ## The three tiers
 
 Every dependency change falls into exactly one of these. The tier is decided

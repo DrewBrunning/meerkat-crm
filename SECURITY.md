@@ -73,3 +73,5 @@ pull request, and pins its Go toolchain and container base images. See
 - [`docs/security/incident-response.md`](docs/security/incident-response.md) — operator runbook for
   responding to a suspected compromise: containment, credential/key rotation procedures, and
   scenario playbooks.
+- [`GOVERNANCE.md`](GOVERNANCE.md) — project roles and the list of members with access to
+  sensitive resources (repository admin, release-signing secrets, deployment host).
