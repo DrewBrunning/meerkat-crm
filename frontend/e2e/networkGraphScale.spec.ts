@@ -26,6 +26,15 @@ const EDGE_CEILING = 6000;
 
 const GRAPH_ROUTE = '**/api/v1/graph';
 
+// The `large` profile ships a ~2.6 MB /graph payload the page must fetch,
+// JSON-parse, set into state and reconcile before it can even decide to
+// degrade -- comfortably past the 5 s default assertion timeout on a shared
+// CI runner (observed: the notice mounts ~1 s after the default expiry). This
+// is a nightly @perf-heavy benchmark with a 360 s test budget, so wait
+// generously for the render decision; `wall` below still records how long it
+// actually took.
+const DECISION_TIMEOUT = 30_000;
+
 /** Worst rAF gap (ms) over `windowMs` -- a proxy for main-thread blocking. */
 async function measureJank(
   page: import('@playwright/test').Page,
@@ -81,10 +90,10 @@ test.describe('Network graph scale benchmark', {
 
       let jank = 0;
       if (overBudget) {
-        await expect(notice).toBeVisible();
+        await expect(notice).toBeVisible({ timeout: DECISION_TIMEOUT });
         await expect(canvas).toHaveCount(0);
       } else {
-        await expect(canvas).toHaveCount(1);
+        await expect(canvas).toHaveCount(1, { timeout: DECISION_TIMEOUT });
         await expect(notice).toHaveCount(0);
         jank = await measureJank(page, 2000);
       }

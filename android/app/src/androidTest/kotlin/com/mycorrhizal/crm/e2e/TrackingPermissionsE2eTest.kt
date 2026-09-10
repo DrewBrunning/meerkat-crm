@@ -1,5 +1,6 @@
 package com.mycorrhizal.crm.e2e
 
+import android.os.ParcelFileDescriptor.AutoCloseInputStream
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
@@ -57,8 +58,16 @@ class TrackingPermissionsE2eTest : E2eBaseTest() {
     private val uiAutomation
         get() = InstrumentationRegistry.getInstrumentation().uiAutomation
 
-    private fun grant(permission: String) =
-        uiAutomation.grantRuntimePermission(packageName, permission)
+    private fun grant(permission: String) {
+        // UiAutomation.grantRuntimePermission(String, String) is API 28+; this
+        // suite also runs on the API 26 minSdk floor (android-tests.yml's
+        // android-e2e-min-sdk job), so grant via `pm grant` over the shell
+        // (UiAutomation.executeShellCommand is API 21+). Reading the output to
+        // EOF blocks until the command has finished.
+        AutoCloseInputStream(
+            uiAutomation.executeShellCommand("pm grant $packageName $permission"),
+        ).use { it.readBytes() }
+    }
 
     private fun assertCallTracking(expect: Boolean) {
         compose.waitUntil(30_000) {
