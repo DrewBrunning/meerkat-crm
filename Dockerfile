@@ -29,8 +29,15 @@ ARG APP_VERSION=dev
 ARG APP_COMMIT=""
 ARG APP_BUILD_DATE=""
 
-# Build the application (glebarez/sqlite is pure Go (no CGO, i.e. without QEMU)
+# Build the application (glebarez/sqlite is pure Go (no CGO, i.e. without QEMU).
+# -trimpath drops the builder's absolute paths (/app/...) and -buildvcs=false
+# keeps VCS state out of the binary, so two builds on different machines produce
+# a byte-identical result -- the commit is carried by the -X ldflag, not the
+# embedded VCS stamp (REL-04, issue #448; docs/security/reproducible-builds.md).
+# SOURCE_DATE_EPOCH, passed by the release build, is honoured for any embedded
+# timestamp.
 RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build \
+    -trimpath -buildvcs=false \
     -ldflags "-X mycorrhizal/buildinfo.Version=${APP_VERSION} \
               -X mycorrhizal/buildinfo.Commit=${APP_COMMIT} \
               -X mycorrhizal/buildinfo.BuildDate=${APP_BUILD_DATE}" \
