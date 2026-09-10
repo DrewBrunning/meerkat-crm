@@ -168,19 +168,21 @@ restarting a healthy app because an optional integration is down).
 |---|---|---|---|
 | `GET /health/live` | Is the process running? | Instant — touches nothing | Container / orchestrator **restart policy** (`HEALTHCHECK`, Kubernetes `livenessProbe`) |
 | `GET /health/ready` | Can this instance serve? | DB ping + migration state + filesystem write probe | **Load balancer / traffic gate** (Kubernetes `readinessProbe`) |
-| `GET /health` | Is the CRM actually operational? | Deep — persisted check outcomes, job locks, integration reachability (30 s cached) | **Humans and monitoring aggregators** (dashboards, alerting) |
+| `GET /health` | Is the CRM actually operational? | Deep roll-up — persisted check outcomes, job locks, integration reachability (30 s cached) folded into one word | **Humans and monitoring aggregators** (dashboards, alerting) |
 
 - `/health/live` returns `200 {"status":"live"}` and never does I/O. It must not fail because a
   dependency is slow — that would make the orchestrator kill a working process.
 - `/health/ready` returns `200 {"status":"ready", ...}` or `503 {"status":"not_ready", ...}`. It is
   `not_ready` while the database or a configured file directory is unreachable, or while migrations
   are pending or dirty. Gate inbound traffic on this, not on `/health`.
-- `/health` returns `healthy`, `degraded`, or `unhealthy` with a per-facet `checks` breakdown
-  (database read/write, migration lag, last DB-integrity-check and restore-drill outcomes,
-  background-job locks, and reachability of server-scoped integrations — OIDC, email, FCM).
+- `/health` returns `healthy`, `degraded`, or `unhealthy` — the roll-up of the DB read/write probe,
+  migration lag, the last DB-integrity-check and restore-drill outcomes, background-job locks, and
+  reachability of server-scoped integrations (OIDC, email, FCM). It reports only that one status
+  word plus the running build's version/commit and the client-compatibility fields; the **per-facet
+  breakdown** (job names, integrity/restore-drill/data-integrity state, integration reachability) is
+  **admin-only** — `GET /api/v1/admin/system-status` returns it (issue #864).
   **`degraded` is still HTTP 200** — an unreachable optional integration or a stale scheduled job is
-  degraded-but-alive, not down. Only a database read failure returns `503`. This is the endpoint
-  that reports the running build's version/commit.
+  degraded-but-alive, not down. Only a database read failure returns `503`.
 
 The bundled Docker image's `HEALTHCHECK` and the CI boot-wait probes all use `/health/live`. The
 single-container nginx is not a load balancer, so `/health/ready` is not wired to anything by
@@ -209,14 +211,16 @@ whoever wires up probes (DEPLOY-03, issue #452):
   `livenessProbe` for steady state only.
 
 All three endpoints are unauthenticated (like the original `/health`) and deliberately carry no
-secrets. The deep endpoint's `reason`/`detail` strings are generic categories only — the underlying
-errors, absolute paths, the SMTP host/OIDC URL, and any table names or row counts from a failed
-integrity check / restore drill go to the **server log and the failure webhook**, never the
-response body. It does expose the build version/commit, the applied migration number, and
-scheduled-job names — same class of operational metadata the pre-split `/health` already returned.
-If you consider even that too much for an unauthenticated endpoint, put `/health` behind your proxy's
-auth and leave `/health/live` + `/health/ready` open. The all-in-one image's nginx serves all three
-with `X-Robots-Tag: noindex` so they are never crawled.
+secrets. What leaves the unauthenticated surface is the rolled-up status word, the build
+version/commit, and the client-compatibility fields (`api_contract_version`, `min_client_version`) —
+nothing that names an internal component or its operational state. The per-facet breakdown that
+*would* name things — scheduled-job names and lock/`stuck` flags, per-integration reachability, the
+integrity-check / restore-drill / data-integrity facet state, the applied migration number — is
+served only to admins by `GET /api/v1/admin/system-status` (issue #864). Its `reason`/`detail`
+strings are still generic categories: the underlying errors, absolute paths, the SMTP host/OIDC URL,
+and any table names or row counts from a failed integrity check / restore drill go to the **server
+log and the failure webhook**, never any response body. The all-in-one image's nginx serves all
+three health endpoints with `X-Robots-Tag: noindex` so they are never crawled.
 
 ## Diagnostics & logging
 
