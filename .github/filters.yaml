@@ -36,6 +36,16 @@ npm-manifests:
   - 'frontend/package.json'
   - 'frontend/yarn.lock'
 
+# REL-05 (issue #449): the operator-visible surfaces. A PR touching one of these
+# must carry an `## Upgrade notes` / `## Breaking changes` block in its
+# description, or `no-changelog: <reason>` — the `changelog-note` job in
+# unit-tests.yml enforces it. Deliberately narrow: schema migrations and the
+# configuration surface are the changes an operator most often has to act on.
+changelog-relevant:
+  - 'backend/database/migrations/**'
+  - 'backend/config/config.go'
+  - '.env.example'
+
 backend:
   - 'backend/**'
 

@@ -74,6 +74,18 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # REL-05 (#449): the operator-notes harvest below walks the commit
+          # range since the previous release tag, so it needs full history + tags.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: backend/go.mod
+          # zizmor cache-poisoning (issue #358): this job publishes the GitHub
+          # Release, so no build cache from an earlier (PR/other-trigger) run is
+          # restored into it. `go run ./cmd/releasenotes` is a few seconds cold.
+          cache: false
 
       # Resolve the exact image references the build-and-push job publishes,
       # rather than re-deriving them differently here. Two ways the raw inputs
@@ -100,6 +112,40 @@ jobs:
             echo "frontend=ghcr.io/${repo}-frontend:${tag}"
           } >> "$GITHUB_OUTPUT"
 
+      # REL-05 (issue #449): the operator-facing half of the changelog. GitHub's
+      # generate_release_notes gives the categorized "what changed" list
+      # (.github/release.yml); this harvests the hand-written `## Upgrade notes`
+      # / `## Breaking changes` blocks from the descriptions of the PRs merged
+      # since the previous release tag and assembles them with
+      # cmd/releasenotes. Best-effort: any failure still yields the tool's
+      # explicit "no action required" section, so it never blocks a release.
+      # Folds into the #499 release workflow.
+      - name: Harvest operator notes from the release's PRs
+        id: opnotes
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -eu
+          prev="$(git describe --tags --abbrev=0 --match 'v[0-9]*' "${RELEASE_TAG}^" 2>/dev/null || true)"
+          if [ -n "$prev" ]; then range="${prev}..${RELEASE_TAG}"; else range="${RELEASE_TAG}"; fi
+          echo "Harvesting operator notes over: ${range}"
+          nums="$(git log "$range" --format='%s' | grep -oE '\(#[0-9]+\)$' | tr -cd '0-9\n' | sort -un || true)"
+          prs='[]'
+          for n in $nums; do
+            pr="$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${n}" \
+                    --jq '{number, title, url: .html_url, body}' 2>/dev/null || true)"
+            if [ -n "$pr" ]; then
+              prs="$(printf '%s\n%s\n' "$prs" "$pr" | jq -c -s '.[0] + [.[1]]')"
+            fi
+          done
+          block="$(printf '%s' "$prs" | (cd backend && go run ./cmd/releasenotes))"
+          {
+            echo 'block<<OPNOTES_EOF'
+            echo "$block"
+            echo 'OPNOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       # action-gh-release's append_body semantics (append to an existing
       # release on a manual recovery run) have no gh-CLI equivalent; replacing
       # it would change release behavior.
@@ -110,6 +156,8 @@ jobs:
           generate_release_notes: true
           append_body: true
           body: |
+
+            ${{ steps.opnotes.outputs.block }}
 
             ## Docker Images
 

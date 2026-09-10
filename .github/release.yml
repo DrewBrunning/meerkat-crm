@@ -1,0 +1,37 @@
+# GitHub release-notes configuration (REL-05, issue #449).
+#
+# This turns the flat "What's Changed" list that `generate_release_notes`
+# produces into labelled sections. It is the "what changed" half of the
+# changelog; the operator-facing half ("Upgrade notes" / "Breaking changes") is
+# harvested from PR descriptions by cmd/releasenotes and prepended to the
+# release body in docker-publish.yml's create-release job.
+#
+# The category set here is pinned by backend/internal/releasenotes
+# (RequiredCategories) — TestReleaseConfigHasRequiredCategories fails the build
+# if a section is dropped or the "*" catch-all loses its label. Policy and
+# rationale: docs/changelog-policy.md.
+changelog:
+  exclude:
+    # Nothing is excluded wholesale — every merged PR should appear somewhere,
+    # which is why "Other Changes" carries the "*" catch-all below.
+    labels: []
+  categories:
+    - title: Security
+      labels: [security]
+    - title: Breaking Changes
+      labels: [breaking-change]
+    - title: Deprecated
+      labels: [deprecation]
+    - title: Added
+      labels: [enhancement]
+    - title: Fixed
+      labels: [bug]
+    - title: Dependencies
+      labels: [dependencies]
+    - title: Documentation
+      labels: [documentation]
+    # Catch-all: any merged PR whose labels matched none of the above. Keeps
+    # the generated list complete rather than silently dropping unlabelled or
+    # otherwise-labelled PRs.
+    - title: Other Changes
+      labels: ["*"]
