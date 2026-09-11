@@ -1,6 +1,7 @@
 package services
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -172,6 +173,53 @@ func TestPurgeSoftDeletedRows_PurgesSoftDeletedChildContent(t *testing.T) {
 	assert.Zero(t, oldCount, "a note soft-deleted past retention must be purged")
 	assert.Equal(t, int64(1), freshCount, "a recently soft-deleted note must survive")
 	assert.Equal(t, int64(1), parentCount, "purging a child must not touch its live parent")
+}
+
+// DELETED_RETENTION_DAYS=0 is the documented "disable the purge and keep
+// soft-deleted rows forever" value (.env.example), and a negative value is a
+// misconfiguration the purge service treats the same way. Without the guard the
+// cutoff is computed as now minus the window, so it lands on/after now and
+// `deleted_at < cutoff` matches the ENTIRE undo window — the issue #971
+// data-loss bug: the daily/boot job hard-deletes every soft-deleted row.
+//
+// This pins that a non-positive window purges nothing. Both the daily cron and
+// the boot-time Initial trigger call this function (via PurgeDeletedRows), so
+// the guard covers both paths.
+func TestPurgeSoftDeletedRows_NonPositiveRetentionDisablesPurge(t *testing.T) {
+	for _, retention := range []int{0, -1} {
+		t.Run(fmt.Sprintf("retention=%d", retention), func(t *testing.T) {
+			db, userID := newPurgeDB(t)
+
+			contact := models.Contact{UserID: userID, Firstname: "Doomed"}
+			require.NoError(t, db.Create(&contact).Error)
+			softDeleteAt(t, db, &models.Contact{}, contact.ID, time.Now().AddDate(0, 0, -60))
+
+			note := models.Note{UserID: userID, ContactID: &contact.ID, Content: "old note"}
+			require.NoError(t, db.Create(&note).Error)
+			softDeleteAt(t, db, &models.Note{}, note.ID, time.Now().AddDate(0, 0, -60))
+
+			other := models.Contact{UserID: userID, Firstname: "Other"}
+			require.NoError(t, db.Create(&other).Error)
+			require.NoError(t, db.Create(&models.RelationshipEdge{
+				UserID: userID, SourceID: contact.VCardUID, TargetID: other.VCardUID,
+				Type: "friend_of", Source: models.RelationshipSourceUserConfirmed,
+				Confidence: 1.0, Status: models.RelationshipStatusConfirmed,
+				Sensitivity: models.RelationshipSensitivityNormal,
+			}).Error)
+
+			PurgeSoftDeletedRows(db, config.Config{DeleteRetentionDays: retention})
+
+			var contactCount, noteCount, edgeCount int64
+			require.NoError(t, db.Unscoped().Model(&models.Contact{}).Where("id = ?", contact.ID).Count(&contactCount).Error)
+			require.NoError(t, db.Unscoped().Model(&models.Note{}).Where("id = ?", note.ID).Count(&noteCount).Error)
+			require.NoError(t, db.Model(&models.RelationshipEdge{}).
+				Where("source_id = ? OR target_id = ?", contact.VCardUID, contact.VCardUID).Count(&edgeCount).Error)
+
+			assert.Equal(t, int64(1), contactCount, "a non-positive retention must keep the soft-deleted contact")
+			assert.Equal(t, int64(1), noteCount, "a non-positive retention must keep the soft-deleted child content")
+			assert.Equal(t, int64(1), edgeCount, "a non-positive retention must keep the contact's edge rows")
+		})
+	}
 }
 
 func TestPurgeSoftDeletedRows_IsIdempotent(t *testing.T) {

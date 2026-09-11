@@ -248,7 +248,8 @@ is set, the row stays in the database for `DELETED_RETENTION_DAYS` (default
 **30**), and then the purge job (`backend/services/purge_service.go`)
 **hard-deletes** it. During the window the row is a sync tombstone and it keeps
 the *content* present in the live database and in every new backup. That is the
-entire guarantee.
+entire guarantee. (`DELETED_RETENTION_DAYS=0` disables the purge and keeps the
+rows forever; a negative value is rejected at startup.)
 
 **What it is *not*: a self-service undo.** There is **no undelete endpoint.**
 `POST /api/v1/audit/:id/undo` reverts an accidental **update** to a contact and
