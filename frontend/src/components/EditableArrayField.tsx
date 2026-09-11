@@ -121,7 +121,14 @@ export default function EditableArrayField<T>({
             aria-label={t('common.edit')}
             // #188 / #196: the tight p:0.25 padding measured 22x22, under the
             // 2.5.8 (AA) 24x24 minimum -- floor it. Mirrors EditableField.tsx.
-            sx={{ ml: 0.5, p: 0.25, opacity: 0, transition: 'opacity 0.2s', minWidth: 24, minHeight: 24 }}
+            sx={{
+              ml: 0.5,
+              p: 0.25,
+              opacity: 0,
+              transition: 'opacity 0.2s',
+              minWidth: 24,
+              minHeight: 24,
+            }}
           >
             <EditIcon sx={{ fontSize: 18 }} />
           </IconButton>
