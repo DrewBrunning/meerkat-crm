@@ -365,7 +365,11 @@ function DashboardPage() {
                 >
                   <CardContent sx={{ py: 1.5 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      {/* #196: decorative -- the name is in the text beside it.
+                          Without aria-hidden the initial doubles into the
+                          card link's accessible name ("AAlice Johnson"). */}
                       <Avatar
+                        aria-hidden
                         src={contact.photo_thumbnail || undefined}
                         sx={{ bgcolor: 'warning.main', width: 40, height: 40 }}
                       >
@@ -474,7 +478,9 @@ function DashboardPage() {
                   >
                     <CardContent sx={{ py: 1.5 }}>
                       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                        {/* #196: decorative -- see the favorites Avatar above. */}
                         <Avatar
+                          aria-hidden
                           src={birthday.photo_thumbnail}
                           sx={{ bgcolor: 'primary.main', width: 40, height: 40 }}
                         >
@@ -738,7 +744,9 @@ function DashboardPage() {
                 >
                   <CardContent sx={{ py: 1.5 }}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                      {/* #196: decorative -- see the favorites Avatar above. */}
                       <Avatar
+                        aria-hidden
                         src={contact.photo_thumbnail || undefined}
                         sx={{ bgcolor: 'secondary.main', width: 40, height: 40 }}
                       >

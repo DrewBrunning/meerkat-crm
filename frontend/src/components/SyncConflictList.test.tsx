@@ -52,6 +52,8 @@ test('renders the conflict naming the field and offering the local value back', 
   // Row links to the contact.
   const link = screen.getByRole('link');
   expect(link.getAttribute('href')).toBe('/contacts/42');
+  // #196: the decorative avatar initial must not double into the link name.
+  expect(link).toHaveAccessibleName(/^Grace Hopper/); // not "GGrace Hopper"
 });
 
 test('restore and dismiss handlers fire with the conflict', () => {

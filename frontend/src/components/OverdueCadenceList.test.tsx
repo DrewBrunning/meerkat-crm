@@ -49,6 +49,8 @@ test('renders each overdue contact with the overdue badge and a link to the cont
   // The row is a router Link to /contacts/<numeric id>.
   const link = screen.getByRole('link');
   expect(link.getAttribute('href')).toBe('/contacts/7');
+  // #196: the decorative avatar initial must not double into the link name.
+  expect(link).toHaveAccessibleName(/^Alice Smith/); // not "AAlice Smith"
 });
 
 test('shows the empty state when nothing is overdue', () => {

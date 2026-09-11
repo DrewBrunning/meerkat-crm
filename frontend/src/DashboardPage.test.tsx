@@ -120,6 +120,12 @@ test('fetches the dashboard composite once and renders all four blocks', async (
   expect(screen.getByText('Randy Contact')).toBeInTheDocument();
   // Issue #173: the favorites block renders its contacts.
   expect(screen.getByText('Fay Vorite')).toBeInTheDocument();
+  // #196: the decorative avatar initial must not double into a card link's
+  // accessible name ("FFay Vorite") -- favorites, birthdays and stay-in-touch
+  // all wrap an <Avatar> inside `component={Link}`.
+  expect(screen.getByRole('link', { name: 'Fay Vorite' })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: /^Bea Birthday/ })).toBeInTheDocument();
+  expect(screen.getByRole('link', { name: 'Randy Contact' })).toBeInTheDocument();
   expect(screen.getByText('Call Nicky')).toBeInTheDocument();
   // The reminder's contact_name is embedded server-side (M3 design decision
   // 2) -- no separate per-reminder contact fetch happens.

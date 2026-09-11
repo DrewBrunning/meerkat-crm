@@ -85,7 +85,10 @@ export default function OverdueCadenceList({ overdue, loading, error }: OverdueC
             >
               <CardContent sx={{ py: 1.5 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                  {/* #196: decorative -- aria-hidden so the initial doesn't
+                      double into the row link's accessible name. */}
                   <Avatar
+                    aria-hidden
                     src={item.photo_thumbnail || undefined}
                     sx={{ bgcolor: 'warning.main', width: 40, height: 40 }}
                   >

@@ -103,7 +103,10 @@ export default function ReachOutSuggestionsList({
               >
                 <CardContent sx={{ py: 1.5 }}>
                   <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
+                    {/* #196: decorative -- aria-hidden so the initial doesn't
+                        double into the row link's accessible name. */}
                     <Avatar
+                      aria-hidden
                       src={s.photo_thumbnail || undefined}
                       sx={{ bgcolor: 'primary.main', width: 40, height: 40 }}
                     >

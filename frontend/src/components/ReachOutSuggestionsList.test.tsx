@@ -47,6 +47,8 @@ test('renders each suggestion with the old->new value and a link to the contact'
   expect(screen.getByText('OldCo → NewCo')).toBeInTheDocument();
   const link = screen.getByRole('link');
   expect(link.getAttribute('href')).toBe('/contacts/7');
+  // #196: the decorative avatar initial must not double into the link name.
+  expect(link).toHaveAccessibleName(/^Alice Smith/); // not "AAlice Smith"
 });
 
 test('shows the empty state when there are no suggestions', () => {
