@@ -290,20 +290,39 @@ jobs:
       # release-tier/scheduled-only, so this had never run since the image
       # stopped carrying the library.
       # With libdbus-glib-1.so.2 fixed, Firefox 111's content process still
-      # segfaulted on this runner ("glxtest: libGL.so.1 missing" / "More than
-      # 1 GPU from same vendor detected via PCI, cannot deduce device" /
-      # "RenderCompositorSWGL failed mapping default framebuffer" -> signal
-      # 11): its software-rendering fallback (SWGL/llvmpipe) still needs
-      # libGL.so.1 and a working GLX to initialize, and a minimal runner has
-      # neither. libgl1 alone resolves it -- apt pulls in the mesa DRI/GLX
-      # backends (libgl1-mesa-dri, libglx-mesa0) that provide them. No Xvfb
-      # or virtual display needed: reproduced and confirmed end-to-end
-      # (bare ubuntu:24.04, no DISPLAY, no /tmp/.X11-unix) that Firefox's
-      # software path works with no display at all once libGL.so.1 itself
-      # is loadable -- an earlier fix here that added xvfb + a virtual
-      # display was unnecessary complexity and has been removed.
+      # segfaulted on this runner ("glxtest: Unable to open a connection to
+      # the X server" / "No GPUs detected via PCI" / "RenderCompositorSWGL
+      # failed mapping default framebuffer" -> signal 11).
+      #
+      # A first pass here concluded `libgl1` alone was the fix, reasoning
+      # from a local Docker reproduction (bare ubuntu:24.04, no DISPLAY, no
+      # /tmp/.X11-unix) where installing it made the identical crash go
+      # away. That reproduction was real but insufficient: on the actual
+      # GitHub-hosted runner, `libgl1 is already the newest version` BEFORE
+      # this fix ever ran -- it was never missing there -- yet the crash
+      # still happened. Something about the hosted runner's virtualization
+      # (most likely no /dev/dri render node, unlike a local Docker
+      # container which can inherit the host's) forces Firefox down a
+      # code path that needs a real GLX connection -- even to a fake
+      # display -- that a local container apparently doesn't need. Xvfb +
+      # the Mesa software-GL stack is the standard, broadly-portable fix for
+      # this exact failure mode across CI providers for that reason: a
+      # virtual display gives glxtest something to open, and llvmpipe
+      # (Mesa's software rasterizer) makes GLX against it actually work.
+      # Keeping `libgl1` too since the real runner already carries it
+      # harmlessly, and dropping it isn't worth another round-trip to
+      # confirm.
       - name: Install Firefox 111's runtime dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libdbus-glib-1-2 libgl1
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libdbus-glib-1-2 libgl1 xvfb libgl1-mesa-dri libglx-mesa0
+
+      - name: Start a virtual X display (Xvfb)
+        run: |
+          Xvfb :99 -screen 0 1280x1024x24 > /tmp/xvfb.log 2>&1 &
+          for _ in $(seq 1 30); do
+            [ -e /tmp/.X11-unix/X99 ] && break
+            sleep 0.5
+          done
+          echo "DISPLAY=:99" >> "$GITHUB_ENV"
 
       - name: Download Firefox 111.0 (the documented floor) + a compatible geckodriver
         run: |
