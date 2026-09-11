@@ -110,6 +110,34 @@ test('confirmed edges render without a suggested chip and without accept/reject 
   expect(screen.queryByLabelText('Accept')).not.toBeInTheDocument();
 });
 
+// #196 (audit gap, N-1's sibling): the edit/delete actions were revealed only
+// on `&:hover .action-buttons` -- no `:focus-within` -- so keyboard focus
+// landed on a fully transparent control.
+test('edit/delete actions are keyboard-revealable', () => {
+  const confirmed: RelationshipEdge = { ...suggestedEdge(), id: 'edge-3', status: 'confirmed' };
+  const contactsByUid = new Map([['bob-uid', bobContact()]]);
+
+  render(
+    <MemoryRouter>
+      <RelationshipEdgeList
+        confirmedEdges={[confirmed]}
+        suggestedEdges={[]}
+        contactsByUid={contactsByUid}
+        viewedContactUid={viewedContactUid}
+        onEdit={vi.fn()}
+        onDelete={vi.fn()}
+        onAccept={vi.fn()}
+        onReject={vi.fn()}
+      />
+    </MemoryRouter>,
+  );
+
+  const css = Array.from(document.querySelectorAll('style'))
+    .map((s) => s.textContent || '')
+    .join('\n');
+  expect(css).toContain(':focus-within .action-buttons');
+});
+
 test('shows the empty state when there are no edges at all', () => {
   render(
     <MemoryRouter>

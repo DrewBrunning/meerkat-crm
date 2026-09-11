@@ -85,7 +85,10 @@ export default function RelationshipEdgeList({
             variant="outlined"
             sx={{
               p: 2,
-              '&:hover .action-buttons': {
+              // #196: :focus-within reveals the actions once a button inside
+              // is keyboard-focused, not just on mouse hover -- see
+              // EditableField.tsx's matching comment.
+              '&:hover .action-buttons, &:focus-within .action-buttons': {
                 opacity: 1,
               },
             }}

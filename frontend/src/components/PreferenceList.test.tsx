@@ -38,6 +38,18 @@ test('renders preferences grouped into Food & Drink and Media sections', () => {
   expect(screen.getByText('Favorite')).toBeInTheDocument();
 });
 
+// #196 (audit gap, N-1's sibling): the edit/delete actions were revealed only
+// on `&:hover .preference-actions` -- no `:focus-within` -- so keyboard focus
+// landed on a fully transparent control.
+test('edit/delete actions are keyboard-revealable', () => {
+  render(<PreferenceList preferences={[preference()]} onEdit={vi.fn()} onDelete={vi.fn()} />);
+
+  const css = Array.from(document.querySelectorAll('style'))
+    .map((s) => s.textContent || '')
+    .join('\n');
+  expect(css).toContain(':focus-within .preference-actions');
+});
+
 test('jewelry and gift-preference categories land in their own sections', () => {
   render(
     <PreferenceList
