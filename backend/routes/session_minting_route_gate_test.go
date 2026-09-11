@@ -54,12 +54,24 @@ import (
 
 // The runtime function names of the two middlewares this gate is about. Both
 // are closures with a single creation site, so runtime.FuncForPC resolves
-// every wired instance to these exact strings. AuthRateLimitMiddleware wraps
-// RateLimitMiddleware in its own closure precisely so it is distinguishable by
-// name from the API and CardDAV limiters (see middleware/rate_limiter.go).
+// every wired instance to a name containing one of these markers.
+// AuthRateLimitMiddleware wraps RateLimitMiddleware in its own closure
+// precisely so it is distinguishable by name from the API and CardDAV
+// limiters (see middleware/rate_limiter.go).
+//
+// Markers, not full qualified names: mid-stack inlining renames a closure to
+// prefix it with every enclosing call the compiler chose to inline it into
+// (observed under the go.mod floor, Go 1.26.0: "mycorrhizal/routes.
+// RegisterRoutes.AuthRateLimitMiddleware.func34" instead of the unlined
+// "mycorrhizal/middleware.AuthRateLimitMiddleware.func1" the newer pinned
+// toolchain produces here) and renumbers the trailing .funcN — both the
+// prefix and the number are inlining-decision artifacts that differ across
+// Go versions, not part of the closure's identity. The "<Name>.func" marker
+// survives both: it names the one thing that cannot move, the original
+// function this closure was declared in.
 const (
-	floorFuncName  = "mycorrhizal/middleware.EnforceMinClientVersion.func1"
-	authRLFuncName = "mycorrhizal/middleware.AuthRateLimitMiddleware.func1"
+	floorFuncMarker  = "EnforceMinClientVersion.func"
+	authRLFuncMarker = "AuthRateLimitMiddleware.func"
 )
 
 // sessionMintingRoutes is every public route whose successful response
@@ -138,8 +150,8 @@ func TestSessionMintingRoutesGate(t *testing.T) {
 		chain, ok := chains[key]
 		require.Truef(t, ok, "declared session-minting route %q is not registered — stale entry in sessionMintingRoutes", key)
 
-		floorIdx := indexOf(chain, floorFuncName)
-		rlIdx := indexOf(chain, authRLFuncName)
+		floorIdx := indexOfMarker(chain, floorFuncMarker)
+		rlIdx := indexOfMarker(chain, authRLFuncMarker)
 		handlerIdx := len(chain) - 1
 
 		assert.GreaterOrEqualf(t, floorIdx, 0,
@@ -166,7 +178,7 @@ func TestSessionMintingRoutesGate(t *testing.T) {
 		if _, declared := sessionMintingRoutes[key]; declared {
 			continue
 		}
-		assert.NotContainsf(t, chains[key], floorFuncName,
+		assert.Falsef(t, containsMarker(chains[key], floorFuncMarker),
 			"route %q carries EnforceMinClientVersion but is not a declared session-minting route — either add it to sessionMintingRoutes (with the reason it mints a session) or remove the floor. A floor on a non-minting route is a policy smell. Chain: %v", key, chains[key])
 	}
 
@@ -174,7 +186,7 @@ func TestSessionMintingRoutesGate(t *testing.T) {
 	for _, key := range sortedKeys(clientVersionFloorExclusions) {
 		chain, ok := chains[key]
 		require.Truef(t, ok, "documented floor-exclusion %q is not a registered route — stale entry in clientVersionFloorExclusions", key)
-		assert.NotContainsf(t, chain, floorFuncName,
+		assert.Falsef(t, containsMarker(chain, floorFuncMarker),
 			"route %q is documented as deliberately outside the client-version floor, but now carries it — reconcile clientVersionFloorExclusions and sessionMintingRoutes. Chain: %v", key, chain)
 	}
 }
@@ -302,13 +314,21 @@ func handlerChainByRoute(t *testing.T, engine *gin.Engine) map[string][]string {
 	return out
 }
 
-func indexOf(haystack []string, needle string) int {
+// indexOfMarker returns the index of the first chain entry containing
+// marker as a substring — see the comment on floorFuncMarker/authRLFuncMarker
+// for why this is a substring match, not an exact one.
+func indexOfMarker(haystack []string, marker string) int {
 	for i, s := range haystack {
-		if s == needle {
+		if strings.Contains(s, marker) {
 			return i
 		}
 	}
 	return -1
+}
+
+// containsMarker reports whether any chain entry contains marker.
+func containsMarker(haystack []string, marker string) bool {
+	return indexOfMarker(haystack, marker) >= 0
 }
 
 func sortedKeys[V any](m map[string]V) []string {
