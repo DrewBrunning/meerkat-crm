@@ -70,7 +70,10 @@ export default function PreferenceList({ preferences, onEdit, onDelete }: Prefer
       variant="outlined"
       sx={{
         p: 2,
-        '&:hover .preference-actions': { opacity: 1 },
+        // #196: :focus-within reveals the actions once a button inside is
+        // keyboard-focused, not just on mouse hover -- see EditableField.tsx's
+        // matching comment.
+        '&:hover .preference-actions, &:focus-within .preference-actions': { opacity: 1 },
       }}
     >
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>

@@ -39,7 +39,15 @@ export default function LifeEventList({
   return (
     <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
       {events.map((event) => (
-        <Paper key={event.id} sx={{ p: 2, '&:hover .life-event-actions': { opacity: 1 } }}>
+        <Paper
+          key={event.id}
+          sx={{
+            p: 2,
+            // #196: :focus-within reveals the actions once a button inside
+            // is keyboard-focused, not just on mouse hover.
+            '&:hover .life-event-actions, &:focus-within .life-event-actions': { opacity: 1 },
+          }}
+        >
           <Box
             sx={{
               display: 'flex',

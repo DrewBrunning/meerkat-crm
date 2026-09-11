@@ -61,6 +61,17 @@ test('renders a reminder with its date, email and recurrence metadata', () => {
   expect(screen.getByText('Flexible')).toBeInTheDocument();
 });
 
+// #196 (audit gap, N-1's sibling): revealed only on `&:hover .action-buttons`
+// -- no `:focus-within` -- so keyboard focus landed on a fully transparent
+// control.
+test('edit/delete actions are keyboard-revealable', () => {
+  renderList({ reminders: [reminder()] });
+  const css = Array.from(document.querySelectorAll('style'))
+    .map((s) => s.textContent || '')
+    .join('\n');
+  expect(css).toContain(':focus-within .action-buttons');
+});
+
 test('a one-off reminder shows neither the recurrence chip nor the flexible chip', () => {
   renderList({
     reminders: [reminder({ recurrence: 'once', reoccur_from_completion: false })],

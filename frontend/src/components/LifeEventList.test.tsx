@@ -46,6 +46,17 @@ test('edit and delete actions are reachable by an accessible label', () => {
   expect(screen.getByLabelText('Delete')).toBeInTheDocument();
 });
 
+// #196 (audit gap, N-1's sibling): revealed only on `&:hover
+// .life-event-actions` -- no `:focus-within` -- so keyboard focus landed on
+// a fully transparent control.
+test('edit/delete actions are keyboard-revealable', () => {
+  renderList([baseEvent()]);
+  const css = Array.from(document.querySelectorAll('style'))
+    .map((s) => s.textContent || '')
+    .join('\n');
+  expect(css).toContain(':focus-within .life-event-actions');
+});
+
 test('omits the category chip for an uncategorized (pre-T36) event', () => {
   renderList([baseEvent({ type: 'started a podcast', category: undefined })]);
 
