@@ -563,12 +563,30 @@ jobs:
             sleep 90
           done
 
+      # GitHub App installation tokens are short-lived (~1h). The original
+      # mint (step "Mint GitHub App token", above) is used for "Push main"
+      # right after it, but by the time we get here the release-tier wait
+      # just above can easily have run 30-75 minutes -- confirmed failing
+      # for real: a v0.7.0-rc.1 cut whose release-tier wait took ~61 minutes
+      # hit "remote: Invalid username or token" / "fatal: Authentication
+      # failed" on the tag push, the token having expired mid-wait. Re-mint
+      # immediately before the two steps that still need to push/call the
+      # API, rather than reuse the now-possibly-stale original token.
+      - name: Re-mint GitHub App token (release-tier wait may have expired the first one)
+        id: app-token-2
+        if: ${{ !inputs.dry_run }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - name: Tag and push
         if: ${{ !inputs.dry_run }}
         env:
           VERSION: ${{ env.VERSION }}
           RELEASE_COMMIT: ${{ env.RELEASE_COMMIT }}
-          GH_APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_APP_TOKEN: ${{ steps.app-token-2.outputs.token }}
         run: |
           set -eu
           # The tag points at the release commit: the fixture commit for a
@@ -584,7 +602,7 @@ jobs:
         if: ${{ !inputs.dry_run }}
         env:
           VERSION: ${{ env.VERSION }}
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token-2.outputs.token }}
         run: |
           set -eu
           # docker-publish's create-release job makes the Release from the tag
