@@ -255,7 +255,9 @@ export default function ContactTimeline({
                 sx={{
                   p: 1.5,
                   position: 'relative',
-                  '&:hover .action-icon': {
+                  // #196: :focus-within reveals the icon once it is
+                  // keyboard-focused, not just on mouse hover.
+                  '&:hover .action-icon, &:focus-within .action-icon': {
                     opacity: 1,
                   },
                 }}

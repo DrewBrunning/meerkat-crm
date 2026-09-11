@@ -96,6 +96,14 @@ test('renders notes list and shows unfiled count', async () => {
 
   expect(screen.getByText('Second note')).toBeDefined();
   expect(screen.getByText('2')).toBeDefined();
+
+  // #196 (audit gap, N-1's sibling): a note's edit/delete actions were
+  // revealed only on `&:hover .edit-actions` -- no `:focus-within` -- so
+  // keyboard focus landed on a fully transparent control.
+  const css = Array.from(document.querySelectorAll('style'))
+    .map((s) => s.textContent || '')
+    .join('\n');
+  expect(css).toContain(':focus-within .edit-actions');
 });
 
 // T1: When every note has a contact_id, the inbox is empty. The backend

@@ -326,7 +326,9 @@ const ActivitiesPage: React.FC = () => {
                   elevation={2}
                   sx={{
                     p: 2,
-                    '&:hover .edit-actions': {
+                    // #196: :focus-within reveals the actions once a button
+                    // inside is keyboard-focused, not just on mouse hover.
+                    '&:hover .edit-actions, &:focus-within .edit-actions': {
                       opacity: 1,
                     },
                   }}

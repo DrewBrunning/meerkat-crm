@@ -30,6 +30,30 @@ function renderTimeline(items: React.ComponentProps<typeof ContactTimeline>['tim
   );
 }
 
+// #196 (audit gap N-1): a timeline item's edit/delete icon was revealed only
+// on `&:hover .action-icon` -- no `:focus-within` -- so keyboard focus landed
+// on a fully transparent control.
+test('edit/delete action icon is keyboard-revealable', () => {
+  renderTimeline([
+    {
+      type: 'note',
+      date: '2026-01-01T00:00:00Z',
+      data: {
+        ID: 1,
+        content: 'Met at the conference',
+        date: '2026-01-01T00:00:00Z',
+        CreatedAt: '2026-01-01T00:00:00Z',
+        UpdatedAt: '2026-01-01T00:00:00Z',
+      },
+    },
+  ]);
+
+  const css = Array.from(document.querySelectorAll('style'))
+    .map((s) => s.textContent || '')
+    .join('\n');
+  expect(css).toContain(':focus-within .action-icon');
+});
+
 test('renders a given gift with its label, description, and occasion', () => {
   renderTimeline([{ type: 'gift', data: givenGift, date: givenGift.date! }]);
 

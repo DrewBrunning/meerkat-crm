@@ -107,7 +107,9 @@ export default function ReminderList({
             sx={{
               border: isOverdue(reminder.remind_at) ? '2px solid' : '1px solid',
               borderColor: isOverdue(reminder.remind_at) ? 'warning.main' : 'divider',
-              '&:hover .action-buttons': {
+              // #196: :focus-within reveals the actions once a button inside
+              // is keyboard-focused, not just on mouse hover.
+              '&:hover .action-buttons, &:focus-within .action-buttons': {
                 opacity: 1,
               },
             }}
