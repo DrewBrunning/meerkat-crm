@@ -91,7 +91,11 @@ export default function EditableArrayField<T>({
       sx={{
         display: 'flex',
         alignItems: 'flex-start',
-        '&:hover .edit-button': { opacity: 1 },
+        // #188 / #196: :focus-within reveals the pencil once the button itself
+        // is focused, not just on mouse hover -- opacity:0 alone keeps a
+        // keyboard user's focus on an invisible control. Mirrors
+        // EditableField.tsx's wrapper.
+        '&:hover .edit-button, &:focus-within .edit-button': { opacity: 1 },
       }}
     >
       {icon}
@@ -115,7 +119,9 @@ export default function EditableArrayField<T>({
             size="small"
             onClick={startEdit}
             aria-label={t('common.edit')}
-            sx={{ ml: 0.5, p: 0.25, opacity: 0, transition: 'opacity 0.2s' }}
+            // #188 / #196: the tight p:0.25 padding measured 22x22, under the
+            // 2.5.8 (AA) 24x24 minimum -- floor it. Mirrors EditableField.tsx.
+            sx={{ ml: 0.5, p: 0.25, opacity: 0, transition: 'opacity 0.2s', minWidth: 24, minHeight: 24 }}
           >
             <EditIcon sx={{ fontSize: 18 }} />
           </IconButton>
