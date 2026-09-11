@@ -289,8 +289,21 @@ jobs:
       # verification pass (issue #543) -- min-version-tests.yml is
       # release-tier/scheduled-only, so this had never run since the image
       # stopped carrying the library.
+      # With libdbus-glib-1.so.2 fixed, Firefox 111's content process still
+      # segfaulted on this runner ("glxtest: libGL.so.1 missing" / "More than
+      # 1 GPU from same vendor detected via PCI, cannot deduce device" /
+      # "RenderCompositorSWGL failed mapping default framebuffer" -> signal
+      # 11): its software-rendering fallback (SWGL/llvmpipe) still needs
+      # libGL.so.1 and a working GLX to initialize, and a minimal runner has
+      # neither. libgl1 alone resolves it -- apt pulls in the mesa DRI/GLX
+      # backends (libgl1-mesa-dri, libglx-mesa0) that provide them. No Xvfb
+      # or virtual display needed: reproduced and confirmed end-to-end
+      # (bare ubuntu:24.04, no DISPLAY, no /tmp/.X11-unix) that Firefox's
+      # software path works with no display at all once libGL.so.1 itself
+      # is loadable -- an earlier fix here that added xvfb + a virtual
+      # display was unnecessary complexity and has been removed.
       - name: Install Firefox 111's runtime dependencies
-        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libdbus-glib-1-2
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libdbus-glib-1-2 libgl1
 
       - name: Download Firefox 111.0 (the documented floor) + a compatible geckodriver
         run: |
