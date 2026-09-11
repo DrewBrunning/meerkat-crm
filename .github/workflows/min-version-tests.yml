@@ -280,6 +280,18 @@ jobs:
       # release asset and re-verified against an independent re-download.
       # Bumping either pinned version means recomputing its hash, not
       # copying this one forward.
+      # Firefox 111's libxul.so links libdbus-glib-1.so.2 directly (later
+      # Firefox releases don't); ubuntu-latest's runner image no longer ships
+      # it by default, so an old pinned build now fails to load with
+      # "Couldn't load XPCOM" -- a runner-image drift this job exists to
+      # catch, same shape as the Node.js floor bump COMPAT-02 already found.
+      # Found by dispatching this workflow for the v0.7.0 milestone-gate
+      # verification pass (issue #543) -- min-version-tests.yml is
+      # release-tier/scheduled-only, so this had never run since the image
+      # stopped carrying the library.
+      - name: Install Firefox 111's runtime dependencies
+        run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libdbus-glib-1-2
+
       - name: Download Firefox 111.0 (the documented floor) + a compatible geckodriver
         run: |
           curl -fsSL -o /tmp/firefox-111.tar.bz2 https://ftp.mozilla.org/pub/firefox/releases/111.0/linux-x86_64/en-US/firefox-111.0.tar.bz2
