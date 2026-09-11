@@ -1,0 +1,28 @@
+name: scratch-apk-provenance-test
+# THROWAWAY diagnostic, not for merge. Isolates whether granting
+# contents: write (vs. contents: read) to the caller job fixes the
+# STARTUP_FAILURE seen calling slsa-framework/slsa-github-generator's
+# generator_generic_slsa3.yml@v2.1.0 -- without needing a full image/APK
+# build to find out.
+on: workflow_dispatch
+
+jobs:
+  fake-build:
+    runs-on: ubuntu-latest
+    outputs:
+      hashes: ${{ steps.hash.outputs.hashes }}
+    steps:
+      - id: hash
+        run: echo "hashes=$(echo -n 'deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef  fake.txt' | base64 -w0)" >> "$GITHUB_OUTPUT"
+
+  apk-provenance:
+    needs: [fake-build]
+    permissions:
+      actions: read
+      id-token: write
+      contents: write
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0
+    with:
+      base64-subjects: ${{ needs.fake-build.outputs.hashes }}
+      provenance-name: scratch-test.intoto.jsonl
+      upload-assets: false
