@@ -127,12 +127,20 @@ jobs:
           #    timing (a slow fuzz leg, an aggregation job that has not run yet)
           #    is not a quality signal, and #499's release workflow will do the
           #    deterministic trigger-and-wait this interim job cannot.
+          # $runs / $statuses can be several hundred KB on this repo (dozens of
+          # workflows, matrix legs) -- passing that through --argjson on the
+          # command line hits the exec argv-size limit (observed failing on a
+          # real ubuntu-latest runner well under the 2MB getconf ARG_MAX,
+          # presumably compounded by envp). Route both through files with
+          # --slurpfile instead, which reads via open(2), not argv.
+          runs_file="$(mktemp)"
+          statuses_file="$(mktemp)"
           deadline=$(( $(date +%s) + 60 * 60 ))
           while :; do
-            runs="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs" --jq '.check_runs' | jq -s 'add')"
-            statuses="$(gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${sha}/status" --jq '[.statuses[] | {name: .context, status: "completed", conclusion: (if .state=="success" then "success" elif .state=="pending" then "" else .state end)}]' | jq -s 'add')"
-            state="$(jq -c -n --argjson runs "$runs" --argjson st "$statuses" --argjson want "$want_json" '
-              (($runs + $st) | group_by(.name) | map(max_by(.started_at // "")) | map({(.name): {status, conclusion}}) | add // {}) as $latest
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs" --jq '.check_runs' | jq -s 'add' > "$runs_file"
+            gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${sha}/status" --jq '[.statuses[] | {name: .context, status: "completed", conclusion: (if .state=="success" then "success" elif .state=="pending" then "" else .state end)}]' | jq -s 'add' > "$statuses_file"
+            state="$(jq -c -n --argjson want "$want_json" --slurpfile runs "$runs_file" --slurpfile st "$statuses_file" '
+              (($runs[0] + $st[0]) | group_by(.name) | map(max_by(.started_at // "")) | map({(.name): {status, conclusion}}) | add // {}) as $latest
               | $want | map({name: ., status: ($latest[.].status // "missing"), conclusion: ($latest[.].conclusion // "")})')"
 
             failed="$(printf '%s' "$state" | jq -r '.[] | select(.status == "completed" and .conclusion != "" and ([.conclusion] | inside(["success","neutral","skipped"]) | not)) | .name')"
