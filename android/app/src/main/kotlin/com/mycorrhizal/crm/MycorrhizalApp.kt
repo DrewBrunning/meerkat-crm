@@ -12,11 +12,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -62,6 +65,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -389,23 +393,33 @@ fun MycorrhizalApp(
             )
         }
         RootSurface.Main -> {
-            Column(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize()) {
+                MainScaffold(
+                    darkTheme = darkTheme,
+                    drawerState = drawerState,
+                    serverUrl = session.serverUrl.orEmpty(),
+                    serverVersion = serverVersion,
+                    deepLinks = deepLinks,
+                    onDeepLinkHandled = onDeepLinkHandled,
+                )
                 val outdatedVersion = serverOutdatedNoticeVersion
                 if (outdatedVersion != null) {
+                    // Floats above the bottom of the screen rather than
+                    // docking at the top: docked there, it rendered behind
+                    // the status bar icons and its dismiss button was
+                    // unreachable, since the system status/nav bars are
+                    // always the topmost z-layer. windowInsetsPadding keeps
+                    // the extra 48dp clear of any system navigation bar
+                    // (gesture pill or 3-button); overlapping app content
+                    // below that is fine since the notice is dismissible.
                     ServerOutdatedNotice(
                         serverVersion = outdatedVersion,
                         currentVersion = BuildConfig.VERSION_NAME,
                         onDismiss = mainViewModel::onServerOutdatedNoticeDismissed,
-                    )
-                }
-                Box(Modifier.weight(1f)) {
-                    MainScaffold(
-                        darkTheme = darkTheme,
-                        drawerState = drawerState,
-                        serverUrl = session.serverUrl.orEmpty(),
-                        serverVersion = serverVersion,
-                        deepLinks = deepLinks,
-                        onDeepLinkHandled = onDeepLinkHandled,
+                        modifier = Modifier
+                            .align(Alignment.BottomCenter)
+                            .windowInsetsPadding(WindowInsets.navigationBars)
+                            .padding(start = 16.dp, end = 16.dp, bottom = 48.dp),
                     )
                 }
             }
