@@ -654,6 +654,24 @@ jobs:
   # generator uploads the `.intoto.jsonl` only as a workflow artifact, and
   # `verify-release-assets` attaches it to the Release alongside SHA256SUMS.
   # That sidesteps the create-release / action-gh-release collision #355 flags.
+  #
+  # permissions.contents is write, not read, even though upload-assets: false
+  # below means this job's own use of it never writes anything (issue #1006,
+  # a real STARTUP_FAILURE the first time this job ever ran for real): the
+  # called workflow's own internal `upload-assets` job unconditionally
+  # declares `permissions: contents: write` at the job level, regardless of
+  # the upload-assets input or this job's `if:`. GitHub validates a
+  # reusable-workflow caller's granted permissions as a ceiling for every
+  # job inside the called workflow at PARSE TIME, for the whole graph,
+  # before any `if:` is evaluated -- so a too-narrow ceiling here breaks the
+  # run before any job is even created, independent of whether that internal
+  # job would ever actually execute. Matches the project's own reference
+  # usage example (hashicorp/packer's
+  # examples/ci/github-actions-l3-delegated.yml), which grants contents:
+  # write for exactly this job. Verified in isolation (a throwaway
+  # workflow_dispatch-only workflow calling the same reusable workflow with
+  # these exact permissions, run to completion, then removed) before landing
+  # here.
   apk-provenance:
     name: SLSA provenance for the APK
     needs: [build-android-apk]
@@ -661,7 +679,7 @@ jobs:
     permissions:
       actions: read # the generator reads this workflow run to build the statement
       id-token: write # keyless Fulcio signing
-      contents: read
+      contents: write # ceiling for the generator's internal upload-assets job (unused here: upload-assets: false below)
     uses: slsa-framework/slsa-github-generator/.github/workflows/generator_generic_slsa3.yml@v2.1.0 # zizmor: ignore[unpinned-uses]
     with:
       base64-subjects: ${{ needs.build-android-apk.outputs.hashes }}
