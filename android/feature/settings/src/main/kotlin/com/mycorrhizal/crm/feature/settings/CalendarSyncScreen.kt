@@ -69,13 +69,36 @@ import java.time.format.FormatStyle
  * is confirmed first, and creating a calendar triggers its first sync
  * immediately for feedback (handled in [CalendarSyncViewModel.save]).
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun CalendarSyncScreen(
     onBack: () -> Unit,
     viewModel: CalendarSyncViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
+    CalendarSyncContent(
+        state = state,
+        onBack = onBack,
+        onSync = viewModel::sync,
+        onSave = viewModel::save,
+        onDelete = viewModel::delete,
+    )
+}
+
+/**
+ * Stateless content, split out from [CalendarSyncScreen] (mirroring
+ * [TwoFactorScreen]'s `TwoFactorContent` split) so tests can exercise every
+ * loading/empty/error/dialog branch directly with a plain [CalendarSyncUiState]
+ * instead of a real [CalendarSyncViewModel].
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun CalendarSyncContent(
+    state: CalendarSyncUiState,
+    onBack: () -> Unit,
+    onSync: (CalendarSubscription) -> Unit,
+    onSave: (CalendarSubscriptionInput, Int?) -> Unit,
+    onDelete: (CalendarSubscription) -> Unit,
+) {
     var editorOpen by remember { mutableStateOf(false) }
     var editingCalendar by remember { mutableStateOf<CalendarSubscription?>(null) }
     var deletingCalendar by remember { mutableStateOf<CalendarSubscription?>(null) }
@@ -172,7 +195,7 @@ fun CalendarSyncScreen(
                     CalendarSubscriptionRow(
                         calendar = calendar,
                         syncing = state.syncingIds.contains(calendar.id),
-                        onSync = { viewModel.sync(calendar) },
+                        onSync = { onSync(calendar) },
                         onEdit = {
                             editingCalendar = calendar
                             editorOpen = true
@@ -208,7 +231,7 @@ fun CalendarSyncScreen(
             initial = editingCalendar,
             isSaving = state.isSaving,
             onConfirm = { input ->
-                viewModel.save(input, editingCalendar?.id)
+                onSave(input, editingCalendar?.id)
                 editorOpen = false
             },
             onDismiss = { editorOpen = false },
@@ -222,7 +245,7 @@ fun CalendarSyncScreen(
             text = { Text(stringResource(R.string.settings_calendar_sync_delete_body, calendar.name)) },
             confirmButton = {
                 TextButton(onClick = {
-                    viewModel.delete(calendar)
+                    onDelete(calendar)
                     deletingCalendar = null
                 }) { Text(stringResource(R.string.action_delete)) }
             },

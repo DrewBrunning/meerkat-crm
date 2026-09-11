@@ -7,9 +7,11 @@ import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextInput
 import com.mycorrhizal.crm.model.network.CalendarSubscription
+import com.mycorrhizal.crm.model.network.CalendarSyncResult
 import com.mycorrhizal.crm.model.network.ContactSubscription
 import com.mycorrhizal.crm.ui.theme.MycorrhizalTheme
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
@@ -182,5 +184,216 @@ class CalendarSyncScreenTest {
         composeTestRule.onNodeWithText("Username").performTextInput("alice")
 
         composeTestRule.onNodeWithText("not encrypted", substring = true).assertIsDisplayed()
+    }
+
+    // --- CalendarSyncContent: the full screen body, split from CalendarSyncScreen
+    // (mirroring TwoFactorScreen/TwoFactorContent) so every loading/empty/error/
+    // dialog branch is directly testable with a plain CalendarSyncUiState.
+
+    @Test
+    fun `loading with no data yet shows only a spinner`() {
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                CalendarSyncContent(
+                    state = CalendarSyncUiState(isLoading = true),
+                    onBack = {},
+                    onSync = {},
+                    onSave = { _, _ -> },
+                    onDelete = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("No calendars added yet.").assertDoesNotExist()
+    }
+
+    @Test
+    fun `no calendars and no contact subscriptions shows the empty state`() {
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                CalendarSyncContent(
+                    state = CalendarSyncUiState(),
+                    onBack = {},
+                    onSync = {},
+                    onSave = { _, _ -> },
+                    onDelete = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("No calendars added yet.").assertIsDisplayed()
+    }
+
+    @Test
+    fun `an action error is shown as a banner`() {
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                CalendarSyncContent(
+                    state = CalendarSyncUiState(
+                        calendars = listOf(CalendarSubscription(id = 1, name = "Personal")),
+                        error = "Server error (500)",
+                    ),
+                    onBack = {},
+                    onSync = {},
+                    onSave = { _, _ -> },
+                    onDelete = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Server error (500)").assertIsDisplayed()
+    }
+
+    @Test
+    fun `a sync result is shown as a success banner`() {
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                CalendarSyncContent(
+                    state = CalendarSyncUiState(
+                        calendars = listOf(CalendarSubscription(id = 1, name = "Personal")),
+                        lastSyncResult = CalendarSyncResult(created = 2, updated = 1, skipped = 0),
+                    ),
+                    onBack = {},
+                    onSync = {},
+                    onSave = { _, _ -> },
+                    onDelete = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Synced: 2 created, 1 updated, 0 skipped").assertIsDisplayed()
+    }
+
+    @Test
+    fun `contact subscriptions render below a divider even with no calendars`() {
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                CalendarSyncContent(
+                    state = CalendarSyncUiState(
+                        contactSubscriptions = listOf(ContactSubscription(id = 1, name = "Address Book")),
+                    ),
+                    onBack = {},
+                    onSync = {},
+                    onSave = { _, _ -> },
+                    onDelete = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("No calendars added yet.").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Contact Sync").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Address Book").assertIsDisplayed()
+    }
+
+    @Test
+    fun `the back button invokes onBack`() {
+        var backed = false
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                CalendarSyncContent(
+                    state = CalendarSyncUiState(calendars = listOf(CalendarSubscription(id = 1, name = "Personal"))),
+                    onBack = { backed = true },
+                    onSync = {},
+                    onSave = { _, _ -> },
+                    onDelete = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Back").performClick()
+        assertTrue(backed)
+    }
+
+    @Test
+    fun `the sync-now button on a row invokes onSync with that calendar`() {
+        var synced: CalendarSubscription? = null
+        val calendar = CalendarSubscription(id = 1, name = "Personal")
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                CalendarSyncContent(
+                    state = CalendarSyncUiState(calendars = listOf(calendar)),
+                    onBack = {},
+                    onSync = { synced = it },
+                    onSave = { _, _ -> },
+                    onDelete = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Sync Personal now").performClick()
+        assertEquals(calendar, synced)
+    }
+
+    @Test
+    fun `the fab opens the add dialog and confirming calls onSave with no editing id`() {
+        var savedName: String? = null
+        var savedEditingId: Int? = -1
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                CalendarSyncContent(
+                    state = CalendarSyncUiState(calendars = listOf(CalendarSubscription(id = 1, name = "Personal"))),
+                    onBack = {},
+                    onSync = {},
+                    onSave = { input, editingId -> savedName = input.name; savedEditingId = editingId },
+                    onDelete = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Add Calendar").performClick()
+        composeTestRule.onNodeWithText("Name").performTextInput("New Calendar")
+        composeTestRule.onNodeWithText("Calendar URL").performTextInput("https://example.com/new.ics")
+        composeTestRule.onNodeWithText("Save").performClick()
+
+        assertEquals("New Calendar", savedName)
+        assertNull(savedEditingId)
+    }
+
+    @Test
+    fun `the edit button on a row opens a pre-filled dialog and confirming saves with that id`() {
+        var savedEditingId: Int? = null
+        val calendar = CalendarSubscription(id = 7, name = "Personal", url = "https://example.com/a.ics")
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                CalendarSyncContent(
+                    state = CalendarSyncUiState(calendars = listOf(calendar)),
+                    onBack = {},
+                    onSync = {},
+                    onSave = { _, editingId -> savedEditingId = editingId },
+                    onDelete = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Edit Personal").performClick()
+        composeTestRule.onNodeWithText("Edit Calendar").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Save").performClick()
+
+        assertEquals(7, savedEditingId)
+    }
+
+    @Test
+    fun `the delete button on a row confirms before invoking onDelete`() {
+        var deleted: CalendarSubscription? = null
+        val calendar = CalendarSubscription(id = 1, name = "Personal")
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                CalendarSyncContent(
+                    state = CalendarSyncUiState(calendars = listOf(calendar)),
+                    onBack = {},
+                    onSync = {},
+                    onSave = { _, _ -> },
+                    onDelete = { deleted = it },
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithContentDescription("Delete Personal").performClick()
+        // Confirmation dialog: not deleted yet.
+        assertEquals(null, deleted)
+        composeTestRule.onNodeWithText("Delete Calendar").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Delete").performClick()
+
+        assertEquals(calendar, deleted)
     }
 }

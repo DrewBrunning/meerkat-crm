@@ -3310,6 +3310,143 @@ class ApiClientTest {
         assertEquals(0L, request.bodySize)
     }
 
+    // --- Issue #390's Android follow-up (#628): calendar/contact subscription sync-health ---
+
+    @Test
+    fun `list calendar subscriptions parses and unwraps the calendars array`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"calendars":[
+                    {"id":1,"name":"Personal","url":"https://example.com/a.ics","username":"","has_password":false,
+                     "sync_enabled":true,"past_days":5,"future_days":10,"last_synced_at":"2026-08-01T00:00:00Z",
+                     "last_sync_status":"success","last_sync_error":"","created_at":"2026-07-01T00:00:00Z",
+                     "last_attempt_at":"2026-08-01T00:00:00Z","last_success_at":"2026-08-01T00:00:00Z","last_failure_at":null,
+                     "consecutive_failures":0,"incident_first_failure_at":null,"last_run_duration_ms":150,
+                     "last_run_stats":{"created":2,"updated":1,"skipped":0},"terminal_failure_at":null,"terminal_reason":""}
+                ]}""",
+            ),
+        )
+
+        val result = client.listCalendarSubscriptions()
+
+        assertTrue(result.isSuccess)
+        val calendars = result.getOrThrow()
+        assertEquals(1, calendars.size)
+        assertEquals("Personal", calendars[0].name)
+        assertEquals(2, calendars[0].lastRunStats["created"])
+        assertEquals(150L, calendars[0].lastRunDurationMs)
+        val request = server.takeRequest()
+        assertEquals("/api/v1/calendars", request.path)
+    }
+
+    @Test
+    fun `create calendar subscription posts the input and returns the raw subscription`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(201).setBody(
+                """{"id":9,"name":"Personal","url":"https://example.com/a.ics","username":"","has_password":false,
+                    "sync_enabled":true,"past_days":5,"future_days":10,"last_synced_at":null,
+                    "last_sync_status":"","last_sync_error":"","created_at":"2026-08-01T00:00:00Z",
+                    "last_attempt_at":null,"last_success_at":null,"last_failure_at":null,
+                    "consecutive_failures":0,"incident_first_failure_at":null,"last_run_duration_ms":null,
+                    "last_run_stats":{},"terminal_failure_at":null,"terminal_reason":""}""",
+            ),
+        )
+
+        val result = client.createCalendarSubscription(
+            com.mycorrhizal.crm.model.network.CalendarSubscriptionInput(name = "Personal", url = "https://example.com/a.ics"),
+        )
+
+        assertTrue(result.isSuccess)
+        assertEquals(9, result.getOrThrow().id)
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/api/v1/calendars", request.path)
+        assertTrue(request.body.readUtf8().contains("\"name\":\"Personal\""))
+    }
+
+    @Test
+    fun `update calendar subscription sends a PUT and parses the raw subscription`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"id":9,"name":"Renamed","url":"https://example.com/a.ics","username":"","has_password":false,
+                    "sync_enabled":false,"past_days":5,"future_days":10,"last_synced_at":null,
+                    "last_sync_status":"","last_sync_error":"","created_at":"2026-08-01T00:00:00Z",
+                    "last_attempt_at":null,"last_success_at":null,"last_failure_at":null,
+                    "consecutive_failures":0,"incident_first_failure_at":null,"last_run_duration_ms":null,
+                    "last_run_stats":{},"terminal_failure_at":null,"terminal_reason":""}""",
+            ),
+        )
+
+        val result = client.updateCalendarSubscription(
+            9,
+            com.mycorrhizal.crm.model.network.CalendarSubscriptionInput(name = "Renamed", url = "https://example.com/a.ics", syncEnabled = false),
+        )
+
+        assertTrue(result.isSuccess)
+        assertEquals("Renamed", result.getOrThrow().name)
+        assertFalse(result.getOrThrow().syncEnabled)
+        val request = server.takeRequest()
+        assertEquals("PUT", request.method)
+        assertEquals("/api/v1/calendars/9", request.path)
+    }
+
+    @Test
+    fun `delete calendar subscription sends a DELETE to the subscription route`() = runBlocking {
+        server.enqueue(MockResponse().setResponseCode(200).setBody("""{"message": "Deleted"}"""))
+
+        val result = client.deleteCalendarSubscription(9)
+
+        assertTrue(result.isSuccess)
+        val request = server.takeRequest()
+        assertEquals("DELETE", request.method)
+        assertEquals("/api/v1/calendars/9", request.path)
+    }
+
+    @Test
+    fun `sync calendar subscription posts an empty body and returns the tallies`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"message":"Sync completed","created":2,"updated":1,"skipped":0}""",
+            ),
+        )
+
+        val result = client.syncCalendarSubscription(9)
+
+        assertTrue(result.isSuccess)
+        assertEquals(2, result.getOrThrow().created)
+        val request = server.takeRequest()
+        assertEquals("POST", request.method)
+        assertEquals("/api/v1/calendars/9/sync", request.path)
+        assertEquals(0L, request.bodySize)
+    }
+
+    @Test
+    fun `list contact subscriptions parses and unwraps the contact_subscriptions array`() = runBlocking {
+        server.enqueue(
+            MockResponse().setResponseCode(200).setBody(
+                """{"contact_subscriptions":[
+                    {"id":1,"name":"Address Book","url":"https://example.com/carddav/","username":"","has_password":false,
+                     "sync_enabled":true,"last_synced_at":"2026-08-01T00:00:00Z","last_sync_status":"success",
+                     "last_sync_error":"","created_at":"2026-07-01T00:00:00Z","last_attempt_at":"2026-08-01T00:00:00Z",
+                     "last_success_at":"2026-08-01T00:00:00Z","last_failure_at":null,"consecutive_failures":0,
+                     "incident_first_failure_at":null,"last_run_duration_ms":80,
+                     "last_run_stats":{"created":1,"updated":0,"archived":0,"skipped":0},
+                     "terminal_failure_at":null,"terminal_reason":"","pending_conflicts":2}
+                ]}""",
+            ),
+        )
+
+        val result = client.listContactSubscriptions()
+
+        assertTrue(result.isSuccess)
+        val subscriptions = result.getOrThrow()
+        assertEquals(1, subscriptions.size)
+        assertEquals("Address Book", subscriptions[0].name)
+        assertEquals(2, subscriptions[0].pendingConflicts)
+        val request = server.takeRequest()
+        assertEquals("/api/v1/contact-subscriptions", request.path)
+    }
+
     // --- M16: audit trail ---
 
     @Test

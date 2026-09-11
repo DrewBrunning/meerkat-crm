@@ -3,6 +3,10 @@ package com.mycorrhizal.crm.data.repository
 import com.mycorrhizal.crm.model.network.ApiToken
 import com.mycorrhizal.crm.model.network.ApiTokenCreateResponse
 import com.mycorrhizal.crm.model.network.ApiTokenInput
+import com.mycorrhizal.crm.model.network.CalendarSubscription
+import com.mycorrhizal.crm.model.network.CalendarSubscriptionInput
+import com.mycorrhizal.crm.model.network.CalendarSyncResult
+import com.mycorrhizal.crm.model.network.ContactSubscription
 import com.mycorrhizal.crm.model.network.NotificationConfig
 import com.mycorrhizal.crm.model.network.NotificationConfigInput
 import com.mycorrhizal.crm.model.network.NotificationTestResult
@@ -185,6 +189,119 @@ class ApiTokenRepositoryImplTest {
         assertTrue(result.isSuccess)
         assertEquals(8, result.getOrThrow().id)
         assertEquals("rotated456", result.getOrThrow().token)
+    }
+}
+
+class CalendarSubscriptionRepositoryImplTest {
+
+    private val apiClient = mockk<ApiClient>()
+    private val repository = CalendarSubscriptionRepositoryImpl(apiClient)
+
+    @Test
+    fun `list returns the calendars on success`() = runTest {
+        coEvery { apiClient.listCalendarSubscriptions() } returns Result.success(
+            listOf(CalendarSubscription(id = 1, name = "Personal")),
+        )
+
+        val result = repository.list()
+
+        assertTrue(result.isSuccess)
+        assertEquals(listOf("Personal"), result.getOrThrow().map { it.name })
+    }
+
+    @Test
+    fun `list failure is normalized through mapError`() = runTest {
+        coEvery { apiClient.listCalendarSubscriptions() } returns Result.failure(ApiError.Server(500, "boom"))
+
+        val result = repository.list()
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is ApiError)
+    }
+
+    @Test
+    fun `create forwards the input and returns the created subscription`() = runTest {
+        val input = CalendarSubscriptionInput(name = "Personal", url = "https://example.com/a.ics")
+        coEvery { apiClient.createCalendarSubscription(input) } returns Result.success(
+            CalendarSubscription(id = 9, name = "Personal"),
+        )
+
+        val result = repository.create(input)
+
+        assertTrue(result.isSuccess)
+        assertEquals(9, result.getOrThrow().id)
+    }
+
+    @Test
+    fun `update forwards id and input`() = runTest {
+        val input = CalendarSubscriptionInput(name = "Renamed", url = "https://example.com/a.ics")
+        coEvery { apiClient.updateCalendarSubscription(9, input) } returns Result.success(
+            CalendarSubscription(id = 9, name = "Renamed"),
+        )
+
+        val result = repository.update(9, input)
+
+        assertTrue(result.isSuccess)
+        assertEquals("Renamed", result.getOrThrow().name)
+    }
+
+    @Test
+    fun `delete delegates to the api client`() = runTest {
+        coEvery { apiClient.deleteCalendarSubscription(9) } returns Result.success(Unit)
+
+        val result = repository.delete(9)
+
+        assertTrue(result.isSuccess)
+    }
+
+    @Test
+    fun `sync returns the run tallies`() = runTest {
+        coEvery { apiClient.syncCalendarSubscription(9) } returns Result.success(
+            CalendarSyncResult(created = 2, updated = 1, skipped = 0),
+        )
+
+        val result = repository.sync(9)
+
+        assertTrue(result.isSuccess)
+        assertEquals(2, result.getOrThrow().created)
+    }
+
+    @Test
+    fun `sync failure is normalized through mapError`() = runTest {
+        coEvery { apiClient.syncCalendarSubscription(9) } returns Result.failure(ApiError.Client(400, "unreachable"))
+
+        val result = repository.sync(9)
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is ApiError)
+    }
+}
+
+class ContactSubscriptionRepositoryImplTest {
+
+    private val apiClient = mockk<ApiClient>()
+    private val repository = ContactSubscriptionRepositoryImpl(apiClient)
+
+    @Test
+    fun `list returns the contact subscriptions on success`() = runTest {
+        coEvery { apiClient.listContactSubscriptions() } returns Result.success(
+            listOf(ContactSubscription(id = 1, name = "Address Book")),
+        )
+
+        val result = repository.list()
+
+        assertTrue(result.isSuccess)
+        assertEquals(listOf("Address Book"), result.getOrThrow().map { it.name })
+    }
+
+    @Test
+    fun `list failure is normalized through mapError`() = runTest {
+        coEvery { apiClient.listContactSubscriptions() } returns Result.failure(ApiError.Server(500, "boom"))
+
+        val result = repository.list()
+
+        assertTrue(result.isFailure)
+        assertTrue(result.exceptionOrNull() is ApiError)
     }
 }
 
