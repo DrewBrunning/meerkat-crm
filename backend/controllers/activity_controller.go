@@ -312,6 +312,9 @@ func UpdateActivity(c *gin.Context) {
 
 	// Save the activity
 	if err := db.Save(&activity).Error; err != nil {
+		if handleRevisionConflict(c, "Activity", err) {
+			return
+		}
 		logger.FromContext(c).Error().Err(err).Msg("Error saving activity")
 		apperrors.AbortWithError(c, apperrors.ErrDatabase("Failed to save activity").WithError(err))
 		return

@@ -365,6 +365,9 @@ func UpdateLifeEvent(c *gin.Context) {
 		return syncLifeEventReminder(tx, userID, &event, now, loc)
 	})
 	if txErr != nil {
+		if handleRevisionConflict(c, "Life event", txErr) {
+			return
+		}
 		apperrors.AbortWithError(c, apperrors.ErrDatabase("Failed to save life event").WithError(txErr))
 		return
 	}

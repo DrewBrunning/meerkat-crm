@@ -153,6 +153,9 @@ func UpdateReminder(c *gin.Context) {
 	}
 
 	if err := db.Updates(&reminder).Error; err != nil {
+		if handleRevisionConflict(c, "Reminder", err) {
+			return
+		}
 		apperrors.AbortWithError(c, apperrors.ErrDatabase("Failed to update reminder").WithError(err))
 		return
 	}

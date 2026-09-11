@@ -48,10 +48,19 @@ func (n *Note) AfterSave(tx *gorm.DB) error {
 		return nil
 	}
 	// Every persisted write bumps the monotonic revision counter and
-	// re-derives the ETag from it (ADR 0006, issue #591).
-	n.Revision++
-	n.ETag = fmt.Sprintf("e-%d-%d", n.ID, n.Revision)
-	return tx.Model(n).Where("id = ?", n.ID).UpdateColumns(map[string]any{"revision": n.Revision, "etag": n.ETag}).Error
+	// re-derives the ETag from it (ADR 0006, issue #591). CON-01 (issues
+	// #920, #924; ADR 0018): atomic compare-and-swap against the revision
+	// this struct was loaded at, not a read-modify-write — see
+	// bumpRevisionCAS's doc comment (models/revision_cas.go).
+	newRevision, err := bumpRevisionCAS(tx, "Note", "notes", n.ID, n.Revision, func(nr int64) string {
+		return fmt.Sprintf("e-%d-%d", n.ID, nr)
+	})
+	if err != nil {
+		return err
+	}
+	n.Revision = newRevision
+	n.ETag = fmt.Sprintf("e-%d-%d", n.ID, newRevision)
+	return nil
 }
 
 // --- Gift (BeforeSave/AfterSave are new; AfterDelete folds into gift.go)
@@ -140,10 +149,19 @@ func (r *Reminder) AfterSave(tx *gorm.DB) error {
 		return nil
 	}
 	// Every persisted write bumps the monotonic revision counter and
-	// re-derives the ETag from it (ADR 0006, issue #591).
-	r.Revision++
-	r.ETag = fmt.Sprintf("e-%d-%d", r.ID, r.Revision)
-	return tx.Model(r).Where("id = ?", r.ID).UpdateColumns(map[string]any{"revision": r.Revision, "etag": r.ETag}).Error
+	// re-derives the ETag from it (ADR 0006, issue #591). CON-01 (issues
+	// #920, #924; ADR 0018): atomic compare-and-swap against the revision
+	// this struct was loaded at, not a read-modify-write — see
+	// bumpRevisionCAS's doc comment (models/revision_cas.go).
+	newRevision, err := bumpRevisionCAS(tx, "Reminder", "reminders", r.ID, r.Revision, func(nr int64) string {
+		return fmt.Sprintf("e-%d-%d", r.ID, nr)
+	})
+	if err != nil {
+		return err
+	}
+	r.Revision = newRevision
+	r.ETag = fmt.Sprintf("e-%d-%d", r.ID, newRevision)
+	return nil
 }
 
 func (r *Reminder) AfterDelete(tx *gorm.DB) error {

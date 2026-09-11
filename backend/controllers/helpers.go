@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"mycorrhizal/config"
 	apperrors "mycorrhizal/errors"
+	"mycorrhizal/models"
 	"strconv"
 	"strings"
 	"time"
@@ -123,6 +124,31 @@ func ifMatchSatisfied(header string, currentRevision int64) bool {
 		}
 	}
 	return false
+}
+
+// handleRevisionConflict classifies an error from a revision-bearing
+// entity's db.Save()/db.Updates() call (CON-01 follow-up, issues #920,
+// #924; ADR 0018). A *models.ErrRevisionConflict means the atomic
+// compare-and-swap in the model's AfterSave hook (models/revision_cas.go)
+// found the row gone/soft-deleted (404) or still live but moved past the
+// revision this request loaded (412) — a genuine concurrent-write outcome,
+// not a database failure, so it must not fall through to the generic
+// ErrDatabase(500) handling at each call site. Returns true once it has
+// aborted the request; a false return means err is some other failure and
+// the caller should handle it as before.
+func handleRevisionConflict(c *gin.Context, entityName string, err error) bool {
+	var conflict *models.ErrRevisionConflict
+	if !errors.As(err, &conflict) {
+		return false
+	}
+	if conflict.Deleted {
+		apperrors.AbortWithError(c, apperrors.ErrNotFound(entityName).WithDetails("id", fmt.Sprint(conflict.ID)))
+		return true
+	}
+	apperrors.AbortWithError(c, apperrors.ErrPreconditionFailed("").
+		WithDetails("expected_revision", conflict.ExpectedRevision).
+		WithDetails("reason", "revision changed concurrently"))
+	return true
 }
 
 // GetPaginationParams extracts pagination query params using shared defaults and bounds.
