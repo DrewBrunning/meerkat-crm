@@ -245,6 +245,11 @@ same port) — see T51's landing note.
 - **Research → plan → approve → implement → verify.** Use plan mode for anything with real design
   decisions. This cadence is established and expected.
 - **Never commit to `main` or merge without being asked.**
+- **Every commit needs a DCO `Signed-off-by:` trailer** (`git commit -s`), not just the
+  `Co-Authored-By:` line the harness attribution rule adds. The `dco.yml` CI check fails a PR
+  otherwise (OSPS-LE-01.01) — this has shipped as a red PR check more than once because
+  `Signed-off-by:` isn't automatic; `git commit -s` (or `--amend -s`) adds it, `git config
+  format.signoff true` makes it the default for every commit in this checkout.
 - **Hand-verify your tests.** Break the code, confirm the new test actually fails, restore. A test that
   has never failed has proven nothing. This has caught real bugs here repeatedly.
 - Close the corresponding GitHub issue when a ticket lands; the issue body plus the commit history is the
