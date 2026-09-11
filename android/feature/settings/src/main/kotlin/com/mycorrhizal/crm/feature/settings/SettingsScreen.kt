@@ -88,6 +88,8 @@ fun SettingsScreen(
     onWebhooks: () -> Unit = {},
     // Issue #413's Android follow-up (#573): API token management.
     onApiTokens: () -> Unit = {},
+    // Issue #390's Android follow-up (#628): calendar/contact sync management.
+    onCalendarSync: () -> Unit = {},
     // Issue #814 Phase 2: TOTP two-factor enrollment/management.
     onTwoFactor: () -> Unit = {},
     onNotificationChannels: () -> Unit = {},
@@ -202,6 +204,7 @@ fun SettingsScreen(
             onCustomLinks = onCustomLinks,
             onWebhooks = onWebhooks,
             onApiTokens = onApiTokens,
+            onCalendarSync = onCalendarSync,
             onTwoFactor = onTwoFactor,
             onNotificationChannels = onNotificationChannels,
             onImmichSettings = onImmichSettings,
@@ -250,6 +253,7 @@ fun SettingsContent(
     onCustomLinks: () -> Unit = {},
     onWebhooks: () -> Unit = {},
     onApiTokens: () -> Unit = {},
+    onCalendarSync: () -> Unit = {},
     onTwoFactor: () -> Unit = {},
     onNotificationChannels: () -> Unit = {},
     onImmichSettings: () -> Unit = {},
@@ -593,6 +597,8 @@ fun SettingsContent(
         NavigationRow(stringResource(R.string.settings_webhooks_title), onClick = onWebhooks)
         // Issue #413's Android follow-up (#573): API token management.
         NavigationRow(stringResource(R.string.settings_api_tokens_title), onClick = onApiTokens)
+        // Issue #390's Android follow-up (#628): calendar/contact sync management.
+        NavigationRow(stringResource(R.string.settings_calendar_sync_title), onClick = onCalendarSync)
         NavigationRow(stringResource(R.string.settings_notifications_title), onClick = onNotificationChannels)
         // Issue #236: the Immich connection-config settings screen.
         NavigationRow(stringResource(R.string.settings_immich_title), onClick = onImmichSettings)

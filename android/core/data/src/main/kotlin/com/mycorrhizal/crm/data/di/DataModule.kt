@@ -50,6 +50,8 @@ import com.mycorrhizal.crm.data.repository.MergeRepositoryImpl
 import com.mycorrhizal.crm.data.repository.NoteRepositoryImpl
 import com.mycorrhizal.crm.data.repository.PreferenceRepositoryImpl
 import com.mycorrhizal.crm.data.repository.BulkOperationRepositoryImpl
+import com.mycorrhizal.crm.data.repository.CalendarSubscriptionRepositoryImpl
+import com.mycorrhizal.crm.data.repository.ContactSubscriptionRepositoryImpl
 import com.mycorrhizal.crm.data.repository.PendingInteractionRepositoryImpl
 import com.mycorrhizal.crm.data.repository.ReminderRepositoryImpl
 import com.mycorrhizal.crm.data.repository.RelationshipEdgeRepositoryImpl
@@ -78,7 +80,9 @@ import com.mycorrhizal.crm.domain.repository.ExportRepository
 import com.mycorrhizal.crm.domain.repository.SystemEventRepository
 import com.mycorrhizal.crm.domain.repository.BulkOperationRepository
 import com.mycorrhizal.crm.domain.repository.CadencePolicyRepository
+import com.mycorrhizal.crm.domain.repository.CalendarSubscriptionRepository
 import com.mycorrhizal.crm.domain.repository.CircleRepository
+import com.mycorrhizal.crm.domain.repository.ContactSubscriptionRepository
 import com.mycorrhizal.crm.domain.repository.CustomLinkActionRepository
 import com.mycorrhizal.crm.domain.repository.ExternalIdentityRepository
 import com.mycorrhizal.crm.domain.repository.ImmichRepository
@@ -482,6 +486,18 @@ abstract class DataBindsModule {
     @Binds
     @Singleton
     abstract fun bindApiTokenRepository(impl: ApiTokenRepositoryImpl): ApiTokenRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindCalendarSubscriptionRepository(
+        impl: CalendarSubscriptionRepositoryImpl,
+    ): CalendarSubscriptionRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindContactSubscriptionRepository(
+        impl: ContactSubscriptionRepositoryImpl,
+    ): ContactSubscriptionRepository
 
     @Binds
     @Singleton

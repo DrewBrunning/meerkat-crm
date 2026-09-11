@@ -231,6 +231,24 @@ class SettingsScreenTest {
         assertTrue(apiTokens)
     }
 
+    // Issue #390's Android follow-up (#628).
+    @Test
+    fun `calendar sync row invokes its navigation callback`() {
+        var calendarSync = false
+        composeTestRule.setContent {
+            MycorrhizalTheme {
+                SettingsContent(
+                    state = SettingsUiState(),
+                    onCalendarSync = { calendarSync = true },
+                    onLogout = {},
+                )
+            }
+        }
+
+        composeTestRule.onNodeWithText("Calendar Sync").performScrollTo().performClick()
+        assertTrue(calendarSync)
+    }
+
     // --- T104 / data suggestions ---
 
     @Test

@@ -1,11 +1,17 @@
 package com.mycorrhizal.crm.data.repository
 
 import com.mycorrhizal.crm.domain.repository.ApiTokenRepository
+import com.mycorrhizal.crm.domain.repository.CalendarSubscriptionRepository
+import com.mycorrhizal.crm.domain.repository.ContactSubscriptionRepository
 import com.mycorrhizal.crm.domain.repository.NotificationSettingsRepository
 import com.mycorrhizal.crm.domain.repository.WebhookRepository
 import com.mycorrhizal.crm.model.network.ApiToken
 import com.mycorrhizal.crm.model.network.ApiTokenCreateResponse
 import com.mycorrhizal.crm.model.network.ApiTokenInput
+import com.mycorrhizal.crm.model.network.CalendarSubscription
+import com.mycorrhizal.crm.model.network.CalendarSubscriptionInput
+import com.mycorrhizal.crm.model.network.CalendarSyncResult
+import com.mycorrhizal.crm.model.network.ContactSubscription
 import com.mycorrhizal.crm.model.network.NotificationConfig
 import com.mycorrhizal.crm.model.network.NotificationConfigInput
 import com.mycorrhizal.crm.model.network.NotificationTestResult
@@ -67,6 +73,47 @@ class ApiTokenRepositoryImpl @Inject constructor(
 
     override suspend fun rotate(id: Int): Result<ApiTokenCreateResponse> =
         apiClient.rotateApiToken(id).mapError()
+
+    private fun <T> Result<T>.mapError(): Result<T> =
+        fold(onSuccess = { Result.success(it) }, onFailure = { Result.failure(it.toApiError()) })
+}
+
+/** Issue #390's Android follow-up (#628): calendar (CalDAV/iCal) subscription CRUD + sync-now, thin over [ApiClient]. */
+@Singleton
+class CalendarSubscriptionRepositoryImpl @Inject constructor(
+    private val apiClient: ApiClient,
+) : CalendarSubscriptionRepository {
+
+    override suspend fun list(): Result<List<CalendarSubscription>> =
+        apiClient.listCalendarSubscriptions().mapError()
+
+    override suspend fun create(input: CalendarSubscriptionInput): Result<CalendarSubscription> =
+        apiClient.createCalendarSubscription(input).mapError()
+
+    override suspend fun update(id: Int, input: CalendarSubscriptionInput): Result<CalendarSubscription> =
+        apiClient.updateCalendarSubscription(id, input).mapError()
+
+    override suspend fun delete(id: Int): Result<Unit> =
+        apiClient.deleteCalendarSubscription(id).mapError()
+
+    override suspend fun sync(id: Int): Result<CalendarSyncResult> =
+        apiClient.syncCalendarSubscription(id).mapError()
+
+    private fun <T> Result<T>.mapError(): Result<T> =
+        fold(onSuccess = { Result.success(it) }, onFailure = { Result.failure(it.toApiError()) })
+}
+
+/**
+ * Issue #628 scope note 4: contact (CardDAV) subscriptions are read-only on
+ * Android — web has no create/edit/delete UI for these either.
+ */
+@Singleton
+class ContactSubscriptionRepositoryImpl @Inject constructor(
+    private val apiClient: ApiClient,
+) : ContactSubscriptionRepository {
+
+    override suspend fun list(): Result<List<ContactSubscription>> =
+        apiClient.listContactSubscriptions().mapError()
 
     private fun <T> Result<T>.mapError(): Result<T> =
         fold(onSuccess = { Result.success(it) }, onFailure = { Result.failure(it.toApiError()) })
