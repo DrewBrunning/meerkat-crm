@@ -23,3 +23,4 @@ ticket backlog moved to GitHub Issues.
 | [0015](0015-temporal-semantics.md) | Temporal semantics — instants, calendar dates, partial dates, and the one wall clock | accepted |
 | [0016](0016-unicode-normalization-and-search-semantics.md) | Unicode normalization and search semantics | accepted |
 | [0017](0017-server-side-session-store.md) | Server-side session records — per-device revocation and idle timeout | accepted |
+| [0018](0018-atomic-revision-compare-and-swap.md) | Atomic revision compare-and-swap for concurrent writes | accepted |
