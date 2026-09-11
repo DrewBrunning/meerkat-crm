@@ -557,6 +557,63 @@
     <string name="settings_api_tokens_rotate_body">Rotating \"%1$s\" immediately revokes it and issues a new token with the same name and scope. The new token will only be shown once.</string>
     <string name="settings_api_tokens_rotate_confirm">Rotate</string>
 
+    <!-- Settings: calendar sync — CalDAV/iCal (issue #390's Android follow-up, #628) -->
+    <string name="settings_calendar_sync_title">Calendar Sync</string>
+    <string name="settings_calendar_sync_description">Import events from an iCal or CalDAV calendar as activities.</string>
+    <string name="settings_calendar_sync_add">Add Calendar</string>
+    <string name="settings_calendar_sync_add_title">Add Calendar</string>
+    <string name="settings_calendar_sync_edit_title">Edit Calendar</string>
+    <string name="settings_calendar_sync_name">Name</string>
+    <string name="settings_calendar_sync_url">Calendar URL</string>
+    <string name="settings_calendar_sync_url_help">An iCal (.ics) feed URL or a CalDAV calendar URL.</string>
+    <string name="settings_calendar_sync_username">Username</string>
+    <string name="settings_calendar_sync_password">Password</string>
+    <string name="settings_calendar_sync_credentials_optional">Optional — only needed for a protected calendar</string>
+    <string name="settings_calendar_sync_password_keep">Leave blank to keep the current password</string>
+    <string name="settings_calendar_sync_insecure_url_warning">This URL is not encrypted (http://). Credentials would be sent in the clear.</string>
+    <string name="settings_calendar_sync_past_days">Import past (days)</string>
+    <string name="settings_calendar_sync_future_days">Import future (days)</string>
+    <string name="settings_calendar_sync_auto_sync">Sync automatically</string>
+    <string name="settings_calendar_sync_dialog_info">Mycorrhizal periodically imports events from this calendar as activities. Deleting the subscription keeps any activities already imported.</string>
+    <string name="settings_calendar_sync_empty">No calendars added yet.</string>
+    <string name="settings_calendar_sync_disabled">Disabled</string>
+    <string name="settings_calendar_sync_sync_now">Sync now</string>
+    <string name="settings_calendar_sync_sync_now_named">Sync %1$s now</string>
+    <string name="settings_calendar_sync_edit_named">Edit %1$s</string>
+    <string name="settings_calendar_sync_delete_named">Delete %1$s</string>
+    <string name="settings_calendar_sync_delete_title">Delete Calendar</string>
+    <string name="settings_calendar_sync_delete_body">Delete \"%1$s\"? Activities already imported are kept.</string>
+    <string name="settings_calendar_sync_never_synced">Never synced</string>
+    <string name="settings_calendar_sync_last_synced">Last synced %1$s</string>
+    <string name="settings_calendar_sync_sync_success">Synced: %1$d created, %2$d updated, %3$d skipped</string>
+    <string name="settings_calendar_sync_load_error">Unable to load calendar subscriptions.</string>
+    <string name="settings_calendar_sync_save_error">Unable to save calendar.</string>
+    <string name="settings_calendar_sync_delete_error">Unable to delete calendar.</string>
+    <string name="settings_calendar_sync_sync_error">Unable to sync calendar.</string>
+    <string name="settings_calendar_sync_sync_failed">Sync failed</string>
+    <string name="settings_calendar_sync_sync_failed_count">Sync failed (%1$d times)</string>
+
+    <!-- Settings: contact (CardDAV) subscriptions — read-only health list (#628 scope note 4) -->
+    <string name="settings_contact_sync_title">Contact Sync</string>
+    <string name="settings_contact_sync_description">CardDAV address books syncing contacts into this account. Add or edit these from the web app.</string>
+    <string name="settings_contact_sync_empty">No CardDAV address books configured.</string>
+    <string name="settings_contact_sync_pending_conflicts">%1$d unreviewed conflicts</string>
+
+    <!-- Sync-health line (issue #390 / INT-04 #467), shared by calendar and contact subscriptions -->
+    <string name="settings_sync_health_failing">Failing since %1$s — %2$d consecutive failures</string>
+    <string name="settings_sync_health_last_success">last success %1$s</string>
+    <string name="settings_sync_health_never_succeeded">last success: never</string>
+    <string name="settings_sync_health_last_run">Last sync: %1$d created, %2$d updated, %3$d skipped</string>
+    <string name="settings_sync_health_last_run_contacts">Last sync: %1$d created, %2$d updated, %3$d archived, %4$d skipped</string>
+    <string name="settings_sync_health_terminal_title">Sync stopped</string>
+    <string name="settings_sync_health_terminal_auth_expiry">The stored credentials have expired. Edit this subscription with a fresh password to resume syncing.</string>
+    <string name="settings_sync_health_terminal_authz_revoked">Access was revoked on the remote server. Edit this subscription with a fresh password to resume syncing.</string>
+    <string name="settings_sync_health_terminal_remote_deleted">The remote calendar or address book no longer exists. Delete this subscription or point it at a new one.</string>
+    <string name="settings_sync_health_terminal_generic">Syncing has stopped after repeated failures. Check the subscription\'s URL and credentials.</string>
+    <string name="settings_sync_health_stale_never">Never succeeded</string>
+    <string name="settings_sync_health_stale_days">Last successful sync %1$d days ago</string>
+    <string name="settings_sync_health_stale_recent">Last successful sync %1$s</string>
+
     <!-- Settings: notification channels — ntfy/Gotify (M25) -->
     <string name="settings_notifications_title">Notification channels</string>
     <string name="settings_notifications_description">Choose how reminder notifications reach you. Email is configured server-side and toggled per reminder; the channels below deliver reminders to your self-hosted push services.</string>

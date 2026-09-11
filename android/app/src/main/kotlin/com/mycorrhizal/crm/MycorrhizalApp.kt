@@ -124,6 +124,7 @@ import com.mycorrhizal.crm.feature.settings.NotificationChannelsScreen
 import com.mycorrhizal.crm.feature.settings.SettingsScreen
 import com.mycorrhizal.crm.feature.settings.TwoFactorScreen
 import com.mycorrhizal.crm.feature.settings.ApiTokensScreen
+import com.mycorrhizal.crm.feature.settings.CalendarSyncScreen
 import com.mycorrhizal.crm.feature.settings.WebhooksScreen
 import com.mycorrhizal.crm.feature.shares.ContactSharesScreen
 import com.mycorrhizal.crm.feature.shares.ShareContactScreen
@@ -1185,6 +1186,8 @@ private fun AppNavGraph(
                 onWebhooks = { navController.navigate("webhooks") },
                 // Issue #413's Android follow-up (#573): API token management.
                 onApiTokens = { navController.navigate("api-tokens") },
+                // Issue #390's Android follow-up (#628): calendar/contact sync management.
+                onCalendarSync = { navController.navigate("calendar-sync") },
                 // Issue #814 Phase 2: TOTP two-factor enrollment/management.
                 onTwoFactor = { navController.navigate("two-factor") },
                 onNotificationChannels = { navController.navigate("notification-channels") },
@@ -1243,6 +1246,12 @@ private fun AppNavGraph(
         // Issue #413's Android follow-up (#573): API token management.
         composable("api-tokens") {
             ApiTokensScreen(
+                onBack = { navController.popBackStack() },
+            )
+        }
+        // Issue #390's Android follow-up (#628): calendar/contact sync management.
+        composable("calendar-sync") {
+            CalendarSyncScreen(
                 onBack = { navController.popBackStack() },
             )
         }

@@ -38,6 +38,12 @@ import com.mycorrhizal.crm.model.network.BirthdaysResponse
 import com.mycorrhizal.crm.model.network.CadencePoliciesResponse
 import com.mycorrhizal.crm.model.network.CadencePolicy
 import com.mycorrhizal.crm.model.network.CadencePolicyInput
+import com.mycorrhizal.crm.model.network.CalendarSubscription
+import com.mycorrhizal.crm.model.network.CalendarSubscriptionInput
+import com.mycorrhizal.crm.model.network.CalendarSubscriptionsResponse
+import com.mycorrhizal.crm.model.network.CalendarSyncResult
+import com.mycorrhizal.crm.model.network.ContactSubscription
+import com.mycorrhizal.crm.model.network.ContactSubscriptionsResponse
 import com.mycorrhizal.crm.model.network.ChangePasswordRequest
 import com.mycorrhizal.crm.model.network.CheckPasswordStrengthRequest
 import com.mycorrhizal.crm.model.network.ContactBriefing
@@ -518,6 +524,49 @@ class ApiClient(
     suspend fun rotateApiToken(id: Int): Result<ApiTokenCreateResponse> =
         executePostEmpty("$API_TOKENS_PATH/$id/rotate") { _, body ->
             moshi.adapter(ApiTokenCreateResponse::class.java).fromJson(body)
+        }
+
+    // --- Issue #390's Android follow-up (#628): calendar (CalDAV/iCal) and
+    // contact (CardDAV) subscription sync-health surface. The endpoints
+    // pre-date the Android client (backend/routes/routes.go); the gap this
+    // closes is the missing Android surface, same as webhooks (M25).
+
+    /** GET /api/v1/calendars — `{ calendars: [...] }`, unwrapped here. */
+    suspend fun listCalendarSubscriptions(): Result<List<CalendarSubscription>> =
+        executeGet("$PLACEHOLDER_ORIGIN$CALENDARS_PATH") { _, body ->
+            moshi.adapter(CalendarSubscriptionsResponse::class.java).fromJson(body)?.calendars
+        }
+
+    /** POST /api/v1/calendars — 201; raw response, not wrapped. */
+    suspend fun createCalendarSubscription(input: CalendarSubscriptionInput): Result<CalendarSubscription> =
+        executePost(CALENDARS_PATH, input) { _, body ->
+            moshi.adapter(CalendarSubscription::class.java).fromJson(body)
+        }
+
+    /** PUT /api/v1/calendars/{id} — raw updated subscription. */
+    suspend fun updateCalendarSubscription(id: Int, input: CalendarSubscriptionInput): Result<CalendarSubscription> =
+        executePut("$PLACEHOLDER_ORIGIN$CALENDARS_PATH/$id", input) { _, body ->
+            moshi.adapter(CalendarSubscription::class.java).fromJson(body)
+        }
+
+    /** DELETE /api/v1/calendars/{id} — `{ message }`. Imported activities are kept. */
+    suspend fun deleteCalendarSubscription(id: Int): Result<Unit> =
+        executeDelete("$PLACEHOLDER_ORIGIN$CALENDARS_PATH/$id")
+
+    /** POST /api/v1/calendars/{id}/sync — triggers an immediate sync. */
+    suspend fun syncCalendarSubscription(id: Int): Result<CalendarSyncResult> =
+        executePostEmpty("$CALENDARS_PATH/$id/sync") { _, body ->
+            moshi.adapter(CalendarSyncResult::class.java).fromJson(body)
+        }
+
+    /**
+     * GET /api/v1/contact-subscriptions — `{ contact_subscriptions: [...] }`,
+     * unwrapped here. Read-only on Android (issue #628 scope note 4): web has
+     * no create/edit/delete UI for these either.
+     */
+    suspend fun listContactSubscriptions(): Result<List<ContactSubscription>> =
+        executeGet("$PLACEHOLDER_ORIGIN$CONTACT_SUBSCRIPTIONS_PATH") { _, body ->
+            moshi.adapter(ContactSubscriptionsResponse::class.java).fromJson(body)?.contactSubscriptions
         }
 
     // --- Issue #722: fully biometric login — device grants. The exchange is
@@ -2231,6 +2280,8 @@ class ApiClient(
         private const val ADMIN_USERS_PATH = "$API_V1/admin/users"
         private const val WEBHOOKS_PATH = "$API_V1/webhooks"
         private const val API_TOKENS_PATH = "$API_V1/api-tokens"
+        private const val CALENDARS_PATH = "$API_V1/calendars"
+        private const val CONTACT_SUBSCRIPTIONS_PATH = "$API_V1/contact-subscriptions"
         private const val DEVICE_GRANTS_PATH = "$API_V1/auth/device/grants"
         private const val DEVICE_SESSION_PATH = "$API_V1/auth/device/session"
         private const val NOTIFICATIONS_CONFIG_PATH = "$API_V1/notifications/config"

@@ -538,6 +538,63 @@
     <string name="settings_api_tokens_rotate_body">Rotar \"%1$s\" lo revoca de inmediato y emite un nuevo token con el mismo nombre y alcance. El nuevo token solo se mostrará una vez.</string>
     <string name="settings_api_tokens_rotate_confirm">Rotar</string>
 
+    <!-- Settings: calendar sync — CalDAV/iCal (issue #390's Android follow-up, #628) -->
+    <string name="settings_calendar_sync_title">Sincronización de calendario</string>
+    <string name="settings_calendar_sync_description">Importa eventos de un calendario iCal o CalDAV como actividades.</string>
+    <string name="settings_calendar_sync_add">Añadir calendario</string>
+    <string name="settings_calendar_sync_add_title">Añadir calendario</string>
+    <string name="settings_calendar_sync_edit_title">Editar calendario</string>
+    <string name="settings_calendar_sync_name">Nombre</string>
+    <string name="settings_calendar_sync_url">URL del calendario</string>
+    <string name="settings_calendar_sync_url_help">Una URL de feed iCal (.ics) o una URL de calendario CalDAV.</string>
+    <string name="settings_calendar_sync_username">Nombre de usuario</string>
+    <string name="settings_calendar_sync_password">Contraseña</string>
+    <string name="settings_calendar_sync_credentials_optional">Opcional — solo necesario para un calendario protegido</string>
+    <string name="settings_calendar_sync_password_keep">Déjalo en blanco para mantener la contraseña actual</string>
+    <string name="settings_calendar_sync_insecure_url_warning">Esta URL no está cifrada (http://). Las credenciales se enviarían sin cifrar.</string>
+    <string name="settings_calendar_sync_past_days">Importar pasado (días)</string>
+    <string name="settings_calendar_sync_future_days">Importar futuro (días)</string>
+    <string name="settings_calendar_sync_auto_sync">Sincronizar automáticamente</string>
+    <string name="settings_calendar_sync_dialog_info">Mycorrhizal importa periódicamente eventos de este calendario como actividades. Eliminar la suscripción conserva las actividades ya importadas.</string>
+    <string name="settings_calendar_sync_empty">Aún no se han añadido calendarios.</string>
+    <string name="settings_calendar_sync_disabled">Desactivado</string>
+    <string name="settings_calendar_sync_sync_now">Sincronizar ahora</string>
+    <string name="settings_calendar_sync_sync_now_named">Sincronizar %1$s ahora</string>
+    <string name="settings_calendar_sync_edit_named">Editar %1$s</string>
+    <string name="settings_calendar_sync_delete_named">Eliminar %1$s</string>
+    <string name="settings_calendar_sync_delete_title">Eliminar calendario</string>
+    <string name="settings_calendar_sync_delete_body">¿Eliminar \"%1$s\"? Las actividades ya importadas se conservan.</string>
+    <string name="settings_calendar_sync_never_synced">Nunca sincronizado</string>
+    <string name="settings_calendar_sync_last_synced">Última sincronización %1$s</string>
+    <string name="settings_calendar_sync_sync_success">Sincronizado: %1$d creados, %2$d actualizados, %3$d omitidos</string>
+    <string name="settings_calendar_sync_load_error">No se pudieron cargar las suscripciones de calendario.</string>
+    <string name="settings_calendar_sync_save_error">No se pudo guardar el calendario.</string>
+    <string name="settings_calendar_sync_delete_error">No se pudo eliminar el calendario.</string>
+    <string name="settings_calendar_sync_sync_error">No se pudo sincronizar el calendario.</string>
+    <string name="settings_calendar_sync_sync_failed">Sincronización fallida</string>
+    <string name="settings_calendar_sync_sync_failed_count">Sincronización fallida (%1$d veces)</string>
+
+    <!-- Settings: contact (CardDAV) subscriptions — read-only health list (#628 scope note 4) -->
+    <string name="settings_contact_sync_title">Sincronización de contactos</string>
+    <string name="settings_contact_sync_description">Libretas de direcciones CardDAV que sincronizan contactos con esta cuenta. Añádelas o edítalas desde la aplicación web.</string>
+    <string name="settings_contact_sync_empty">No hay libretas de direcciones CardDAV configuradas.</string>
+    <string name="settings_contact_sync_pending_conflicts">%1$d conflictos sin revisar</string>
+
+    <!-- Sync-health line (issue #390 / INT-04 #467), shared by calendar and contact subscriptions -->
+    <string name="settings_sync_health_failing">Fallando desde %1$s — %2$d fallos consecutivos</string>
+    <string name="settings_sync_health_last_success">último éxito %1$s</string>
+    <string name="settings_sync_health_never_succeeded">último éxito: nunca</string>
+    <string name="settings_sync_health_last_run">Última sincronización: %1$d creados, %2$d actualizados, %3$d omitidos</string>
+    <string name="settings_sync_health_last_run_contacts">Última sincronización: %1$d creados, %2$d actualizados, %3$d archivados, %4$d omitidos</string>
+    <string name="settings_sync_health_terminal_title">Sincronización detenida</string>
+    <string name="settings_sync_health_terminal_auth_expiry">Las credenciales almacenadas han caducado. Edita esta suscripción con una contraseña nueva para reanudar la sincronización.</string>
+    <string name="settings_sync_health_terminal_authz_revoked">Se revocó el acceso en el servidor remoto. Edita esta suscripción con una contraseña nueva para reanudar la sincronización.</string>
+    <string name="settings_sync_health_terminal_remote_deleted">El calendario o la libreta de direcciones remota ya no existe. Elimina esta suscripción o apúntala a una nueva.</string>
+    <string name="settings_sync_health_terminal_generic">La sincronización se detuvo tras fallos repetidos. Revisa la URL y las credenciales de la suscripción.</string>
+    <string name="settings_sync_health_stale_never">Nunca tuvo éxito</string>
+    <string name="settings_sync_health_stale_days">Última sincronización correcta hace %1$d días</string>
+    <string name="settings_sync_health_stale_recent">Última sincronización correcta %1$s</string>
+
     <!-- Settings: notification channels — ntfy/Gotify (M25) -->
     <string name="settings_notifications_title">Canales de notificación</string>
     <string name="settings_notifications_description">Elige cómo te llegan las notificaciones de recordatorios. El correo se configura en el servidor y se activa por recordatorio; los canales de abajo envían recordatorios a tus servicios push autohospedados.</string>
