@@ -131,13 +131,16 @@ func TestFavoriteContact_BumpsETagAndChangeFeed(t *testing.T) {
 
 	contact := models.Contact{UserID: user.ID, Firstname: "Feed"}
 	require.NoError(t, db.Create(&contact).Error)
-	// The ETag is second-precision (e-<id>-<updated_at unix>), so a favorite
-	// update landing in the SAME wall-clock second as the create computes the
-	// same ETag and AfterSave would skip rewriting it. Overwrite the stored
-	// etag with a sentinel (UpdateColumn skips hooks, so this is inert) —
-	// the favorite's hook-firing Update must then recompute it to the real
-	// value, which is exactly the mechanism this test pins.
-	require.NoError(t, db.Model(&contact).UpdateColumn("etag", "e-stale-sentinel").Error)
+	// Overwrite the stored etag with a sentinel so the assertion below can
+	// tell "recomputed" apart from "already had this value" — UpdateColumn
+	// skips hooks, so this is otherwise inert. The favorite's hook-firing
+	// Update must then recompute it to the real value (CON-01, ADR 0018:
+	// etag is a monotonic-revision-derived, not updated_at-derived, token —
+	// see Contact.AfterSave), which is exactly the mechanism this test pins.
+	// db.Table(...), not db.Model(&contact): etag is tagged `<-:create`
+	// (ADR 0018), so a Model-scoped statement would have this test's own
+	// sentinel write filtered out by GORM's field-permission check.
+	require.NoError(t, db.Table("contacts").Where("id = ?", contact.ID).UpdateColumn("etag", "e-stale-sentinel").Error)
 	require.NoError(t, db.First(&contact, contact.ID).Error)
 	etagBefore := contact.ETag
 	require.Equal(t, "e-stale-sentinel", etagBefore)
