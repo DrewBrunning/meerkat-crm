@@ -2,6 +2,7 @@ package com.mycorrhizal.crm.compat
 
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Close
 import androidx.compose.material3.Icon
@@ -20,8 +21,10 @@ import com.mycorrhizal.crm.ui.R
 
 /**
  * Issue #528: the non-blocking "your server is older than this app" notice.
- * Rendered above the main tree when the session's server predates the client
- * — the app keeps working; this just suggests the server could be upgraded.
+ * A floating, dismissible card — not docked to an edge, so the caller
+ * positions it (see MycorrhizalApp's placement 48dp above the bottom, clear
+ * of any system navigation bar). Rendered when the session's server predates
+ * the client; the app keeps working, this just suggests an upgrade.
  * Dismissible per session (state lives in the root ViewModel, not here).
  */
 @Composable
@@ -29,11 +32,14 @@ fun ServerOutdatedNotice(
     serverVersion: String,
     currentVersion: String,
     onDismiss: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.secondaryContainer,
         contentColor = MaterialTheme.colorScheme.onSecondaryContainer,
-        modifier = Modifier.testTag("server-outdated-notice"),
+        shape = RoundedCornerShape(16.dp),
+        shadowElevation = 6.dp,
+        modifier = modifier.testTag("server-outdated-notice"),
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
