@@ -1959,7 +1959,10 @@ export default function ContactDetailPage() {
           <Box
             sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}
           >
-            <Typography variant="subtitle2">{t('gifts.preferencesHeading')}</Typography>
+            {/* #196: component="h3" keeps the visual, fixes heading order --
+                subtitle2 renders <h6>, jumping h2->h6. Matches GiftList's
+                Ideas/Given/Received sub-headings. */}
+            <Typography variant="subtitle2" component="h3">{t('gifts.preferencesHeading')}</Typography>
             <Button
               startIcon={<AddIcon />}
               onClick={handleAddGiftPreference}

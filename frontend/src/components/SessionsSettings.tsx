@@ -87,7 +87,13 @@ export default function SessionsSettings() {
       <CardContent>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
           <DevicesIcon color="action" />
-          <Typography variant="h6">{t('sessions.title')}</Typography>
+          {/* #196: this was the only settings section title not using the
+              shared "subtitle1 / h2" pattern (TwoFactorSettings,
+              WebhooksSettings, ...); variant="h6" also renders <h6>, jumping
+              the heading order h2->h6 between the sibling sections. */}
+          <Typography variant="subtitle1" component="h2" sx={{ fontWeight: 500 }}>
+            {t('sessions.title')}
+          </Typography>
         </Box>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
           {t('sessions.description')}

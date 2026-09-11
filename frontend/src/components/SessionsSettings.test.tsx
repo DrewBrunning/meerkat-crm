@@ -79,6 +79,23 @@ test('lists sessions and marks the current one', async () => {
   expect(screen.getByText('This device')).toBeInTheDocument();
 });
 
+// #196 (audit gap n-1): the section title rendered <h6>, jumping the settings
+// heading order h2 -> h6 between its sibling sections. It must be an <h2> like
+// TwoFactorSettings / WebhooksSettings.
+test('section title is a level-2 heading', async () => {
+  mockFetchByUrl({ 'GET /sessions': () => twoSessions });
+
+  render(
+    <SnackbarProvider>
+      <SessionsSettings />
+    </SnackbarProvider>,
+  );
+
+  await waitFor(() =>
+    expect(screen.getByRole('heading', { level: 2, name: 'Active sessions' })).toBeInTheDocument(),
+  );
+});
+
 test('revoking a session calls the API and refetches', async () => {
   const getHandler = vi.fn(() => twoSessions);
   const delHandler = vi.fn(() => ({ message: 'Session revoked' }));
