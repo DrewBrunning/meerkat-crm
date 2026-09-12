@@ -274,6 +274,15 @@ func checkSearchIndexConsistencyScheduled(ctx context.Context, db *gorm.DB, cfg 
 	if err != nil {
 		logger.Error().Err(err).Msg("search index consistency: check failed to run")
 		RecordOperationalCheckResult(db, OpCheckSearchIndexConsistency, models.OpCheckStatusError, err.Error())
+		// Alert on the error branch too (issue #921): a physically corrupt FTS
+		// whose row-count probe still succeeds, or any other read failure that
+		// stops the consistency check from running, must not be silent. The
+		// storage/data passes already fire here; the search pass was the one
+		// shape that only wrote a result row.
+		triggerWebhooksForAllUsers(ctx, db, cfg, EventSearchIndexInconsistent, map[string]interface{}{
+			"check": OpCheckSearchIndexConsistency,
+			"error": err.Error(),
+		})
 		return
 	}
 	if !res.Clean() {

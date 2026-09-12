@@ -6,9 +6,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"mycorrhizal/database"
 	"mycorrhizal/internal/dbtest"
+	"mycorrhizal/internal/sqlitecorrupt"
 	"mycorrhizal/models"
 
 	"github.com/stretchr/testify/assert"
@@ -144,6 +146,84 @@ func TestDoctor_RepairConfirmDeletesOrphans(t *testing.T) {
 	// A follow-up detection run is now clean.
 	code2, out2, _ := run(t, "-db", path)
 	assert.Equal(t, 0, code2, out2)
+}
+
+// corruptDBWithOrphan builds a migrated database with enough data to span
+// several pages, a truly-orphaned relationship edge that -repair would delete if
+// it were allowed to run, and then corrupts one data page so the storage pass is
+// not OK.
+func corruptDBWithOrphan(t *testing.T) string {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "doctor-corrupt.db")
+	db := dbtest.NewAt(t, path)
+
+	u := models.User{Username: "doctorcorrupt", Email: "doctorcorrupt@example.com", Password: "x"}
+	require.NoError(t, db.Create(&u).Error)
+	for i := 0; i < 500; i++ {
+		require.NoError(t, db.Create(&models.Note{
+			UserID: u.ID, Content: "bulk note content padding pages for the corruption target", Date: time.Now(),
+		}).Error)
+	}
+	require.NoError(t, db.Create(&models.RelationshipEdge{
+		UserID: u.ID, SourceID: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+		TargetID: "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", Type: "friend_of",
+		Source: models.RelationshipSourceUserConfirmed, Confidence: 1,
+		Status: models.RelationshipStatusConfirmed, Sensitivity: models.RelationshipSensitivityNormal,
+	}).Error)
+	require.NoError(t, db.Exec("PRAGMA wal_checkpoint(TRUNCATE)").Error)
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	sqlitecorrupt.DataPage(t, path)
+	return path
+}
+
+// TestDoctor_RepairRefusesCorruptDatabase is the issue #921 gap-2 pin: repair
+// must not issue its destructive DELETEs against a structurally corrupt
+// database. It refuses with the distinct exit code 3 in both dry-run and confirm
+// modes, and the would-be-deleted orphan survives.
+func TestDoctor_RepairRefusesCorruptDatabase(t *testing.T) {
+	path := corruptDBWithOrphan(t)
+
+	t.Run("dry run refuses", func(t *testing.T) {
+		code, _, errOut := run(t, "-db", path, "-repair")
+		assert.Equal(t, 3, code)
+		assert.Contains(t, errOut, "refusing to repair")
+	})
+
+	t.Run("confirm refuses and leaves the orphan in place", func(t *testing.T) {
+		code, _, errOut := run(t, "-db", path, "-repair", "-confirm")
+		assert.Equal(t, 3, code)
+		assert.Contains(t, errOut, "refusing to repair")
+
+		// The destructive DELETE never ran.
+		assertRowCount(t, path, "relationship_edges", "target_id = ?",
+			"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb", 1)
+	})
+
+	t.Run("json refusal is machine-readable", func(t *testing.T) {
+		code, out, _ := run(t, "-db", path, "-repair", "-json")
+		assert.Equal(t, 3, code)
+		var refusal repairRefusal
+		require.NoError(t, json.Unmarshal([]byte(out), &refusal))
+		assert.True(t, refusal.Refused)
+		assert.False(t, refusal.OK)
+		assert.Contains(t, refusal.Reason, "storage integrity")
+	})
+}
+
+// TestDoctor_RepairRefusesWhenStorageProbeCannotRun covers the other refusal
+// branch: gorm can open the file, but the integrity_check query itself aborts
+// (structural-page corruption). Repair is still refused with exit code 3, just
+// with the "could not run" message.
+func TestDoctor_RepairRefusesWhenStorageProbeCannotRun(t *testing.T) {
+	path := migratedDBFile(t, nil)
+	sqlitecorrupt.Page(t, path, 2)
+
+	code, _, errOut := run(t, "-db", path, "-repair", "-confirm")
+	assert.Equal(t, 3, code)
+	assert.Contains(t, errOut, "storage integrity check could not run")
 }
 
 func TestDoctor_UsageErrors(t *testing.T) {

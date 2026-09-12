@@ -21,8 +21,11 @@
 // Repair only ever removes hard-delete join/edge rows whose referenced parent
 // does not exist at all (never a merely soft-deleted one) — per ADR 0004 these
 // are bounded, re-derivable rows, so a genuinely orphaned one carries no
-// recoverable data. The database must already be at the current schema (run
-// the server or cmd/migrate first); doctor does not migrate.
+// recoverable data. Repair refuses to run at all unless the storage PRAGMA pass
+// is OK (issue #921): deleting from a structurally corrupt database is unsafe,
+// and the refusal gets its own exit code (3) so automation can tell it from
+// findings. The database must already be at the current schema (run the server
+// or cmd/migrate first); doctor does not migrate.
 package main
 
 import (
@@ -51,9 +54,20 @@ type doctorResult struct {
 	Data    services.DataIntegrityReport    `json:"data"`
 }
 
+// repairRefusal is the -json payload when -repair is declined by the storage
+// integrity gate (issue #921). Deliberately a different shape from
+// services.RepairReport so a caller can never mistake a refusal for a completed
+// repair (which would otherwise marshal as an empty/zero report).
+type repairRefusal struct {
+	OK      bool   `json:"ok"`
+	Refused bool   `json:"refused"`
+	Reason  string `json:"reason"`
+}
+
 // runCLI parses args, opens the database, and runs the requested mode. Exit
 // codes: 0 = clean (or repair completed / dry-run printed), 1 = violations
-// found or a pass could not complete, 2 = usage or open error.
+// found or a pass could not complete, 2 = usage or open error, 3 = repair
+// refused because the storage integrity pass was not OK (issue #921).
 func runCLI(args []string, stdout, stderr io.Writer) int {
 	fs := flag.NewFlagSet("doctor", flag.ContinueOnError)
 	fs.SetOutput(stderr)
@@ -177,6 +191,27 @@ func printDetect(w io.Writer, res doctorResult, sErr, dErr error) {
 }
 
 func runRepair(ctx context.Context, db *gorm.DB, confirm, asJSON bool, stdout, stderr io.Writer) int {
+	// Storage-integrity gate (issue #921): repair issues destructive
+	// `DELETE ... WHERE NOT EXISTS` against every repairable table. If the pages
+	// are already structurally unsound, those scans can read garbage, so a
+	// "repair" on a corrupt database risks destroying rows it never correctly
+	// read. Refuse unless the storage pass is clean, with a distinct exit code
+	// (3) so a script can tell "refused" from "repaired" and from "findings".
+	storage, sErr := services.RunStorageIntegrityChecks(db)
+	switch {
+	case sErr != nil:
+		msg := fmt.Sprintf("storage integrity check could not run: %v", sErr)
+		emitRepairRefusal(asJSON, stdout, msg)
+		fmt.Fprintf(stderr, "doctor: refusing to repair: %s\n", msg)
+		return 3
+	case !storage.OK:
+		detail := storage.Detail()
+		msg := fmt.Sprintf("storage integrity is not OK (%s)", detail)
+		emitRepairRefusal(asJSON, stdout, msg)
+		fmt.Fprintf(stderr, "doctor: refusing to repair: %s — restore from a good backup before repairing\n", msg)
+		return 3
+	}
+
 	report, err := services.RepairDataIntegrity(ctx, db, services.RepairOptions{DryRun: !confirm})
 	if err != nil {
 		fmt.Fprintf(stderr, "doctor: repair failed: %v\n", err)
@@ -205,4 +240,16 @@ func runRepair(ctx context.Context, db *gorm.DB, confirm, asJSON bool, stdout, s
 	fmt.Fprintf(stdout, "\n%d row(s) %s\n", report.TotalRows(),
 		map[bool]string{true: "would be deleted — re-run with -confirm to apply", false: "deleted"}[report.DryRun])
 	return 0
+}
+
+// emitRepairRefusal writes the machine-readable refusal payload when -json is
+// set. It augments, never replaces, the human stderr line the caller prints
+// (the same stderr channel every other doctor error uses).
+func emitRepairRefusal(asJSON bool, stdout io.Writer, reason string) {
+	if !asJSON {
+		return
+	}
+	enc := json.NewEncoder(stdout)
+	enc.SetIndent("", "  ")
+	_ = enc.Encode(repairRefusal{OK: false, Refused: true, Reason: reason})
 }
