@@ -33,22 +33,25 @@ doc; a handful of genuine gaps are called out explicitly in [Known gaps](#known-
 - **Where / who**: `mycorrhizal.db`, scoped by `user_id` in every query (CLAUDE.md trap #5). Reachable
   only via the authenticated owner's API session.
 - **Retention**: live until the user deletes it; soft-deleted (`deleted_at` set) for
-  `DELETE_RETENTION_DAYS` (default 30, `config/config.go:70,150`) as an undo window (audit `Undo`,
-  `audit_controller.go`) and a sync tombstone (T17 `?since=` feed).
+  `DELETE_RETENTION_DAYS` (default 30, `config/config.go:82,243`) as an undo window (audit `Undo`,
+  `audit_controller.go`) and a sync tombstone (T17 `?since=` feed). A non-positive value disables the
+  purge (`DELETED_RETENTION_DAYS=0` is the documented "keep soft-deleted rows forever" value); a
+  negative value is rejected at startup (`config.Validate`).
 - **Deletion / propagation**: `DeleteContact` (`backend/controllers/contact_controller.go:829-886`)
   cascades every dependent row via `deleteContactAssociations`
   (`backend/controllers/contact_controller.go:686+`) inside one transaction; `DeleteUser`
   (`backend/controllers/admin_user_controller.go`) does the account-wide equivalent. After the retention
-  window, `PurgeSoftDeletedRows` (`backend/services/purge_service.go:25-135`) hard-deletes the row and
+  window, `PurgeSoftDeletedRows` (`backend/services/purge_service.go:35-150`) hard-deletes the row and
   its remaining edge references, run daily by cron and on-demand via the admin `TriggerPurge` endpoint
   (`admin_user_controller.go:37-42`). A `?since=` cursor older than the window gets `410 Gone`
   (`controllers/helpers.go:360-370`) — deliberately the *same* `DeleteRetentionDays` config the purge job
   reads, so a client can never observe a tombstone gap; propagation to CardDAV/CalDAV and the Android
   mirror is covered in §7/§8, both of which key off this same soft-delete state.
 - **Backups**: yes, full row (including still-in-window soft-deleted rows) — see [§10](#10-backups).
-- **Verification**: `backend/services/purge_service_test.go` (`TestPurgeSoftDeletedRows_*`, 8 cases
-  including idempotency and "never touches live rows"); `admin_user_controller_test.go` M1/M1b/M5
-  (window-pinned purge, live rows untouched, `TriggerPurge` executes).
+- **Verification**: `backend/services/purge_service_test.go` (`TestPurgeSoftDeletedRows_*`, including
+  idempotency, "never touches live rows", and the non-positive-retention guard of issue #971);
+  `backend/config/config_test.go` `TestValidate_DeleteRetentionDays`; `admin_user_controller_test.go`
+  M1/M1b/M5 (window-pinned purge, live rows untouched, `TriggerPurge` executes).
 
 ### ContactShare snapshots (issue #574)
 

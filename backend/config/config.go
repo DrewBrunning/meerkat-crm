@@ -857,6 +857,20 @@ func (c *Config) Validate() []ValidationError {
 		}
 	}
 
+	// DELETED_RETENTION_DAYS is the soft-delete undo window. A positive value
+	// is a number of days; 0 is the documented "disable the purge and keep
+	// soft-deleted rows forever" value (see .env.example), so it is accepted. A
+	// negative value is never meaningful — the purge service already guards
+	// against hard-deleting the whole window (services/purge_service.go), but
+	// failing at boot names the typo instead of silently running with the purge
+	// disabled.
+	if c.DeleteRetentionDays < 0 {
+		errors = append(errors, ValidationError{
+			Field:   "DELETED_RETENTION_DAYS",
+			Message: fmt.Sprintf("Invalid retention '%d'. Must be 0 (disable the purge and keep soft-deleted rows forever) or a positive number of days.", c.DeleteRetentionDays),
+		})
+	}
+
 	return errors
 }
 
