@@ -8,7 +8,7 @@ longer than we need?* — and records the answer.
 
 | | |
 |---|---|
-| **Last updated** | 2026-08-27 (issues [#510](https://github.com/DrewBrunning/mycorrhizal-crm/issues/510), [#621](https://github.com/DrewBrunning/mycorrhizal-crm/issues/621)) |
+| **Last updated** | 2026-09-12 (issues [#510](https://github.com/DrewBrunning/mycorrhizal-crm/issues/510), [#621](https://github.com/DrewBrunning/mycorrhizal-crm/issues/621), [#978](https://github.com/DrewBrunning/mycorrhizal-crm/issues/978)) |
 | **Scope** | Backend (Go/Gin + SQLite), CardDAV/CalDAV server role, structured + access logs, operator backups, Android offline mirror, browser storage. |
 | **Companion docs** | `data-retention-lifecycle.md` (retention/deletion, cited here rather than repeated), `asvs-l2.md` V7 (logging) / V8 (data protection), `deployment-baseline.md` (operator boundary), `../privacy.md` (the plain-language operator/adopter summary), `../supported-versions.md` "The deployment shape" (the multi-user isolation guarantee and admin-capability statement, issue [#558](https://github.com/DrewBrunning/mycorrhizal-crm/issues/558)). |
 | **Method** | Schema walked table-by-table from `backend/database/migrations/*.up.sql`; logs checked against **real captured output**, not by reading the logging code (see [How this was verified](#how-this-was-verified)). |
@@ -73,7 +73,7 @@ authenticated owner.
 | `relationship_edges` | Relationship type between two contacts, `metadata`, `sensitivity`; only `status=confirmed` is fact | Two third parties | `necessary` | §2 |
 | `field_definitions` / `field_values` | Operator-defined custom fields and their per-entity values — arbitrary user-chosen data, `sensitivity` + `projection` columns | Third party | `necessary` (open-ended by design; `sensitivity` is the control) | §2 |
 | `contact_sync_conflicts` | `local_value` / `remote_value` (encrypted) of a field that diverged during CardDAV sync | Third party | `necessary` for conflict resolution | §2 |
-| `reach_out_suggestions` (+ `reach_out_cursors`) | `old_value` / `new_value` of an org/title/address change that triggered a "reach out" nudge; references an `audit_event_id` | Third party | `deliberate, documented` — derived from the audit trail, ages with it | tied to `AUDIT_RETENTION_DAYS` (90) — §3 |
+| `reach_out_suggestions` (+ `reach_out_cursors`) | `old_value` / `new_value` of an org/title/address change that triggered a "reach out" nudge; references an `audit_event_id` | Third party | `deliberate, documented` — derived from the audit trail, ages with it | `AUDIT_RETENTION_DAYS` (90) — §3; both `pending` and `dismissed` rows are hard-deleted by `PurgeExpiredReachOutSuggestions` once past the window (issue [#978](https://github.com/DrewBrunning/mycorrhizal-crm/issues/978)) |
 | `dismissed_household_suggestions` | `address_hash` + `member_hash` — **hashed**, not the address or the members | — | `necessary` and already minimized (a good example) | hard-delete with user |
 | `dismissed_duplicate_pairs` | Two contact UIDs the user said "not a duplicate" | Third party (UIDs only) | `necessary` | hard-delete with user |
 
@@ -164,6 +164,11 @@ abuse investigation. **Correlation IDs (issue [#425](https://github.com/DrewBrun
 this review's position is that a correlation ID may carry **only** low-cardinality identifiers and
 enums — never a contact id, name, email, or raw URL — into the standardized field set. Recorded
 here so #425 lands against a written rule.
+
+The **retention** of that stream is operator-owned, not an app setting: the app writes to stdout and
+ships no in-app log rotation or TTL, so bounding it is a deployment decision (Docker `max-size`/
+`max-file`, or `journald` retention). That lifecycle entry is
+`data-retention-lifecycle.md` §24 (issue [#978](https://github.com/DrewBrunning/mycorrhizal-crm/issues/978)).
 
 ### 3.4 Delivery bookkeeping
 
