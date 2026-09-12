@@ -469,7 +469,8 @@ jobs:
             exit 1
           }
           echo "$out"
-          if ! printf '%s' "$out" | grep -qE 'Verified using v[23] scheme: true'; then
+          if ! printf '%s' "$out" | grep -qE 'Verified using v2 scheme .*: true' &&
+            ! printf '%s' "$out" | grep -qE 'Verified using v3 scheme .*: true'; then
             echo "::error::APK is not signed with the v2 or v3 signature scheme; Android will refuse to install it."
             exit 1
           fi
