@@ -57,9 +57,10 @@ func TestMigrationsAddImportRuns(t *testing.T) {
 
 	require.NoError(t, sqlDB.Close())
 
-	// Down drops the table. 000042 is no longer the migration tip — 000043,
-	// 000044 and 000045 sit on top — so roll those back first, then 000042's
-	// own down migration.
+	// Down drops the table. 000042 is no longer the migration tip — later
+	// migrations sit on top — so roll those back first, then 000042's own
+	// down migration.
+	require.NoError(t, MigrateDown(dbPath)) // rolls back 000055_relationship_edges_natural_key
 	require.NoError(t, MigrateDown(dbPath)) // rolls back 000054_users_totp_last_used_step
 	require.NoError(t, MigrateDown(dbPath)) // rolls back 000053_sessions
 	require.NoError(t, MigrateDown(dbPath)) // rolls back 000052_data_backfills

@@ -7,6 +7,7 @@ import (
 	"mycorrhizal/models"
 	"mycorrhizal/services"
 	"net/http"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -112,11 +113,62 @@ func applyRelationshipEdgeInput(db *gorm.DB, userID uint, edge *models.Relations
 		edge.Metadata = input.Metadata
 		edge.Sensitivity = sensitivity
 
-		if edge.ID == "" {
-			return tx.Create(edge).Error
+		// Natural-key duplicate gate (issue #928). An edge is identified by
+		// (user, source, target, type); a double-clicked or replayed create
+		// must not insert the fact twice. This check is the clear 409; the
+		// unique index added by migration 000055 is the race-proof backstop
+		// and its violation is mapped to the same 409 below. On update the
+		// edge is excluded from its own lookup, but re-pointing an edge onto
+		// an existing tuple is the same duplicate.
+		if aerr := relationshipEdgeDuplicate(tx, edge); aerr != nil {
+			return aerr
 		}
-		return tx.Save(edge).Error
+
+		if edge.ID == "" {
+			if err := tx.Create(edge).Error; err != nil {
+				return relationshipEdgeWriteError(err)
+			}
+			return nil
+		}
+		if err := tx.Save(edge).Error; err != nil {
+			return relationshipEdgeWriteError(err)
+		}
+		return nil
 	})
+}
+
+// relationshipEdgeDuplicate returns a 409 AppError when an edge with the same
+// natural key (user, source, target, type) already exists. On update the edge
+// under edit is excluded from the lookup so re-saving it is not a duplicate.
+func relationshipEdgeDuplicate(tx *gorm.DB, edge *models.RelationshipEdge) *apperrors.AppError {
+	q := tx.Model(&models.RelationshipEdge{}).Where(
+		"user_id = ? AND source_id = ? AND target_id = ? AND type = ?",
+		edge.UserID, edge.SourceID, edge.TargetID, edge.Type,
+	)
+	if edge.ID != "" {
+		q = q.Where("id != ?", edge.ID)
+	}
+	var count int64
+	if err := q.Count(&count).Error; err != nil {
+		return apperrors.ErrDatabase("Failed to check for an existing relationship edge").WithError(err)
+	}
+	if count > 0 {
+		return apperrors.ErrAlreadyExists("Relationship edge")
+	}
+	return nil
+}
+
+// relationshipEdgeWriteError maps a SQLite unique-constraint violation on the
+// relationship_edges natural key (migration 000055) to the checked 409
+// ErrAlreadyExists path. Two concurrent POSTs can both pass
+// relationshipEdgeDuplicate's SELECT before either INSERT lands; the unique
+// index is what actually serializes them, and this keeps the loser a 409
+// rather than a generic 500.
+func relationshipEdgeWriteError(err error) error {
+	if strings.Contains(err.Error(), "UNIQUE constraint failed: relationship_edges") {
+		return apperrors.ErrAlreadyExists("Relationship edge").WithError(err)
+	}
+	return err
 }
 
 // abortRelationshipEdgeError unwraps a possibly-*apperrors.AppError coming

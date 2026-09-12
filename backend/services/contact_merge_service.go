@@ -624,50 +624,15 @@ func RepointContactAssociations(
 		return 0, err
 	}
 
-	// RelationshipEdge: bulk repoint both endpoints, then drop self-loops
-	// and semantic duplicates.
-	if err := tx.Model(&models.RelationshipEdge{}).Where("source_id = ? AND user_id = ?", loser.VCardUID, userID).
-		Update("source_id", keeper.VCardUID).Error; err != nil {
+	// RelationshipEdge: repoint both endpoints onto the keeper, dropping
+	// self-loops and semantic duplicates. relationship_edges carries a
+	// natural-key unique index (migration 000055, issue #928), so the old
+	// bulk UPDATE-then-dedup order would transiently collide with an existing
+	// keeper edge and abort the merge; the surviving set is recomputed in Go
+	// first (repointRelationshipEdges).
+	edgesDropped, err := repointRelationshipEdges(tx, userID, keeper, loser)
+	if err != nil {
 		return 0, err
-	}
-	if err := tx.Model(&models.RelationshipEdge{}).Where("target_id = ? AND user_id = ?", loser.VCardUID, userID).
-		Update("target_id", keeper.VCardUID).Error; err != nil {
-		return 0, err
-	}
-
-	selfLoopResult := tx.Where("user_id = ? AND source_id = ? AND target_id = ?", userID, keeper.VCardUID, keeper.VCardUID).
-		Delete(&models.RelationshipEdge{})
-	if selfLoopResult.Error != nil {
-		return 0, selfLoopResult.Error
-	}
-	edgesDropped := int(selfLoopResult.RowsAffected)
-
-	var edges []models.RelationshipEdge
-	if err := tx.Where("user_id = ? AND (source_id = ? OR target_id = ?)", userID, keeper.VCardUID, keeper.VCardUID).
-		Find(&edges).Error; err != nil {
-		return 0, err
-	}
-	toDelete := map[string]bool{}
-	for i := 0; i < len(edges); i++ {
-		if toDelete[edges[i].ID] {
-			continue
-		}
-		for j := i + 1; j < len(edges); j++ {
-			if toDelete[edges[j].ID] || !edgesConflict(edges[i], edges[j]) {
-				continue
-			}
-			toDelete[pickEdgeToDrop(edges[i], edges[j]).ID] = true
-		}
-	}
-	if len(toDelete) > 0 {
-		ids := make([]string, 0, len(toDelete))
-		for id := range toDelete {
-			ids = append(ids, id)
-		}
-		if err := tx.Where("id IN ?", ids).Delete(&models.RelationshipEdge{}).Error; err != nil {
-			return 0, err
-		}
-		edgesDropped += len(toDelete)
 	}
 
 	return edgesDropped, nil
@@ -791,6 +756,84 @@ func repointCadencePolicy(tx *gorm.DB, userID uint, keeper, loser *models.Contac
 	// Keeper's policy wins (explicitly chosen, or the two already agreed):
 	// drop the loser's, the keeper's is untouched.
 	return tx.Delete(&loserPolicy).Error
+}
+
+// repointRelationshipEdges moves the loser's relationship edges onto the keeper
+// and returns how many were dropped as self-loops or semantic duplicates.
+//
+// relationship_edges carries a natural-key unique index (migration 000055,
+// issue #928) on (user_id, source_id, target_id, type), so a plain bulk
+// repoint that lands a loser edge on a tuple the keeper already holds would
+// fail mid-UPDATE and abort the merge. The whole surviving set is therefore
+// recomputed in Go first — applying the same edgesConflict/pickEdgeToDrop
+// authority rules the pre-index code ran after the repoint — then the dropped
+// rows on both sides are deleted and the survivors rewritten. The merge
+// outcome is unchanged: the more authoritative duplicate survives regardless
+// of which contact it was attached to.
+func repointRelationshipEdges(tx *gorm.DB, userID uint, keeper, loser *models.Contact) (int, error) {
+	var edges []models.RelationshipEdge
+	if err := tx.Where(
+		"user_id = ? AND (source_id IN ? OR target_id IN ?)",
+		userID, []string{keeper.VCardUID, loser.VCardUID}, []string{keeper.VCardUID, loser.VCardUID},
+	).Find(&edges).Error; err != nil {
+		return 0, err
+	}
+
+	repointed := make([]models.RelationshipEdge, 0, len(edges))
+	toDelete := map[string]bool{}
+	for _, e := range edges {
+		if e.SourceID == loser.VCardUID {
+			e.SourceID = keeper.VCardUID
+		}
+		if e.TargetID == loser.VCardUID {
+			e.TargetID = keeper.VCardUID
+		}
+		// A self-loop on the keeper — whether pre-existing or produced by the
+		// repoint (the merge of two contacts that were related to each other)
+		// — is never a valid edge.
+		if e.SourceID == e.TargetID {
+			toDelete[e.ID] = true
+			continue
+		}
+		repointed = append(repointed, e)
+	}
+
+	// Mark every edge that conflicts with a more authoritative one.
+	for i := 0; i < len(repointed); i++ {
+		if toDelete[repointed[i].ID] {
+			continue
+		}
+		for j := i + 1; j < len(repointed); j++ {
+			if toDelete[repointed[j].ID] || !edgesConflict(repointed[i], repointed[j]) {
+				continue
+			}
+			toDelete[pickEdgeToDrop(repointed[i], repointed[j]).ID] = true
+		}
+	}
+
+	if len(toDelete) > 0 {
+		ids := make([]string, 0, len(toDelete))
+		for id := range toDelete {
+			ids = append(ids, id)
+		}
+		if err := tx.Where("id IN ?", ids).Delete(&models.RelationshipEdge{}).Error; err != nil {
+			return 0, err
+		}
+	}
+
+	// Delete first, then repoint in two bulk writes. Every self-loop and
+	// semantic duplicate was removed above, so no surviving edge can land on
+	// an occupied natural key.
+	if err := tx.Model(&models.RelationshipEdge{}).Where("user_id = ? AND source_id = ?", userID, loser.VCardUID).
+		Update("source_id", keeper.VCardUID).Error; err != nil {
+		return 0, err
+	}
+	if err := tx.Model(&models.RelationshipEdge{}).Where("user_id = ? AND target_id = ?", userID, loser.VCardUID).
+		Update("target_id", keeper.VCardUID).Error; err != nil {
+		return 0, err
+	}
+
+	return len(toDelete), nil
 }
 
 // edgesConflict reports whether a and b express the same relationship fact

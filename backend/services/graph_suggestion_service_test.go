@@ -270,8 +270,7 @@ func TestGenerateGraphSuggestions_NoSelfLoop(t *testing.T) {
 }
 
 // TestGenerateGraphSuggestions_SecretEdgesExcluded pins the sensitivity rule:
-// a secret edge must not seed a derived suggestion, and a suggested
-// (non-confirmed) edge must not either.
+// a secret edge must not seed a derived suggestion.
 func TestGenerateGraphSuggestions_SecretEdgesExcluded(t *testing.T) {
 	db := setupHouseholdServiceTestDB(t)
 	user := createHouseholdTestUser(t, db)
@@ -291,16 +290,29 @@ func TestGenerateGraphSuggestions_SecretEdgesExcluded(t *testing.T) {
 	created, err := GenerateGraphSuggestions(db, user.ID)
 	require.NoError(t, err)
 	assert.Empty(t, created, "the parent hop is secret, so parent·sibling must not fire")
+}
 
-	// Now a *suggested* (non-confirmed) parent edge: also excluded.
+// TestGenerateGraphSuggestions_SuggestedEdgesDoNotSeed pins that a suggested
+// (non-confirmed) edge is not fact and must not seed inference — only a
+// confirmed edge does.
+func TestGenerateGraphSuggestions_SuggestedEdgesDoNotSeed(t *testing.T) {
+	db := setupHouseholdServiceTestDB(t)
+	user := createHouseholdTestUser(t, db)
+	p1 := createGraphContact(t, db, user.ID, "P1")
+	c1 := createGraphContact(t, db, user.ID, "C1")
+	c2 := createGraphContact(t, db, user.ID, "C2")
+
+	// A suggested parent edge plus a confirmed sibling edge *would* infer
+	// p1 parent_of c2 if the suggested edge seeded inference.
 	suggested := models.RelationshipEdge{
 		UserID: user.ID, SourceID: p1.VCardUID, TargetID: c1.VCardUID, Type: "parent_of",
 		Directional: true, Source: models.RelationshipSourceHouseholdInferred, Confidence: 0.8,
 		Status: models.RelationshipStatusSuggested, Sensitivity: models.RelationshipSensitivityNormal,
 	}
 	require.NoError(t, db.Create(&suggested).Error)
+	confirmEdge(t, db, user.ID, c1.VCardUID, c2.VCardUID, "sibling_of")
 
-	created, err = GenerateGraphSuggestions(db, user.ID)
+	created, err := GenerateGraphSuggestions(db, user.ID)
 	require.NoError(t, err)
 	assert.Empty(t, created, "only confirmed edges seed inference, not suggested ones")
 }

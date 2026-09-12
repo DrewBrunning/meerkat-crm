@@ -336,6 +336,73 @@ func TestRepointContactAssociations_DropsDuplicateEdgeAfterRepoint(t *testing.T)
 	assert.Equal(t, keeper.VCardUID, edges[0].SourceID)
 }
 
+// The natural-key unique index (migration 000055) makes the old
+// UPDATE-then-dedup order fail: the bulk repoint would land the loser's edge
+// on a tuple the keeper already holds before the duplicate was removed. This
+// pins the recomputed order — the duplicate is resolved in Go first, and the
+// more authoritative (loser's confirmed) edge wins and is repointed.
+func TestRepointContactAssociations_MoreAuthoritativeLoserEdgeSurvives(t *testing.T) {
+	db, userID := newMergeDB(t)
+	keeper := makeMergeContact(t, db, userID, "Keeper")
+	loser := makeMergeContact(t, db, userID, "Loser")
+	third := makeMergeContact(t, db, userID, "Third")
+
+	// The keeper carries only a low-confidence household suggestion; the loser
+	// carries the user-confirmed fact. It is one (keeper, third, friend_of)
+	// tuple after the merge, and the confirmed row must survive.
+	require.NoError(t, db.Create(&models.RelationshipEdge{
+		UserID: userID, SourceID: keeper.VCardUID, TargetID: third.VCardUID, Type: "friend_of",
+		Source: models.RelationshipSourceHouseholdInferred, Confidence: 0.6, Status: models.RelationshipStatusSuggested,
+	}).Error)
+	loserEdge := models.RelationshipEdge{
+		UserID: userID, SourceID: loser.VCardUID, TargetID: third.VCardUID, Type: "friend_of",
+		Source: models.RelationshipSourceUserConfirmed, Confidence: 1.0, Status: models.RelationshipStatusConfirmed,
+	}
+	require.NoError(t, db.Create(&loserEdge).Error)
+
+	dropped, err := RepointContactAssociations(db, userID, keeper, loser, nil, map[string]string{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, dropped)
+
+	var edges []models.RelationshipEdge
+	require.NoError(t, db.Where("user_id = ?", userID).Find(&edges).Error)
+	require.Len(t, edges, 1, "the duplicated fact must collapse to a single edge")
+	assert.Equal(t, loserEdge.ID, edges[0].ID, "the more authoritative loser edge's row must survive")
+	assert.Equal(t, keeper.VCardUID, edges[0].SourceID, "the survivor must be repointed onto the keeper")
+	assert.Equal(t, models.RelationshipStatusConfirmed, edges[0].Status)
+	assert.Equal(t, 1.0, edges[0].Confidence)
+}
+
+// A mutual-inverse pair (same fact stored two ways) is still deduplicated by
+// the recomputed repoint, even though the unique index only constrains exact
+// tuples.
+func TestRepointContactAssociations_DropsInverseDuplicate(t *testing.T) {
+	db, userID := newMergeDB(t)
+	keeper := makeMergeContact(t, db, userID, "Keeper")
+	loser := makeMergeContact(t, db, userID, "Loser")
+	third := makeMergeContact(t, db, userID, "Third")
+
+	// "third is keeper's parent" and, after repointing, "keeper is third's
+	// child" — the inverse of the same fact.
+	require.NoError(t, db.Create(&models.RelationshipEdge{
+		UserID: userID, SourceID: third.VCardUID, TargetID: keeper.VCardUID, Type: "parent_of",
+		Source: models.RelationshipSourceUserConfirmed, Confidence: 1.0, Status: models.RelationshipStatusConfirmed,
+	}).Error)
+	require.NoError(t, db.Create(&models.RelationshipEdge{
+		UserID: userID, SourceID: loser.VCardUID, TargetID: third.VCardUID, Type: "child_of",
+		Source: models.RelationshipSourceHouseholdInferred, Confidence: 0.6, Status: models.RelationshipStatusSuggested,
+	}).Error)
+
+	dropped, err := RepointContactAssociations(db, userID, keeper, loser, nil, map[string]string{})
+	require.NoError(t, err)
+	assert.Equal(t, 1, dropped)
+
+	var edges []models.RelationshipEdge
+	require.NoError(t, db.Where("user_id = ?", userID).Find(&edges).Error)
+	require.Len(t, edges, 1, "a mutual-inverse pair is one fact and must collapse")
+	assert.Equal(t, "parent_of", edges[0].Type)
+}
+
 func TestEdgesConflict_ExactAndInverseDuplicates(t *testing.T) {
 	a := models.RelationshipEdge{SourceID: "uid-a", TargetID: "uid-b", Type: "parent_of"}
 

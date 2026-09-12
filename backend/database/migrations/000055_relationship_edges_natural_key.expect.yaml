@@ -1,0 +1,15 @@
+# MIG-03 (issue #438) expectation file for migration 000055.
+#
+# The migration adds a natural-key UNIQUE index on
+# relationship_edges(user_id, source_id, target_id, type) and, because an
+# existing database could already hold duplicates that would make the index
+# creation fail, first deletes every redundant duplicate row.
+#
+# The canonical fixture (testdata/canonical-fixture/manifest.json) declares
+# only distinct relationship tuples, so on every release fixture the DELETE
+# matches nothing and the migration is pure DDL — "nothing changes" holds and
+# no cell declarations are needed. The dedup behavior itself is exercised by
+# TestMigrationDedupesRelationshipEdges (database package), which seeds
+# duplicates directly.
+migration: "000055_relationship_edges_natural_key"
+changes: []
