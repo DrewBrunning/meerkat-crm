@@ -403,6 +403,104 @@ func TestRepointContactAssociations_DropsInverseDuplicate(t *testing.T) {
 	assert.Equal(t, "parent_of", edges[0].Type)
 }
 
+// Non-conflicting loser edges (different target/type) must each be repointed
+// without being dropped — the inner dedup loop's "no conflict" branch.
+func TestRepointContactAssociations_KeepsDistinctLoserEdges(t *testing.T) {
+	db, userID := newMergeDB(t)
+	keeper := makeMergeContact(t, db, userID, "Keeper")
+	loser := makeMergeContact(t, db, userID, "Loser")
+	one := makeMergeContact(t, db, userID, "One")
+	two := makeMergeContact(t, db, userID, "Two")
+
+	require.NoError(t, db.Create(&models.RelationshipEdge{
+		UserID: userID, SourceID: loser.VCardUID, TargetID: one.VCardUID, Type: "parent_of",
+		Source: models.RelationshipSourceUserConfirmed, Confidence: 1.0, Status: models.RelationshipStatusConfirmed,
+	}).Error)
+	require.NoError(t, db.Create(&models.RelationshipEdge{
+		UserID: userID, SourceID: loser.VCardUID, TargetID: two.VCardUID, Type: "friend_of",
+		Source: models.RelationshipSourceUserConfirmed, Confidence: 1.0, Status: models.RelationshipStatusConfirmed,
+	}).Error)
+
+	dropped, err := RepointContactAssociations(db, userID, keeper, loser, nil, map[string]string{})
+	require.NoError(t, err)
+	assert.Zero(t, dropped, "distinct facts are moved, not dropped")
+
+	var edges []models.RelationshipEdge
+	require.NoError(t, db.Where("user_id = ?", userID).Order("type").Find(&edges).Error)
+	require.Len(t, edges, 2)
+	assert.Equal(t, keeper.VCardUID, edges[0].SourceID)
+	assert.Equal(t, keeper.VCardUID, edges[1].SourceID)
+}
+
+// TestRepointRelationshipEdges_FindError covers the helper's first error
+// branch: a broken connection surfaces rather than silently dropping edges.
+func TestRepointRelationshipEdges_FindError(t *testing.T) {
+	db, userID := newMergeDB(t)
+	keeper := makeMergeContact(t, db, userID, "Keeper")
+	loser := makeMergeContact(t, db, userID, "Loser")
+
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	_, err = repointRelationshipEdges(db, userID, keeper, loser)
+	require.Error(t, err)
+}
+
+// TestRepointRelationshipEdges_DatabaseErrorsPropagate covers the helper's
+// defensive write-error branches: a failing DELETE or either repoint UPDATE
+// must surface as an error, not silently drop the merge's edge moves. SQLite
+// abort triggers force each one deterministically.
+func TestRepointRelationshipEdges_DatabaseErrorsPropagate(t *testing.T) {
+	t.Run("delete", func(t *testing.T) {
+		db, userID := newMergeDB(t)
+		keeper := makeMergeContact(t, db, userID, "Keeper")
+		loser := makeMergeContact(t, db, userID, "Loser")
+		// keeper -> loser becomes a self-loop and is queued for deletion.
+		require.NoError(t, db.Create(&models.RelationshipEdge{
+			UserID: userID, SourceID: keeper.VCardUID, TargetID: loser.VCardUID, Type: "friend_of",
+			Source: models.RelationshipSourceUserConfirmed, Confidence: 1.0, Status: models.RelationshipStatusConfirmed,
+		}).Error)
+		require.NoError(t, db.Exec(
+			"CREATE TRIGGER block_edge_delete BEFORE DELETE ON relationship_edges BEGIN SELECT RAISE(ABORT, 'blocked'); END;").Error)
+
+		_, err := repointRelationshipEdges(db, userID, keeper, loser)
+		require.Error(t, err)
+	})
+
+	t.Run("source update", func(t *testing.T) {
+		db, userID := newMergeDB(t)
+		keeper := makeMergeContact(t, db, userID, "Keeper")
+		loser := makeMergeContact(t, db, userID, "Loser")
+		third := makeMergeContact(t, db, userID, "Third")
+		require.NoError(t, db.Create(&models.RelationshipEdge{
+			UserID: userID, SourceID: loser.VCardUID, TargetID: third.VCardUID, Type: "parent_of",
+			Source: models.RelationshipSourceUserConfirmed, Confidence: 1.0, Status: models.RelationshipStatusConfirmed,
+		}).Error)
+		require.NoError(t, db.Exec(
+			"CREATE TRIGGER block_edge_source_update BEFORE UPDATE OF source_id ON relationship_edges BEGIN SELECT RAISE(ABORT, 'blocked'); END;").Error)
+
+		_, err := repointRelationshipEdges(db, userID, keeper, loser)
+		require.Error(t, err)
+	})
+
+	t.Run("target update", func(t *testing.T) {
+		db, userID := newMergeDB(t)
+		keeper := makeMergeContact(t, db, userID, "Keeper")
+		loser := makeMergeContact(t, db, userID, "Loser")
+		third := makeMergeContact(t, db, userID, "Third")
+		require.NoError(t, db.Create(&models.RelationshipEdge{
+			UserID: userID, SourceID: third.VCardUID, TargetID: loser.VCardUID, Type: "parent_of",
+			Source: models.RelationshipSourceUserConfirmed, Confidence: 1.0, Status: models.RelationshipStatusConfirmed,
+		}).Error)
+		require.NoError(t, db.Exec(
+			"CREATE TRIGGER block_edge_target_update BEFORE UPDATE OF target_id ON relationship_edges BEGIN SELECT RAISE(ABORT, 'blocked'); END;").Error)
+
+		_, err := repointRelationshipEdges(db, userID, keeper, loser)
+		require.Error(t, err)
+	})
+}
+
 func TestEdgesConflict_ExactAndInverseDuplicates(t *testing.T) {
 	a := models.RelationshipEdge{SourceID: "uid-a", TargetID: "uid-b", Type: "parent_of"}
 

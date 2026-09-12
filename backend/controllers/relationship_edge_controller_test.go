@@ -921,3 +921,59 @@ func TestRelationshipEdgeDuplicate_DatabaseError(t *testing.T) {
 	require.NotNil(t, aerr)
 	assert.Equal(t, http.StatusInternalServerError, aerr.HTTPStatus)
 }
+
+// TestCreateRelationshipEdge_WriteErrorIs500 covers the write-error mapping's
+// non-duplicate path: when the INSERT itself fails for another reason the
+// error stays a 500 rather than being mislabelled a duplicate.
+func TestCreateRelationshipEdge_WriteErrorIs500(t *testing.T) {
+	db, router := setupRouter()
+	router.POST("/relationship-edges", withValidated(func() any { return &models.RelationshipEdgeInput{} }), CreateRelationshipEdge)
+
+	var user models.User
+	db.First(&user)
+	alice := models.Contact{UserID: user.ID, Firstname: "Alice"}
+	bob := models.Contact{UserID: user.ID, Firstname: "Bob"}
+	require.NoError(t, db.Create(&alice).Error)
+	require.NoError(t, db.Create(&bob).Error)
+
+	require.NoError(t, db.Exec(
+		"CREATE TRIGGER block_edge_insert BEFORE INSERT ON relationship_edges BEGIN SELECT RAISE(ABORT, 'blocked'); END;").Error)
+
+	body, _ := json.Marshal(models.RelationshipEdgeInput{SourceID: alice.VCardUID, TargetID: bob.VCardUID, Type: "parent_of"})
+	req, _ := http.NewRequest("POST", "/relationship-edges", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// TestUpdateRelationshipEdge_WriteErrorIs500 is the PUT counterpart of the
+// test above.
+func TestUpdateRelationshipEdge_WriteErrorIs500(t *testing.T) {
+	db, router := setupRouter()
+	router.PUT("/relationship-edges/:id", withValidated(func() any { return &models.RelationshipEdgeInput{} }), UpdateRelationshipEdge)
+
+	var user models.User
+	db.First(&user)
+	alice := models.Contact{UserID: user.ID, Firstname: "Alice"}
+	bob := models.Contact{UserID: user.ID, Firstname: "Bob"}
+	require.NoError(t, db.Create(&alice).Error)
+	require.NoError(t, db.Create(&bob).Error)
+	edge := models.RelationshipEdge{
+		UserID: user.ID, SourceID: alice.VCardUID, TargetID: bob.VCardUID, Type: "friend_of",
+		Source: models.RelationshipSourceUserConfirmed, Confidence: 1.0, Status: models.RelationshipStatusConfirmed,
+	}
+	require.NoError(t, db.Create(&edge).Error)
+
+	require.NoError(t, db.Exec(
+		"CREATE TRIGGER block_edge_update BEFORE UPDATE ON relationship_edges BEGIN SELECT RAISE(ABORT, 'blocked'); END;").Error)
+
+	body, _ := json.Marshal(models.RelationshipEdgeInput{SourceID: alice.VCardUID, TargetID: bob.VCardUID, Type: "roommate_of"})
+	req, _ := http.NewRequest("PUT", "/relationship-edges/"+edge.ID, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}

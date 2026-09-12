@@ -420,6 +420,29 @@ func TestExecuteSourceImport_DuplicateRelationshipNaturalKeySkipped(t *testing.T
 	assert.Len(t, edges, 1)
 }
 
+// TestImportRelationships_DatabaseErrorReportsInvalidIssue covers the
+// defensive fallback: a relationship INSERT that fails for a reason other than
+// the #928 unique index is recorded as an invalid issue rather than aborting
+// the whole import. The table is dropped to force a non-unique DB error.
+func TestImportRelationships_DatabaseErrorReportsInvalidIssue(t *testing.T) {
+	db := setupSourceImportTestDB(t)
+	require.NoError(t, db.Migrator().DropTable(&models.RelationshipEdge{}))
+
+	plan := &ImportSourcePlan{System: "test", Relationships: []MappedRelationship{{
+		Ref: ref("relationship/1"), Source: ref("contact/1"), Target: ref("contact/2"), Type: "friend_of",
+	}}}
+	report := &ImportReport{}
+	err := importRelationships(db, 1, plan, map[string]bool{},
+		func(string, SourceRef) (string, bool) { return "uid-src", true },
+		func(string, SourceRef) bool { return false },
+		report,
+	)
+	require.NoError(t, err, "a per-relationship DB error is reported, not fatal")
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, ImportIssueCategoryInvalid, report.Issues[0].Category)
+	assert.Equal(t, "test relationship/1", report.Issues[0].Record)
+}
+
 // TestExecuteSourceImport_DuplicateVCardUIDReportedNotHalfCreated: a mapped
 // contact whose Card.UID collides with an existing contact's VCardUID fails
 // creation (partial unique index) and is reported with its record, leaving
