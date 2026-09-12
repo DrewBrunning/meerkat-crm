@@ -23,6 +23,12 @@ on:
     branches: [main, "release/**"]
   schedule:
     - cron: '55 2 * * *' # 02:55 UTC nightly (issue #578: consolidated nightly suite)
+  # Issue #543: lets release.yml / docker-publish.yml's mandatory-gate step
+  # dispatch this workflow against an exact release commit instead of
+  # passively waiting for check-runs a `push` to release/** never produces
+  # (deliberately -- see unit-tests.yml's workflow_dispatch comment for why
+  # not a `push: release/**` trigger). Not meant for ad hoc manual runs.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -35,10 +41,10 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      android: ${{ steps.filter.outputs.android }}
-      backend: ${{ steps.filter.outputs.backend }}
-      infra: ${{ steps.filter.outputs.infra }}
-      workflows: ${{ steps.filter.outputs.workflows }}
+      android: ${{ steps.resolve.outputs.android }}
+      backend: ${{ steps.resolve.outputs.backend }}
+      infra: ${{ steps.resolve.outputs.infra }}
+      workflows: ${{ steps.resolve.outputs.workflows }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -53,16 +59,28 @@ jobs:
         with:
           filters: .github/filters.yaml
 
-      - name: Report gating decision
+      # workflow_dispatch forces every area true (issue #543) -- see
+      # unit-tests.yml's "Resolve gating decision" comment for why.
+      - name: Resolve gating decision
+        id: resolve
         run: |
-          echo "android=$ANDROID_CHANGED"
-          echo "backend=$BACKEND_CHANGED"
-          echo "infra=$INFRA_CHANGED"
-          echo "workflows=$WORKFLOWS_CHANGED"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            android=true; backend=true; infra=true; workflows=true
+          else
+            android="$ANDROID_CHANGED"; backend="$BACKEND_CHANGED"
+            infra="$INFRA_CHANGED"; workflows="$WORKFLOWS_CHANGED"
+          fi
+          {
+            echo "android=$android"
+            echo "backend=$backend"
+            echo "infra=$infra"
+            echo "workflows=$workflows"
+          } | tee -a "$GITHUB_OUTPUT"
         env:
           # Boolean outputs only (the *_files outputs are the
           # attacker-influenced ones on PRs); passed as env vars so zizmor's
           # template-injection audit has nothing to flag in this workflow.
+          EVENT_NAME: ${{ github.event_name }}
           ANDROID_CHANGED: ${{ steps.filter.outputs.android }}
           BACKEND_CHANGED: ${{ steps.filter.outputs.backend }}
           INFRA_CHANGED: ${{ steps.filter.outputs.infra }}

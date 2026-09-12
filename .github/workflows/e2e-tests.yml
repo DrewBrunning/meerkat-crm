@@ -13,6 +13,12 @@ on:
   # unconditionally on the schedule event and are path-gated only on PR/push.
   schedule:
     - cron: '25 3 * * *' # 03:25 UTC nightly (consolidated nightly suite)
+  # Issue #543: lets release.yml / docker-publish.yml's mandatory-gate step
+  # dispatch this workflow against an exact release commit instead of
+  # passively waiting for check-runs a `push` to release/** never produces
+  # (deliberately -- see unit-tests.yml's workflow_dispatch comment for why
+  # not a `push: release/**` trigger). Not meant for ad hoc manual runs.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -26,11 +32,11 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      backend: ${{ steps.filter.outputs.backend }}
-      frontend: ${{ steps.filter.outputs.frontend }}
-      openapi: ${{ steps.filter.outputs.openapi }}
-      infra: ${{ steps.filter.outputs.infra }}
-      workflows: ${{ steps.filter.outputs.workflows }}
+      backend: ${{ steps.resolve.outputs.backend }}
+      frontend: ${{ steps.resolve.outputs.frontend }}
+      openapi: ${{ steps.resolve.outputs.openapi }}
+      infra: ${{ steps.resolve.outputs.infra }}
+      workflows: ${{ steps.resolve.outputs.workflows }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,15 +52,27 @@ jobs:
 
       # Boolean outputs only, so this is safe to interpolate (see unit-tests.yml).
       # Passed as env vars rather than inline ${{ }} so zizmor's
-      # template-injection audit has nothing to flag.
-      - name: Report gating decision
+      # template-injection audit has nothing to flag. workflow_dispatch forces
+      # every area true (issue #543) -- see unit-tests.yml's "Resolve gating
+      # decision" comment for why.
+      - name: Resolve gating decision
+        id: resolve
         run: |
-          echo "backend=$BACKEND_CHANGED"
-          echo "frontend=$FRONTEND_CHANGED"
-          echo "openapi=$OPENAPI_CHANGED"
-          echo "infra=$INFRA_CHANGED"
-          echo "workflows=$WORKFLOWS_CHANGED"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            backend=true; frontend=true; openapi=true; infra=true; workflows=true
+          else
+            backend="$BACKEND_CHANGED"; frontend="$FRONTEND_CHANGED"; openapi="$OPENAPI_CHANGED"
+            infra="$INFRA_CHANGED"; workflows="$WORKFLOWS_CHANGED"
+          fi
+          {
+            echo "backend=$backend"
+            echo "frontend=$frontend"
+            echo "openapi=$openapi"
+            echo "infra=$infra"
+            echo "workflows=$workflows"
+          } | tee -a "$GITHUB_OUTPUT"
         env:
+          EVENT_NAME: ${{ github.event_name }}
           BACKEND_CHANGED: ${{ steps.filter.outputs.backend }}
           FRONTEND_CHANGED: ${{ steps.filter.outputs.frontend }}
           OPENAPI_CHANGED: ${{ steps.filter.outputs.openapi }}

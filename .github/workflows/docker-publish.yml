@@ -82,6 +82,11 @@ jobs:
       contents: read
       checks: read
       statuses: read
+      # actions: write to `gh workflow run` the mandatory gates for an RC tag
+      # (issue #543) -- release/** never gets a push-triggered run of them,
+      # deliberately (see the dispatch step's own comment). Scoped to this
+      # workflow_dispatch/tag-push-only job with no PR path.
+      actions: write
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -117,16 +122,39 @@ jobs:
           printf '  - %s\n' "${want[@]}"
           want_json="$(printf '%s\n' "${want[@]}" | jq -R . | jq -s .)"
 
+          # Issue #543: an RC tag (release/vX.Y.0) has no path to ever
+          # trigger these mandatory per-PR gate workflows for real --
+          # confirmed on a real RC cut, every one of the 9 gates sat at
+          # "missing" (never started, not merely slow) for the entire
+          # deadline. Root cause: these workflows trigger on `push: branches:
+          # [main]` only, never `release/**` -- deliberately, since a `push:
+          # release/**` trigger would give cache-write access to anyone who
+          # can push the branch, which is exactly what zizmor's
+          # cache-poisoning audit exists to catch. A final release tag was
+          # cut from main, so push:main already ran these for real on this
+          # exact commit; only an RC tag needs the explicit dispatch.
+          if ! printf '%s' "$RELEASE_TAG" | grep -qE -- '-rc\.[0-9]+$'; then
+            echo "Final release tag -- mandatory gates already ran via push:main on ${sha}."
+          else
+            mapfile -t gate_wfs < <(jq -r '.gates[] | select(.release_gate == true) | .workflow' .github/release-gates.json | sort -u)
+            for wf in "${gate_wfs[@]}"; do
+              echo "  ${wf}: dispatching on ${RELEASE_TAG}"
+              gh workflow run "$wf" --ref "$RELEASE_TAG"
+            done
+          fi
+
           # Enforcement semantics (deliberately asymmetric, see
           # docs/development/release-gates.md):
           #  - an observed failure/cancelled/timed_out/action_required on a
           #    mandatory gate is a HARD BLOCK -- this is #447's core promise;
           #  - all gates green -> pass;
-          #  - the 60-minute deadline with something still pending or not
-          #    reporting -> a loud WARNING, and publish proceeds. GitHub check
-          #    timing (a slow fuzz leg, an aggregation job that has not run yet)
-          #    is not a quality signal, and #499's release workflow will do the
-          #    deterministic trigger-and-wait this interim job cannot.
+          #  - the deadline with something still pending or not reporting ->
+          #    a loud WARNING, and publish proceeds. GitHub check timing (a
+          #    slow fuzz leg, an aggregation job that has not run yet) is not
+          #    a quality signal. 75 minutes (was 60) since dispatched runs
+          #    now need real time -- Android (Gradle) alone has a 40-minute
+          #    timeout-minutes budget -- matching the analogous poll in
+          #    release.yml.
           # $runs / $statuses can be several hundred KB on this repo (dozens of
           # workflows, matrix legs) -- passing that through --argjson on the
           # command line hits the exec argv-size limit (observed failing on a
@@ -135,7 +163,7 @@ jobs:
           # --slurpfile instead, which reads via open(2), not argv.
           runs_file="$(mktemp)"
           statuses_file="$(mktemp)"
-          deadline=$(( $(date +%s) + 60 * 60 ))
+          deadline=$(( $(date +%s) + 75 * 60 ))
           while :; do
             gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs" --jq '.check_runs' | jq -s 'add' > "$runs_file"
             gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${sha}/status" --jq '[.statuses[] | {name: .context, status: "completed", conclusion: (if .state=="success" then "success" elif .state=="pending" then "" else .state end)}]' | jq -s 'add' > "$statuses_file"
@@ -162,7 +190,7 @@ jobs:
             fi
 
             if [ "$(date +%s)" -ge "$deadline" ]; then
-              echo "::warning::Release gate: 60-minute deadline reached with gate(s) not yet reporting a conclusion. No FAILED gate was observed, so publication proceeds -- verify these manually:"
+              echo "::warning::Release gate: 75-minute deadline reached with gate(s) not yet reporting a conclusion. No FAILED gate was observed, so publication proceeds -- verify these manually:"
               printf '%s' "$state" | jq -r '.[] | "  \(.name): \(.status)/\(.conclusion)"'
               {
                 echo "### :warning: Release gate: deadline reached, no failure observed, published anyway"

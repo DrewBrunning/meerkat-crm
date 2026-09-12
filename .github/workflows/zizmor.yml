@@ -19,6 +19,12 @@ on:
     branches: [main, "release/**"]
   schedule:
     - cron: '3 3 * * 1' # Monday 03:03 UTC
+  # Issue #543: lets release.yml / docker-publish.yml's mandatory-gate step
+  # dispatch this workflow against an exact release commit instead of
+  # passively waiting for check-runs a `push` to release/** never produces
+  # (deliberately -- see unit-tests.yml's workflow_dispatch comment for why
+  # not a `push: release/**` trigger). Not meant for ad hoc manual runs.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -31,7 +37,7 @@ jobs:
     name: Detect Changes
     runs-on: ubuntu-latest
     outputs:
-      workflows: ${{ steps.filter.outputs.workflows }}
+      workflows: ${{ steps.resolve.outputs.workflows }}
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -46,14 +52,23 @@ jobs:
         with:
           filters: .github/filters.yaml
 
-      - name: Report gating decision
+      # workflow_dispatch forces this true (issue #543) -- see
+      # unit-tests.yml's "Resolve gating decision" comment for why.
+      - name: Resolve gating decision
+        id: resolve
         run: |
-          echo "workflows=$WORKFLOWS_CHANGED"
+          if [ "$EVENT_NAME" = "workflow_dispatch" ]; then
+            workflows=true
+          else
+            workflows="$WORKFLOWS_CHANGED"
+          fi
+          echo "workflows=$workflows" | tee -a "$GITHUB_OUTPUT"
         env:
           # Boolean output only, so this is safe to interpolate (the *_files
           # outputs are the attacker-influenced ones on PRs, and we don't use
           # them). Passed as an env var so zizmor's own template-injection
           # audit has nothing to flag in this workflow either.
+          EVENT_NAME: ${{ github.event_name }}
           WORKFLOWS_CHANGED: ${{ steps.filter.outputs.workflows }}
 
   zizmor:
