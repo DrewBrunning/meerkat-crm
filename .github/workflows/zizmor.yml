@@ -19,6 +19,14 @@ on:
     branches: [main, "release/**"]
   schedule:
     - cron: '3 3 * * 1' # Monday 03:03 UTC
+  # Issue #543: lets release.yml / docker-publish.yml's mandatory-gate step
+  # dispatch this workflow against an exact release commit instead of
+  # passively waiting for check-runs a `push` to release/** never produces
+  # (deliberately -- a `push: release/**` trigger here would trip zizmor's
+  # cache-poisoning audit; workflow_dispatch has no such exposure since it
+  # can only be invoked by an actor with write access, not by anyone who can
+  # merely push a branch). Not meant for ad hoc manual runs.
+  workflow_dispatch:
 
 permissions:
   contents: read
