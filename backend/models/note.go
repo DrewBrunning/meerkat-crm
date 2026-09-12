@@ -20,14 +20,17 @@ type Note struct {
 	// docs/adrs/0006-revision-token-schema.md): starts at 1 on create,
 	// incremented on every persisted write. Migration 000044 adds the column.
 	// Exposed read-only on the wire as `revision`.
-	Revision int64 `gorm:"column:revision;not null;default:1" json:"revision"`
+	Revision int64 `gorm:"column:revision;<-:create;not null;default:1" json:"revision"`
 
 	// ETag is the CardDAV/CalDAV-style sync-conflict token derived from
 	// Revision (ADR 0006): e-{id}-{revision}. Notes have no DAV surface yet,
 	// but the token exists for the sync/merge surface that will need it.
 	// Explicit column tag guards the `etag` vs GORM-derived `e_tag` mismatch
 	// (CLAUDE.md backend trap 1). Migration 000044 adds the column.
-	ETag string `gorm:"column:etag" json:"-"`
+	// `<-:create` (CON-01, ADR 0018): see Contact.ETag's comment
+	// (models/contact.go) for why an ordinary Save()/Updates() must never be
+	// able to write this column.
+	ETag string `gorm:"column:etag;<-:create" json:"-"`
 
 	// revisionStampedOnCreate: transient marker set by AfterCreate, consumed
 	// by the AfterSave GORM fires right after on a Create (see
@@ -49,7 +52,10 @@ func (n *Note) AfterCreate(tx *gorm.DB) error {
 	n.Revision = 1
 	n.ETag = fmt.Sprintf("e-%d-%d", n.ID, n.Revision)
 	n.revisionStampedOnCreate = true
-	return tx.Model(n).Where("id = ?", n.ID).UpdateColumns(map[string]any{"revision": n.Revision, "etag": n.ETag}).Error
+	// tx.Table(...), not tx.Model(n): revision/etag are `<-:create` (CON-01,
+	// ADR 0018), so a Model-scoped statement would have this write filtered
+	// out by GORM's own field-permission check.
+	return tx.Table("notes").Where("id = ?", n.ID).UpdateColumns(map[string]any{"revision": n.Revision, "etag": n.ETag}).Error
 }
 
 // AfterDelete advances updated_at on a soft delete so T17 change feeds see

@@ -144,15 +144,22 @@ type Contact struct {
 
 	// ETag is the CardDAV sync-conflict token, derived from Revision (see
 	// ADR 0006): e-{id}-{revision}. Explicit gorm column tag is mandatory
-	// (CLAUDE.md backend trap 1 — GORM would derive `e_tag`).
-	ETag string `gorm:"column:etag" json:"-"`
+	// (CLAUDE.md backend trap 1 — GORM would derive `e_tag`). `<-:create`
+	// (CON-01, issues #920/#924, ADR 0018): only AfterCreate/AfterSave may
+	// ever write this column, both via a raw tx.Table(...) statement that
+	// bypasses this permission tag entirely — an ordinary Save()/Updates()
+	// must never be able to, since it would otherwise blindly overwrite it
+	// with this struct's stale in-memory value (computed from a revision
+	// read before the save) and undo bumpRevisionCAS's compare-and-swap in
+	// the same transaction.
+	ETag string `gorm:"column:etag;<-:create" json:"-"`
 	// Revision is the monotonic per-row write counter (issue #591, CON-01a —
 	// docs/adrs/0006-revision-token-schema.md): starts at 1 on create,
 	// incremented on every persisted write, and the ETag is derived from it
 	// (immune to the old Unix()-resolution lost-update hole). json:"-" here:
 	// surfaced read-only on ContactRecordResponse/ContactSummary, never on
-	// the raw Contact JSON.
-	Revision int64 `gorm:"column:revision;not null;default:1" json:"-"`
+	// the raw Contact JSON. `<-:create`: see ETag's comment just above.
+	Revision int64 `gorm:"column:revision;<-:create;not null;default:1" json:"-"`
 
 	// revisionStampedOnCreate is a transient, in-memory-only marker
 	// (unexported, so GORM ignores it entirely — no column, nothing to tag)
@@ -468,10 +475,13 @@ func (c *Contact) AfterCreate(tx *gorm.DB) error {
 	// it (ADR 0006). UpdateColumn(s) bypasses GORM's update hooks, so this
 	// cannot recursively trigger AfterSave. The marker tells the AfterSave
 	// that follows on a Create not to bump (a create is revision 1, not 2).
+	// tx.Table(...), not tx.Model(c): revision/etag are tagged `<-:create`
+	// (CON-01, ADR 0018), so a Model-scoped statement would have this write
+	// filtered out by GORM's own field-permission check.
 	c.Revision = 1
 	c.ETag = fmt.Sprintf("e-%d-%d", c.ID, c.Revision)
 	c.revisionStampedOnCreate = true
-	return tx.Model(c).Where("id = ?", c.ID).UpdateColumns(map[string]any{"revision": c.Revision, "etag": c.ETag}).Error
+	return tx.Table("contacts").Where("id = ?", c.ID).UpdateColumns(map[string]any{"revision": c.Revision, "etag": c.ETag}).Error
 }
 
 func (c *Contact) AfterSave(tx *gorm.DB) error {
@@ -489,9 +499,20 @@ func (c *Contact) AfterSave(tx *gorm.DB) error {
 	// Every persisted write bumps the monotonic revision counter, and the
 	// ETag is re-derived from it (ADR 0006) — two writes inside the same
 	// second can no longer collide, unlike the old UpdatedAt.Unix() scheme.
-	c.Revision++
-	c.ETag = fmt.Sprintf("e-%d-%d", c.ID, c.Revision)
-	return tx.Model(c).Where("id = ?", c.ID).UpdateColumns(map[string]any{"revision": c.Revision, "etag": c.ETag}).Error
+	//
+	// CON-01 (issues #920, #924; ADR 0018): this is an atomic
+	// compare-and-swap against the revision this struct was loaded at, not
+	// a read-modify-write — see bumpRevisionCAS's doc comment for why that
+	// distinction is the whole fix.
+	newRevision, err := bumpRevisionCAS(tx, "Contact", "contacts", c.ID, c.Revision, func(nr int64) string {
+		return fmt.Sprintf("e-%d-%d", c.ID, nr)
+	})
+	if err != nil {
+		return err
+	}
+	c.Revision = newRevision
+	c.ETag = fmt.Sprintf("e-%d-%d", c.ID, newRevision)
+	return nil
 }
 
 // AfterDelete advances updated_at on a soft delete so T17 change feeds see

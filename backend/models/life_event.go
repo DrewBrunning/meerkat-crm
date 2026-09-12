@@ -164,14 +164,17 @@ type LifeEvent struct {
 	// migration 000041 names the column `etag` — the exact silent mismatch
 	// that shipped broken for ContactSyncLink.ETag and killed CardDAV
 	// incremental sync.
-	ETag string `gorm:"column:etag" json:"-"`
+	// `<-:create` (CON-01, ADR 0018): see Contact.ETag's comment
+	// (models/contact.go) for why an ordinary Save()/Updates() must never be
+	// able to write this column.
+	ETag string `gorm:"column:etag;<-:create" json:"-"`
 
 	// Revision is the monotonic per-row write counter (issue #591, CON-01a —
 	// docs/adrs/0006-revision-token-schema.md): starts at 1 on create,
 	// incremented on every persisted write, ETag derived from it. Exposed
 	// read-only on the wire as `revision` (the model is this entity's
 	// response DTO). Migration 000044 adds the column.
-	Revision int64 `gorm:"column:revision;not null;default:1" json:"revision"`
+	Revision int64 `gorm:"column:revision;<-:create;not null;default:1" json:"revision"`
 
 	// revisionStampedOnCreate: transient marker set by AfterCreate, consumed
 	// by the AfterSave GORM fires right after on a Create (see
@@ -215,7 +218,10 @@ func (l *LifeEvent) AfterCreate(tx *gorm.DB) error {
 	l.Revision = 1
 	l.ETag = fmt.Sprintf("e-%s-%d", l.ID, l.Revision)
 	l.revisionStampedOnCreate = true
-	return tx.Model(l).Where("id = ?", l.ID).UpdateColumns(map[string]any{"revision": l.Revision, "etag": l.ETag}).Error
+	// tx.Table(...), not tx.Model(l): revision/etag are `<-:create` (CON-01,
+	// ADR 0018), so a Model-scoped statement would have this write filtered
+	// out by GORM's own field-permission check.
+	return tx.Table("life_events").Where("id = ?", l.ID).UpdateColumns(map[string]any{"revision": l.Revision, "etag": l.ETag}).Error
 }
 
 // AfterSave refreshes the ETag on every real write, exactly like
@@ -240,7 +246,16 @@ func (l *LifeEvent) AfterSave(tx *gorm.DB) error {
 		l.revisionStampedOnCreate = false
 		return nil
 	}
-	l.Revision++
-	l.ETag = fmt.Sprintf("e-%s-%d", l.ID, l.Revision)
-	return tx.Model(l).Where("id = ?", l.ID).UpdateColumns(map[string]any{"revision": l.Revision, "etag": l.ETag}).Error
+	// CON-01 (issues #920, #924; ADR 0018): atomic compare-and-swap against
+	// the revision this struct was loaded at, not a read-modify-write — see
+	// bumpRevisionCAS's doc comment (models/revision_cas.go).
+	newRevision, err := bumpRevisionCAS(tx, "LifeEvent", "life_events", l.ID, l.Revision, func(nr int64) string {
+		return fmt.Sprintf("e-%s-%d", l.ID, nr)
+	})
+	if err != nil {
+		return err
+	}
+	l.Revision = newRevision
+	l.ETag = fmt.Sprintf("e-%s-%d", l.ID, newRevision)
+	return nil
 }

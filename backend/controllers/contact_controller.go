@@ -680,6 +680,9 @@ func UpdateContact(c *gin.Context) {
 	}
 
 	if err := db.Save(&contact).Error; err != nil {
+		if handleRevisionConflict(c, "Contact", err) {
+			return
+		}
 		apperrors.AbortWithError(c, apperrors.ErrDatabase("Failed to update contact").WithError(err))
 		return
 	}
