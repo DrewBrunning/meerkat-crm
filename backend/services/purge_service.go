@@ -49,7 +49,16 @@ func PurgeSoftDeletedRows(db *gorm.DB, cfg config.Config) {
 		logger.Error().Err(err).Msg("purge: failed to delete orphaned activity_contacts")
 	}
 
-	// Soft-deleted children past retention.
+	// Soft-deleted children past retention. This is the durable half of
+	// CLAUDE.md trap #7: the disconnect/delete handlers soft-delete
+	// user-authored config (an undo window), and this job is the only thing
+	// that ever hard-deletes it. A soft-deletable model that is missed here
+	// lives forever — and for the integration configs that means an encrypted
+	// API token/app-password row travelling into every backup. Every
+	// `deleted_at`-bearing user-authored entity must be represented; the
+	// integration configs (Immich/Paperless/Seafile/WebDAV), the subscriptions
+	// whose URLs/credentials can embed tokens, and LinkFieldType are the
+	// issue #978 omissions this list now covers.
 	for _, model := range []any{
 		&models.Note{},
 		&models.Activity{},
@@ -60,6 +69,12 @@ func PurgeSoftDeletedRows(db *gorm.DB, cfg config.Config) {
 		&models.ConversationAgenda{},
 		&models.Gift{},
 		&models.ImmichConfig{},
+		&models.PaperlessConfig{},
+		&models.SeafileConfig{},
+		&models.WebDAVConfig{},
+		&models.LinkFieldType{},
+		&models.CalendarSubscription{},
+		&models.ContactSubscription{},
 		// N7: attachment files are removed at delete time by the
 		// controllers/cascade, so only the metadata row needs purging here.
 		&models.Attachment{},
