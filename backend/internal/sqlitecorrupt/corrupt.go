@@ -97,7 +97,7 @@ func probePageReportsFindings(tb testing.TB, path string, target int64) bool {
 
 func readPage(tb testing.TB, path string, target int64) []byte {
 	tb.Helper()
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- path is a caller-supplied test database path, never request input
 	if err != nil {
 		tb.Fatalf("sqlitecorrupt: open %s: %v", path, err)
 	}
@@ -112,7 +112,7 @@ func readPage(tb testing.TB, path string, target int64) []byte {
 
 func writePage(tb testing.TB, path string, target int64, data []byte) {
 	tb.Helper()
-	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	f, err := os.OpenFile(path, os.O_RDWR, 0) // #nosec G304 -- path is a caller-supplied test database path, never request input; this helper's purpose is to corrupt it
 	if err != nil {
 		tb.Fatalf("sqlitecorrupt: open %s for write: %v", path, err)
 	}
