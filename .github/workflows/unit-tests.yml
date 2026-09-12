@@ -386,11 +386,22 @@ jobs:
     #    `-coverprofile` pass) are deliberate and must not be collapsed:
     #    `gotestsum --rerun-fails` truncates the coverprofile on its rerun
     #    invocation (#639), so coverage has to come from a pass with no rerun.
-    # issue #1014: raised from 35 alongside GO_TEST_TIMEOUT's 25m->30m bump --
-    # the race pass's own -timeout plus the separate no-race coverage pass
-    # (~4-5 more minutes, observed) left too little slack in 35 for a leg
-    # already running close to the old ceiling on real hosted-runner hardware.
-    timeout-minutes: ${{ github.event_name == 'schedule' && 240 || 45 }}
+    # issue #1014: services-2 (H-Z) hit BOTH the 25m and the first-attempt 30m
+    # GO_TEST_TIMEOUT bump, each time still mid-run when the wall hit (not
+    # merely close) -- two guessed small increments in a row both undershot,
+    # each costing a real ~45min dispatched CI cycle to find out. Jumping
+    # straight to a generous ceiling instead of guessing a third small step:
+    # 55m leaves ~20min of real margin versus the largest observed job time
+    # so far (2120s ~= 35min) while staying safely under the 75-minute
+    # release-gate poll deadline this workflow is dispatched under for an RC
+    # tag (docs/development/release-gates.md) -- unit-tests.yml is dispatched
+    # near the start of that window, so a 65m job timeout leaves ~10min of
+    # slack for runner queueing on top. If this still isn't enough, the
+    # right follow-up is splitting the `services` package into more than two
+    # shards (both existing shards are already comparably heavy despite
+    # H-Z covering nearly 3x more of the alphabet than A-G) -- not a further
+    # timeout increase; see the #1014 comment thread.
+    timeout-minutes: ${{ github.event_name == 'schedule' && 240 || 65 }}
     needs: changes
     if: github.event_name == 'schedule' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.openapi == 'true' || needs.changes.outputs.workflows == 'true'
     strategy:
@@ -418,15 +429,19 @@ jobs:
       # issue #1014: services-2 (the H-Z alphabetic shard, which happens to
       # catch every Search*/TestSearchMutationPath_* test -- 22
       # full-index-rebuild calls in search_mutation_path_test.go alone) hit
-      # this ceiling twice in a row on real GitHub-hosted runners cutting
-      # v0.7.0-rc.1, at ~27-30 minutes of actual job wall time -- yet the
-      # exact same leg finishes in ~3 minutes locally, so this is a genuine
-      # hosted-runner-vs-dev-hardware speed gap under -race, not a hang: both
-      # services-1 and services-2 were already within ~10% of the old 25m
-      # ceiling (1646s / 1791s job time). 30m keeps real margin above that
-      # while staying inside this job's own 35-minute timeout-minutes budget
-      # (below) with room for setup/teardown.
-      GO_TEST_TIMEOUT: ${{ github.event_name == 'schedule' && '200m' || '30m' }}
+      # BOTH the original 25m ceiling and a first-attempt 30m bump, each
+      # time still mid-run (a different test caught by the alarm each time,
+      # not the same one looping) when the wall hit -- not a hang, since the
+      # exact same leg finishes in ~3 minutes locally under -race, but a
+      # real hosted-runner-vs-dev-hardware gap far larger than -race
+      # overhead alone accounts for (services-1 was already comparably
+      # heavy: 1646s/1791s/2120s job times across attempts, all in the same
+      # ballpark despite H-Z covering ~3x more of the alphabet than A-G).
+      # Two small guessed increments both undershot at real CI cost each
+      # time, so this jumps to a generous 55m rather than guessing a third
+      # small step -- see the timeout-minutes comment below for the
+      # 75-minute release-gate poll ceiling this must fit under.
+      GO_TEST_TIMEOUT: ${{ github.event_name == 'schedule' && '200m' || '55m' }}
       # The pre-rapid seeded property tests (services/address_normalization
       # _property_test.go) get the same tiered treatment: 200 iterations on
       # PR, 2000 on a merge, 10000 on the nightly deep run.
