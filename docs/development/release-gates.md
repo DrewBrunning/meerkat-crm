@@ -63,7 +63,14 @@ Four mechanisms, in order of when they fire:
    `workflow_dispatch` event, so the dispatched run actually exercises everything rather than
    skipping for lack of a diff to gate on. The poll deadline moved from 30 to 75 minutes to
    match: dispatched runs need real time now that they're genuinely executing (`Android
-   (Gradle)` alone budgets 40 minutes).
+   (Gradle)` alone budgets 40 minutes). Each dispatch's timestamp is recorded and, when reading
+   back check-run state, a gate ignores any check-run that started before its own most recent
+   dispatch this run (issue #1013) — re-dispatching the same workflow+ref more than once against
+   one commit (a retry while debugging, a re-run) leaves multiple check-runs sharing a name on
+   that commit, and an older one can read back `cancelled` (superseded by the workflow's own
+   `concurrency:` group) while the fresh dispatch is still in flight; without the cutoff that
+   stale conclusion looks like this run's result and hard-fails the gate before the new dispatch
+   ever gets a chance to complete.
 3. **Publication time** — `docker-publish.yml`'s **`release-gate`** job is the first thing that
    runs on a tag push. Same dispatch-before-poll shape as cut time: a final release's mandatory
    gates already ran via `push:main`, so this job dispatches them only for an RC tag, then polls

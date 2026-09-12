@@ -133,15 +133,41 @@ jobs:
           # cache-poisoning audit exists to catch. A final release tag was
           # cut from main, so push:main already ran these for real on this
           # exact commit; only an RC tag needs the explicit dispatch.
+          declare -A wf_since=()
           if ! printf '%s' "$RELEASE_TAG" | grep -qE -- '-rc\.[0-9]+$'; then
             echo "Final release tag -- mandatory gates already ran via push:main on ${sha}."
           else
             mapfile -t gate_wfs < <(jq -r '.gates[] | select(.release_gate == true) | .workflow' .github/release-gates.json | sort -u)
             for wf in "${gate_wfs[@]}"; do
-              echo "  ${wf}: dispatching on ${RELEASE_TAG}"
+              ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              echo "  ${wf}: dispatching on ${RELEASE_TAG} (ignoring any check-run started before ${ts})"
               gh workflow run "$wf" --ref "$RELEASE_TAG"
+              wf_since["$wf"]="$ts"
             done
           fi
+
+          # issue #1013: re-dispatching the same workflow+ref more than once
+          # against this exact commit (a re-run while debugging, a retry --
+          # this repo's own release/v0.7.0 cut history did exactly this)
+          # leaves multiple check-runs sharing one name on the commit, and an
+          # older one can be `cancelled` (superseded by the workflow's own
+          # concurrency group) while the fresh dispatch is still running.
+          # Observed for real: "CIS container hardening scan" read back
+          # completed/cancelled from a stale 13:08 attempt and hard-failed
+          # the gate immediately, seconds after a fresh dispatch that did not
+          # finish (success) until 13:24 -- the poll never got a chance to
+          # wait for it. Record each dispatch's timestamp and, below, ignore
+          # any check-run for that gate that started before its own
+          # workflow's most recent dispatch this run. Empty for the
+          # final-tag path above (no dispatch happens there, so no cutoff --
+          # push:main's single real check-run is trusted as before).
+          since_json='{}'
+          for wf in "${!wf_since[@]}"; do
+            since_json="$(jq -c --arg wf "$wf" --arg ts "${wf_since[$wf]}" '. + {($wf): $ts}' <<<"$since_json")"
+          done
+          since_json="$(jq -c --argjson wf_since "$since_json" '
+            [.gates[] | select(.release_gate == true) | select(.workflow as $w | $wf_since | has($w)) | {(.check_context): $wf_since[.workflow]}] | add // {}
+          ' .github/release-gates.json)"
 
           # Enforcement semantics (deliberately asymmetric, see
           # docs/development/release-gates.md):
@@ -167,8 +193,10 @@ jobs:
           while :; do
             gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs" --jq '.check_runs' | jq -s 'add' > "$runs_file"
             gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${sha}/status" --jq '[.statuses[] | {name: .context, status: "completed", conclusion: (if .state=="success" then "success" elif .state=="pending" then "" else .state end)}]' | jq -s 'add' > "$statuses_file"
-            state="$(jq -c -n --argjson want "$want_json" --slurpfile runs "$runs_file" --slurpfile st "$statuses_file" '
-              (($runs[0] + $st[0]) | group_by(.name) | map(max_by(.started_at // "")) | map({(.name): {status, conclusion}}) | add // {}) as $latest
+            state="$(jq -c -n --argjson want "$want_json" --argjson since "$since_json" --slurpfile runs "$runs_file" --slurpfile st "$statuses_file" '
+              (($runs[0] + $st[0])
+                | map(select((.started_at // "") >= ($since[.name] // "")))
+                | group_by(.name) | map(max_by(.started_at // "")) | map({(.name): {status, conclusion}}) | add // {}) as $latest
               | $want | map({name: ., status: ($latest[.].status // "missing"), conclusion: ($latest[.].conclusion // "")})')"
 
             failed="$(printf '%s' "$state" | jq -r '.[] | select(.status == "completed" and .conclusion != "" and ([.conclusion] | inside(["success","neutral","skipped"]) | not)) | .name')"
