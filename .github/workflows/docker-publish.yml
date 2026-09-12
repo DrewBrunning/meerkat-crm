@@ -469,7 +469,17 @@ jobs:
             exit 1
           }
           echo "$out"
-          if ! printf '%s' "$out" | grep -qE 'Verified using v[23] scheme: true'; then
+          # apksigner's real output carries a parenthetical between "scheme"
+          # and ": true" ("Verified using v2 scheme (APK Signature Scheme
+          # v2): true"), which the exact-match version of this pattern
+          # ("scheme: true", no parenthetical) never matched -- a false
+          # positive that failed every genuinely-signed APK, caught the
+          # first time this exact code path ran for real (docker-publish.yml
+          # release APK signing verification, issue #1010). The APK really
+          # was v2-signed; only the grep pattern was wrong. `[^:]*` tolerates
+          # whatever apksigner puts between "scheme" and the colon across
+          # build-tools versions instead of assuming an exact string.
+          if ! printf '%s' "$out" | grep -qE 'Verified using v[23] scheme[^:]*: true'; then
             echo "::error::APK is not signed with the v2 or v3 signature scheme; Android will refuse to install it."
             exit 1
           fi
