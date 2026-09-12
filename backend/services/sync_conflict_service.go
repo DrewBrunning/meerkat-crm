@@ -34,10 +34,17 @@ import (
 //
 // Two deliberate boundaries:
 //
-//   - No baseline, no conflicts. A link whose SyncedValues is empty predates
-//     migration 000032 (or lost its baseline); the first sync just writes one.
-//     There is no way to tell a local edit from prior sync state for those
-//     rows, and retroactive conflict spam is worse than no signal.
+//   - A missing baseline is backfilled from the pre-fetch state, not treated
+//     as "no conflicts". A link whose SyncedValues is empty predates
+//     migration 000032 (or lost its baseline), so the reconcile has no stored
+//     reference to diff against. It used to return early there, which meant a
+//     REST edit that landed during the network-fetch window was full-replaced
+//     with no conflict row — silently losing it (issue #919). Instead,
+//     capturePreSyncBaselines snapshots each such contact *before* the fetch
+//     and uses that as this run's effective baseline: a field that changed
+//     between the snapshot and the pre-apply read is, by definition, a
+//     concurrent local edit; a field already divergent before the sync started
+//     is part of the seeded baseline and is not retroactively reported.
 //   - Restore does not rewrite the link's SyncedValues. The restored value is
 //     still divergent from the remote, so the next real remote change
 //     re-conflicts — honest, rather than silently re-losing the edit.
@@ -177,11 +184,18 @@ func parseSyncConflictSnapshot(raw string) (map[string]string, error) {
 	return snap, nil
 }
 
-// diffSyncConflictFields compares the local (current), synced (last-written),
-// and remote (incoming) snapshots and returns a conflict for every field
-// where a local edit is about to be overwritten: local differs from synced
-// (so it is a local edit) AND local differs from remote (so it would change).
+// diffSyncConflictFields compares the local (current), synced (last-written or
+// pre-sync), and remote (incoming) snapshots and returns a conflict for every
+// field where a local edit is about to be overwritten: local differs from
+// synced (so it is a local edit) AND local differs from remote (so it would
+// change). A nil synced map means there is no usable reference at all (the
+// direct-call case with a missing/corrupt baseline and no pre-sync fallback);
+// reporting nothing there preserves the "no retroactive conflict spam" stance
+// for callers that never had a baseline to begin with.
 func diffSyncConflictFields(local, synced, remote map[string]string) []models.ContactSyncConflict {
+	if synced == nil {
+		return nil
+	}
 	var conflicts []models.ContactSyncConflict
 	for _, key := range syncConflictFieldKeys {
 		localVal, remoteVal := local[key], remote[key]
@@ -197,22 +211,81 @@ func diffSyncConflictFields(local, synced, remote map[string]string) []models.Co
 	return conflicts
 }
 
+// capturePreSyncBaselines returns, for every link of sub whose stored
+// SyncedValues baseline is missing or unparseable, the linked contact's
+// flat-field snapshot taken *now* — before the network fetch that precedes
+// reconcileContactSyncWithBaselines.
+//
+// This is the issue #919 fix. reconcileContactSync normally diffs the
+// pre-apply local state against the link's stored baseline to tell a local
+// edit from a plain remote change; a link without a usable baseline has
+// nothing to diff against. Seeding the effective baseline with the state
+// observed before the fetch closes the concurrent-edit window: any field that
+// changes between this snapshot and the pre-apply read was edited while the
+// sync was still fetching. It is keyed by contact ID and returns nil (no extra
+// contact reads) when every link already has a parseable baseline — the common
+// case.
+func capturePreSyncBaselines(db *gorm.DB, sub *models.ContactSubscription) (map[uint]map[string]string, error) {
+	var links []models.ContactSyncLink
+	if err := db.Model(&models.ContactSyncLink{}).
+		Select("contact_id", "synced_values").
+		Where("subscription_id = ?", sub.ID).
+		Find(&links).Error; err != nil {
+		return nil, fmt.Errorf("loading sync links for baseline capture: %w", err)
+	}
+
+	var needsContact []uint
+	for _, link := range links {
+		if link.SyncedValues == "" {
+			needsContact = append(needsContact, link.ContactID)
+			continue
+		}
+		if _, err := parseSyncConflictSnapshot(link.SyncedValues); err != nil {
+			needsContact = append(needsContact, link.ContactID)
+		}
+	}
+	if len(needsContact) == 0 {
+		return nil, nil
+	}
+
+	var contacts []models.Contact
+	if err := db.Where("user_id = ? AND id IN ?", sub.UserID, needsContact).Find(&contacts).Error; err != nil {
+		return nil, fmt.Errorf("loading contacts for baseline capture: %w", err)
+	}
+	baselines := make(map[uint]map[string]string, len(contacts))
+	for i := range contacts {
+		baselines[contacts[i].ID] = syncConflictFieldSnapshot(&contacts[i])
+	}
+	return baselines, nil
+}
+
 // recordSyncConflicts is called from reconcileContactSync (inside its
 // transaction) on the update path: given the pre-sync (local) and post-apply
 // (remote) snapshots and the link's baseline, it persists one
-// ContactSyncConflict per overwritten local edit. A missing baseline is
-// treated as "first sync, nothing to report yet".
-func recordSyncConflicts(tx *gorm.DB, sub *models.ContactSubscription, contact *models.Contact, link models.ContactSyncLink, local, remote map[string]string) error {
-	if link.SyncedValues == "" {
-		return nil
+// ContactSyncConflict per overwritten local edit.
+//
+// preSyncBaseline is the contact's pre-fetch snapshot captured by
+// capturePreSyncBaselines, and is only consulted when the link's own stored
+// baseline is missing or unparseable. Using it there turns a concurrent
+// local edit (one that landed during the network fetch) into a detectable
+// delta rather than a silent loss (issue #919). A nil preSyncBaseline leaves
+// the old "no baseline, no conflicts" behavior for direct callers.
+func recordSyncConflicts(tx *gorm.DB, sub *models.ContactSubscription, contact *models.Contact, link models.ContactSyncLink, local, remote, preSyncBaseline map[string]string) error {
+	var synced map[string]string
+	if link.SyncedValues != "" {
+		parsed, err := parseSyncConflictSnapshot(link.SyncedValues)
+		if err != nil {
+			// A corrupt baseline should not fail the whole sync; fall through
+			// to the pre-sync snapshot (or no conflicts) and rebuild it on
+			// the next run.
+			logger.Warn().Err(err).Uint("subscription_id", sub.ID).Uint("contact_id", contact.ID).
+				Msg("Sync conflict detection: unparseable synced-values baseline, using pre-sync self-baseline")
+		} else {
+			synced = parsed
+		}
 	}
-	synced, err := parseSyncConflictSnapshot(link.SyncedValues)
-	if err != nil {
-		// A corrupt baseline should not fail the whole sync; drop the
-		// conflicts it would have produced and rebuild it on the next run.
-		logger.Warn().Err(err).Uint("subscription_id", sub.ID).Uint("contact_id", contact.ID).
-			Msg("Sync conflict detection: unparseable synced-values baseline, skipping conflicts")
-		return nil
+	if synced == nil {
+		synced = preSyncBaseline
 	}
 	for _, conflict := range diffSyncConflictFields(local, synced, remote) {
 		conflict.UserID = sub.UserID

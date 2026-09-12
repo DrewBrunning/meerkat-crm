@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -584,4 +585,106 @@ func TestClassifyContactSyncErrorWrapsArbitraryError(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrContactSyncUnreachable)
 	assert.Contains(t, err.Error(), "boom: connection reset")
+}
+
+// TestSyncSubscriptionDetectsConcurrentEditDuringFetch is the issue #919
+// end-to-end regression: a real SyncSubscription run whose network fetch is
+// paused while a REST-shaped edit lands on the linked contact. The run's
+// pre-fetch baseline capture (which happens before the blocking fetch) must
+// turn that edit into a ContactSyncConflict instead of the reconcile silently
+// full-replacing it. This also proves the capture is actually wired into the
+// production sync path, not just callable in isolation.
+func TestSyncSubscriptionDetectsConcurrentEditDuringFetch(t *testing.T) {
+	const href = "/addressbooks/test/gg.vcf"
+	initialCard := "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:gg-uid\r\nFN:Grace Hopper\r\nN:Hopper;Grace;;;\r\nEMAIL:grace@example.com\r\nEND:VCARD\r\n"
+	changedCard := "BEGIN:VCARD\r\nVERSION:4.0\r\nUID:gg-uid\r\nFN:Grace Hopper\r\nN:Hopper;Grace;;;\r\nEMAIL:grace.new@example.com\r\nEND:VCARD\r\n"
+
+	var (
+		cardMu       sync.Mutex
+		cardText     = initialCard
+		blockSecond  atomic.Bool
+		fetchStarted = make(chan struct{})
+		releaseFetch = make(chan struct{})
+		startOnce    sync.Once
+	)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "REPORT" {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+		body, _ := io.ReadAll(r.Body)
+		if strings.Contains(string(body), "sync-collection") {
+			w.WriteHeader(http.StatusNotImplemented)
+			return
+		}
+		// This is the addressbook-query fallback fetch. On the concurrent run,
+		// park here until the test has injected the local edit.
+		if blockSecond.Load() {
+			startOnce.Do(func() { close(fetchStarted) })
+			<-releaseFetch
+		}
+		cardMu.Lock()
+		text := cardText
+		cardMu.Unlock()
+		w.Header().Set("Content-Type", "application/xml; charset=utf-8")
+		w.WriteHeader(http.StatusMultiStatus)
+		fmt.Fprint(w, addressMultistatusResponse(map[string]string{href: text}))
+	}))
+	defer server.Close()
+
+	db := setupContactSyncTestDB(t)
+	cfg := contactSyncTestConfig()
+	user := createContactSyncTestUser(t, db)
+	sub := newContactTestSubscription(t, db, cfg, user.ID, server.URL+"/addressbooks/test/", "carduser", "cardsecret")
+	service := NewContactSyncService(false)
+
+	// First sync establishes the contact + a real baseline.
+	first, err := service.SyncSubscription(context.Background(), db, cfg, sub)
+	require.NoError(t, err)
+	require.Equal(t, 1, first.Created)
+
+	var link models.ContactSyncLink
+	require.NoError(t, db.Where("subscription_id = ? AND href = ?", sub.ID, href).First(&link).Error)
+	// Legacy shape: no stored baseline, so only the pre-fetch capture can
+	// provide a reference.
+	require.NoError(t, db.Model(&link).Update("synced_values", "").Error)
+
+	cardMu.Lock()
+	cardText = changedCard
+	cardMu.Unlock()
+	blockSecond.Store(true)
+
+	var (
+		second  ContactSyncStats
+		syncErr error
+	)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		second, syncErr = service.SyncSubscription(context.Background(), db, cfg, sub)
+	}()
+
+	// The fetch is now parked; the pre-fetch baseline was already captured.
+	<-fetchStarted
+
+	var contact models.Contact
+	require.NoError(t, db.First(&contact, link.ContactID).Error)
+	contact.JobTitle = "Concurrent Edit"
+	require.NoError(t, db.Save(&contact).Error)
+
+	close(releaseFetch)
+	<-done
+	require.NoError(t, syncErr)
+	require.Equal(t, 1, second.Updated)
+
+	var conflict models.ContactSyncConflict
+	require.NoError(t, db.Where("contact_id = ? AND field = ?", link.ContactID, models.SyncConflictFieldJobTitle).First(&conflict).Error,
+		"the edit that landed during the fetch must be recorded as a conflict")
+	assert.Equal(t, "Concurrent Edit", conflict.LocalValue)
+	assert.Equal(t, "", conflict.RemoteValue)
+
+	var after models.Contact
+	require.NoError(t, db.First(&after, link.ContactID).Error)
+	assert.Equal(t, "grace.new@example.com", after.Email, "the remote change still applies")
 }
