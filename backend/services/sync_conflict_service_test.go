@@ -240,6 +240,197 @@ func TestReconcileContactSyncNoBaselineNoConflicts(t *testing.T) {
 	assert.NotEmpty(t, link.SyncedValues, "the sync must re-establish the baseline")
 }
 
+// TestCapturePreSyncBaselines covers the issue #919 pre-fetch capture: links
+// with a parseable stored baseline are skipped (no extra contact read), while
+// links whose baseline is empty or corrupt are captured by contact ID, scoped
+// to the subscription.
+func TestCapturePreSyncBaselines(t *testing.T) {
+	db := setupContactSyncTestDB(t)
+	cfg := contactSyncTestConfig()
+	user := createContactSyncTestUser(t, db)
+	sub := newContactTestSubscription(t, db, cfg, user.ID, "https://example.com/addressbooks/test/", "", "")
+	otherSub := newContactTestSubscription(t, db, cfg, user.ID, "https://example.com/addressbooks/other/", "", "")
+
+	good := models.Contact{UserID: user.ID, Firstname: "Good", JobTitle: "Engineer"}
+	missing := models.Contact{UserID: user.ID, Firstname: "Missing", JobTitle: "Doctor"}
+	corrupt := models.Contact{UserID: user.ID, Firstname: "Corrupt", JobTitle: "Lawyer"}
+	foreign := models.Contact{UserID: user.ID, Firstname: "Foreign", JobTitle: "Pilot"}
+	for _, c := range []*models.Contact{&good, &missing, &corrupt, &foreign} {
+		require.NoError(t, db.Create(c).Error)
+	}
+
+	require.NoError(t, db.Create(&models.ContactSyncLink{
+		SubscriptionID: sub.ID, UserID: user.ID, Href: "/good.vcf", ContactID: good.ID,
+		ContentHash: "h-good", SyncedValues: syncConflictSnapshotJSON(syncConflictFieldSnapshot(&good)),
+	}).Error)
+	require.NoError(t, db.Create(&models.ContactSyncLink{
+		SubscriptionID: sub.ID, UserID: user.ID, Href: "/missing.vcf", ContactID: missing.ID,
+		ContentHash: "h-missing", SyncedValues: "",
+	}).Error)
+	require.NoError(t, db.Create(&models.ContactSyncLink{
+		SubscriptionID: sub.ID, UserID: user.ID, Href: "/corrupt.vcf", ContactID: corrupt.ID,
+		ContentHash: "h-corrupt", SyncedValues: "{not-json",
+	}).Error)
+	require.NoError(t, db.Create(&models.ContactSyncLink{
+		SubscriptionID: otherSub.ID, UserID: user.ID, Href: "/foreign.vcf", ContactID: foreign.ID,
+		ContentHash: "h-foreign", SyncedValues: "",
+	}).Error)
+
+	baselines, err := capturePreSyncBaselines(db, sub)
+	require.NoError(t, err)
+	require.Len(t, baselines, 2, "only the empty + corrupt links need a fallback baseline")
+	assert.Equal(t, "Doctor", baselines[missing.ID][models.SyncConflictFieldJobTitle])
+	assert.Equal(t, "Lawyer", baselines[corrupt.ID][models.SyncConflictFieldJobTitle])
+	_, hasGood := baselines[good.ID]
+	assert.False(t, hasGood, "a parseable baseline needs no pre-fetch snapshot")
+	_, hasForeign := baselines[foreign.ID]
+	assert.False(t, hasForeign, "another subscription's links must not leak in")
+
+	// Every link parseable: nil, so the common-case sync pays no contact read.
+	require.NoError(t, db.Model(&models.ContactSyncLink{}).
+		Where("subscription_id = ?", sub.ID).Updates(map[string]any{
+		"synced_values": syncConflictSnapshotJSON(syncConflictFieldSnapshot(&good)),
+	}).Error)
+	empty, err := capturePreSyncBaselines(db, sub)
+	require.NoError(t, err)
+	assert.Nil(t, empty)
+}
+
+// TestReconcileContactSyncMissingBaselineConcurrentEdit is the issue #919
+// core-property test: a legacy link with no stored baseline, whose contact is
+// edited during the network-fetch window. The pre-fetch snapshot captured
+// before the edit is used as this run's baseline, so the overwritten edit is
+// recorded — and, crucially, the unrelated remote change that applied
+// silently is *not* misreported as a conflict.
+func TestReconcileContactSyncMissingBaselineConcurrentEdit(t *testing.T) {
+	db := setupContactSyncTestDB(t)
+	cfg := contactSyncTestConfig()
+	user := createContactSyncTestUser(t, db)
+	sub := newContactTestSubscription(t, db, cfg, user.ID, "https://example.com/addressbooks/test/", "", "")
+
+	href := "/addressbooks/test/legacy.vcf"
+	first := carddav.AddressObject{Path: href, ETag: "\"etag-1\"", Card: testCard(t, "legacy-uid", "Grace", "Hopper", "grace@example.com")}
+	_, err := reconcileContactSync(db, sub, []carddav.AddressObject{first}, nil, false, "")
+	require.NoError(t, err)
+
+	var link models.ContactSyncLink
+	require.NoError(t, db.Where("subscription_id = ? AND href = ?", sub.ID, href).First(&link).Error)
+	// Legacy shape: synced before migration 000032, no baseline.
+	require.NoError(t, db.Model(&link).Update("synced_values", "").Error)
+
+	// Pre-fetch capture happens here, before the concurrent edit.
+	preBaselines, err := capturePreSyncBaselines(db, sub)
+	require.NoError(t, err)
+	require.Len(t, preBaselines, 1)
+
+	// The concurrent REST edit lands during the network fetch.
+	var contact models.Contact
+	require.NoError(t, db.First(&contact, link.ContactID).Error)
+	contact.JobTitle = "Concurrent Edit"
+	contact.Phones = []models.ContactPhone{{Value: "555-0100"}}
+	require.NoError(t, db.Save(&contact).Error)
+
+	// The remote change (email) triggers the full-replace update.
+	second := carddav.AddressObject{Path: href, ETag: "\"etag-2\"", Card: testCard(t, "legacy-uid", "Grace", "Hopper", "grace.new@example.com")}
+	stats, err := reconcileContactSyncWithBaselines(db, sub, []carddav.AddressObject{second}, nil, false, "", preBaselines)
+	require.NoError(t, err)
+	require.Equal(t, ContactSyncStats{Updated: 1}, stats)
+
+	conflicts := map[string]models.ContactSyncConflict{}
+	var rows []models.ContactSyncConflict
+	require.NoError(t, db.Where("user_id = ? AND contact_id = ?", user.ID, link.ContactID).Find(&rows).Error)
+	for _, c := range rows {
+		conflicts[c.Field] = c
+	}
+	require.Contains(t, conflicts, models.SyncConflictFieldJobTitle, "the concurrent edit must be surfaced")
+	assert.Equal(t, "Concurrent Edit", conflicts[models.SyncConflictFieldJobTitle].LocalValue)
+	assert.Equal(t, "", conflicts[models.SyncConflictFieldJobTitle].RemoteValue)
+	require.Contains(t, conflicts, models.SyncConflictFieldPhone)
+	assert.Equal(t, `[{"type":"","value":"555-0100"}]`, conflicts[models.SyncConflictFieldPhone].LocalValue)
+	assert.NotContains(t, conflicts, models.SyncConflictFieldEmail,
+		"the plain remote email change must not be reported as a conflict")
+
+	var after models.Contact
+	require.NoError(t, db.First(&after, link.ContactID).Error)
+	assert.Equal(t, "grace.new@example.com", after.Email, "the remote change still applies (full-replace)")
+
+	var reloadedLink models.ContactSyncLink
+	require.NoError(t, db.First(&reloadedLink, link.ID).Error)
+	assert.NotEmpty(t, reloadedLink.SyncedValues, "the sync re-establishes the baseline")
+}
+
+// TestReconcileContactSyncCorruptBaselineConcurrentEdit is the same property
+// for the corrupt-baseline shape: an unparseable stored baseline also falls
+// back to the pre-fetch snapshot instead of silently dropping the edit.
+func TestReconcileContactSyncCorruptBaselineConcurrentEdit(t *testing.T) {
+	db := setupContactSyncTestDB(t)
+	cfg := contactSyncTestConfig()
+	user := createContactSyncTestUser(t, db)
+	sub := newContactTestSubscription(t, db, cfg, user.ID, "https://example.com/addressbooks/test/", "", "")
+
+	href := "/addressbooks/test/corrupt.vcf"
+	first := carddav.AddressObject{Path: href, ETag: "\"etag-1\"", Card: testCard(t, "corrupt-uid", "Ada", "Lovelace", "ada@example.com")}
+	_, err := reconcileContactSync(db, sub, []carddav.AddressObject{first}, nil, false, "")
+	require.NoError(t, err)
+
+	var link models.ContactSyncLink
+	require.NoError(t, db.Where("subscription_id = ? AND href = ?", sub.ID, href).First(&link).Error)
+	require.NoError(t, db.Model(&link).Update("synced_values", "{not-json").Error)
+
+	preBaselines, err := capturePreSyncBaselines(db, sub)
+	require.NoError(t, err)
+	require.Len(t, preBaselines, 1)
+
+	var contact models.Contact
+	require.NoError(t, db.First(&contact, link.ContactID).Error)
+	contact.JobTitle = "Concurrent Edit"
+	require.NoError(t, db.Save(&contact).Error)
+
+	second := carddav.AddressObject{Path: href, ETag: "\"etag-2\"", Card: testCard(t, "corrupt-uid", "Ada", "Lovelace", "ada.new@example.com")}
+	_, err = reconcileContactSyncWithBaselines(db, sub, []carddav.AddressObject{second}, nil, false, "", preBaselines)
+	require.NoError(t, err)
+
+	var conflict models.ContactSyncConflict
+	require.NoError(t, db.Where("contact_id = ? AND field = ?", link.ContactID, models.SyncConflictFieldJobTitle).First(&conflict).Error)
+	assert.Equal(t, "Concurrent Edit", conflict.LocalValue)
+}
+
+// TestReconcileContactSyncMissingBaselinePlainRemoteChangeNoConflict is the
+// anti-spam regression guard: when a legacy link's contact was *not* edited
+// during the fetch, the pre-fetch fallback baseline makes the remote change a
+// plain apply, not a retroactive conflict (the design boundary the fix keeps).
+func TestReconcileContactSyncMissingBaselinePlainRemoteChangeNoConflict(t *testing.T) {
+	db := setupContactSyncTestDB(t)
+	cfg := contactSyncTestConfig()
+	user := createContactSyncTestUser(t, db)
+	sub := newContactTestSubscription(t, db, cfg, user.ID, "https://example.com/addressbooks/test/", "", "")
+
+	href := "/addressbooks/test/plain.vcf"
+	first := carddav.AddressObject{Path: href, ETag: "\"etag-1\"", Card: testCard(t, "plain-uid", "Erin", "Gray", "erin@example.com")}
+	_, err := reconcileContactSync(db, sub, []carddav.AddressObject{first}, nil, false, "")
+	require.NoError(t, err)
+
+	var link models.ContactSyncLink
+	require.NoError(t, db.Where("subscription_id = ? AND href = ?", sub.ID, href).First(&link).Error)
+	require.NoError(t, db.Model(&link).Update("synced_values", "").Error)
+
+	preBaselines, err := capturePreSyncBaselines(db, sub)
+	require.NoError(t, err)
+	require.Len(t, preBaselines, 1)
+
+	second := carddav.AddressObject{Path: href, ETag: "\"etag-2\"", Card: testCard(t, "plain-uid", "Erin", "Gray", "erin.new@example.com")}
+	_, err = reconcileContactSyncWithBaselines(db, sub, []carddav.AddressObject{second}, nil, false, "", preBaselines)
+	require.NoError(t, err)
+
+	var count int64
+	require.NoError(t, db.Model(&models.ContactSyncConflict{}).Where("user_id = ?", user.ID).Count(&count).Error)
+	assert.Zero(t, count, "a remote-only change on a legacy link must not be flagged as a conflict")
+
+	var after models.Contact
+	require.NoError(t, db.First(&after, link.ContactID).Error)
+	assert.Equal(t, "erin.new@example.com", after.Email)
+}
+
 // TestContactSyncLinkSyncedValuesSavesAgainstRealMigratedSchema guards the
 // new column + table against GORM/ migration drift the AutoMigrate-based test
 // DBs cannot see (CLAUDE.md backend trap 1).
@@ -600,9 +791,12 @@ func TestRestoreContactSyncConflict_UnknownFieldFails(t *testing.T) {
 }
 
 // TestRecordSyncConflicts_NoBaselineAndCorruptBaseline covers the two
-// defensive paths: a missing baseline is a silent no-op (pre-migration links),
-// and a corrupt baseline is skipped with a warning rather than failing the
-// sync.
+// defensive paths when there is *no* pre-sync fallback: a missing baseline is
+// a silent no-op (pre-migration links), and a corrupt baseline is skipped with
+// a warning rather than failing the sync. The fallback that turns a
+// missing/corrupt baseline into real detection is exercised by
+// TestReconcileContactSyncMissingBaselineConcurrentEdit and the pre-fetch
+// capture tests.
 func TestRecordSyncConflicts_NoBaselineAndCorruptBaseline(t *testing.T) {
 	db := setupContactSyncTestDB(t)
 	cfg := contactSyncTestConfig()
@@ -615,14 +809,15 @@ func TestRecordSyncConflicts_NoBaselineAndCorruptBaseline(t *testing.T) {
 	local := map[string]string{models.SyncConflictFieldPhone: `[{"value":"555-0100"}]`}
 	remote := map[string]string{models.SyncConflictFieldPhone: "[]"}
 
-	// No baseline: nothing to diff against, no conflicts, no error.
-	require.NoError(t, recordSyncConflicts(db, sub, &contact, models.ContactSyncLink{SyncedValues: ""}, local, remote))
+	// No baseline and no fallback: nothing to diff against, no conflicts.
+	require.NoError(t, recordSyncConflicts(db, sub, &contact, models.ContactSyncLink{SyncedValues: ""}, local, remote, nil))
 	var count int64
 	require.NoError(t, db.Model(&models.ContactSyncConflict{}).Where("user_id = ?", user.ID).Count(&count).Error)
 	assert.Zero(t, count)
 
-	// Corrupt baseline: skipped with a warning, sync still succeeds.
-	require.NoError(t, recordSyncConflicts(db, sub, &contact, models.ContactSyncLink{SyncedValues: "{not-json"}, local, remote))
+	// Corrupt baseline and no fallback: skipped with a warning, sync still
+	// succeeds.
+	require.NoError(t, recordSyncConflicts(db, sub, &contact, models.ContactSyncLink{SyncedValues: "{not-json"}, local, remote, nil))
 	require.NoError(t, db.Model(&models.ContactSyncConflict{}).Where("user_id = ?", user.ID).Count(&count).Error)
 	assert.Zero(t, count)
 }

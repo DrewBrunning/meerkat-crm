@@ -268,6 +268,15 @@ func (s *ContactSyncService) syncSubscription(ctx context.Context, db *gorm.DB, 
 		return ContactSyncStats{}, sub.SyncToken, fmt.Errorf("%w: %v", ErrContactSyncInvalidURL, err)
 	}
 
+	// Capture the pre-fetch state of any linked contact whose stored conflict
+	// baseline is missing/corrupt, *before* the network fetch below. This is
+	// the reference that lets reconcile see a REST edit landing during the
+	// fetch as a local edit instead of silently full-replacing it (#919).
+	preSyncBaselines, err := capturePreSyncBaselines(db, sub)
+	if err != nil {
+		return ContactSyncStats{}, sub.SyncToken, err
+	}
+
 	updated, deleted, newToken, fullRefetch, err := s.fetchChanges(ctx, client, parsedURL, sub.SyncToken)
 	if err != nil {
 		return ContactSyncStats{}, sub.SyncToken, err
@@ -279,7 +288,7 @@ func (s *ContactSyncService) syncSubscription(ctx context.Context, db *gorm.DB, 
 		updated = updated[:maxContactsPerSync]
 	}
 
-	stats, err := reconcileContactSync(db, sub, updated, deleted, fullRefetch, cfg.ProfilePhotoDir)
+	stats, err := reconcileContactSyncWithBaselines(db, sub, updated, deleted, fullRefetch, cfg.ProfilePhotoDir, preSyncBaselines)
 	if err != nil {
 		return ContactSyncStats{}, sub.SyncToken, err
 	}
@@ -399,7 +408,22 @@ func classifyContactSyncError(err error) error {
 // taking already-fetched data rather than a live *carddav.Client) so it can
 // be unit-tested directly against constructed AddressObject/path values
 // without spinning up an HTTP server.
+//
+// It is the no-pre-sync-baselines entry point: links whose stored conflict
+// baseline is missing/corrupt get no conflict detection for that run (the
+// historical "no baseline, no conflicts" behavior). SyncSubscription uses
+// reconcileContactSyncWithBaselines instead, with the pre-fetch snapshots
+// capturePreSyncBaselines took (#919).
 func reconcileContactSync(db *gorm.DB, sub *models.ContactSubscription, updated []carddav.AddressObject, deletedPaths []string, fullRefetch bool, photoDir string) (ContactSyncStats, error) {
+	return reconcileContactSyncWithBaselines(db, sub, updated, deletedPaths, fullRefetch, photoDir, nil)
+}
+
+// reconcileContactSyncWithBaselines is reconcileContactSync plus the
+// per-contact pre-sync baselines (keyed by contact ID) capturePreSyncBaselines
+// took before the network fetch. On the update path, when a link's own stored
+// baseline is missing/corrupt, the pre-sync snapshot is used as the effective
+// baseline so a concurrent local edit is recorded rather than dropped.
+func reconcileContactSyncWithBaselines(db *gorm.DB, sub *models.ContactSubscription, updated []carddav.AddressObject, deletedPaths []string, fullRefetch bool, photoDir string, preSyncBaselines map[uint]map[string]string) (ContactSyncStats, error) {
 	var stats ContactSyncStats
 
 	err := db.Transaction(func(tx *gorm.DB) error {
@@ -508,7 +532,7 @@ func reconcileContactSync(db *gorm.DB, sub *models.ContactSubscription, updated 
 				// record and the saved contact reflect sanitized data.
 				SanitizeImportedContact(&contact)
 				remoteSnapshot := syncConflictFieldSnapshot(&contact)
-				if err := recordSyncConflicts(tx, sub, &contact, link, localSnapshot, remoteSnapshot); err != nil {
+				if err := recordSyncConflicts(tx, sub, &contact, link, localSnapshot, remoteSnapshot, preSyncBaselines[link.ContactID]); err != nil {
 					return err
 				}
 				if err := tx.Save(&contact).Error; err != nil {
