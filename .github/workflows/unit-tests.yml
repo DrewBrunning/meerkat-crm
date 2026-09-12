@@ -425,27 +425,44 @@ jobs:
       # cannot — and the only constraint on it is finishing before the next
       # night's run. The companion GO_TEST_TIMEOUT scales the per-test ceiling
       # so a deep nightly run is not killed by the PR-sized 30m timeout.
-      RAPID_CHECKS: ${{ github.event_name == 'pull_request' && '200' || (github.event_name == 'push' && '1000' || '8000') }}
+      #
+      # issue #1014: this used to be a two-armed ternary (pull_request -> 200,
+      # push -> else-branch 8000) that silently gave EVERY other event name --
+      # workflow_dispatch included -- the nightly depth. #543's dispatch-based
+      # mandatory gates made that live: every RC-tag gate check now dispatches
+      # this workflow via workflow_dispatch, so every RC verification this
+      # whole investigation ran was quietly running property tests at
+      # nightly-schedule depth (8000/10000 iterations), not the intended
+      # moderate push-tier depth. That -- not hosted-runner hardware, not
+      # -race overhead -- is the real reason services-1 (address_normalization
+      # _property_test.go's 5 tests, all A/D-prefixed, landing in A-G) and the
+      # `property` leg (which uses RAPID_CHECKS directly) were running far
+      # heavier than a one-off dispatch should: `property` hit the 65-minute
+      # job timeout-minutes and was cancelled outright even after every actual
+      # go-test content in every OTHER leg passed clean. workflow_dispatch is
+      # now an explicit third arm at the push tier (1000/2000) instead of
+      # falling through the schedule-tier else-branch; any future new event
+      # name defaults to the same safe push tier rather than nightly depth.
+      RAPID_CHECKS: ${{ github.event_name == 'pull_request' && '200' || (github.event_name == 'schedule' && '8000' || '1000') }}
       # issue #1014: services-2 (the H-Z alphabetic shard, which happens to
       # catch every Search*/TestSearchMutationPath_* test -- 22
       # full-index-rebuild calls in search_mutation_path_test.go alone) hit
-      # BOTH the original 25m ceiling and a first-attempt 30m bump, each
-      # time still mid-run (a different test caught by the alarm each time,
-      # not the same one looping) when the wall hit -- not a hang, since the
-      # exact same leg finishes in ~3 minutes locally under -race, but a
-      # real hosted-runner-vs-dev-hardware gap far larger than -race
-      # overhead alone accounts for (services-1 was already comparably
-      # heavy: 1646s/1791s/2120s job times across attempts, all in the same
-      # ballpark despite H-Z covering ~3x more of the alphabet than A-G).
-      # Two small guessed increments both undershot at real CI cost each
-      # time, so this jumps to a generous 55m rather than guessing a third
-      # small step -- see the timeout-minutes comment below for the
-      # 75-minute release-gate poll ceiling this must fit under.
+      # BOTH the original 25m ceiling and a first-attempt 30m bump before
+      # finally passing at 55m (job time ~45m) -- real work, not an
+      # artifact of the RAPID_CHECKS/ADDRESS_PROPERTY_ITERATIONS tier bug
+      # documented above (search_mutation_path_test.go doesn't use either
+      # env var). Kept generous rather than dialed back down now that the
+      # property-tier bug is also fixed, since services-2's real cost is
+      # still ~1.5x the original 30m budget on real hosted-runner hardware.
+      # 55m stays under the 75-minute release-gate poll deadline this
+      # workflow is dispatched under for an RC tag (docs/development/
+      # release-gates.md) with margin for runner queueing.
       GO_TEST_TIMEOUT: ${{ github.event_name == 'schedule' && '200m' || '55m' }}
       # The pre-rapid seeded property tests (services/address_normalization
       # _property_test.go) get the same tiered treatment: 200 iterations on
-      # PR, 2000 on a merge, 10000 on the nightly deep run.
-      ADDRESS_PROPERTY_ITERATIONS: ${{ github.event_name == 'pull_request' && '200' || (github.event_name == 'push' && '2000' || '10000') }}
+      # PR, 2000 on a merge or a workflow_dispatch (issue #1014 -- see
+      # RAPID_CHECKS above), 10000 on the nightly deep run.
+      ADDRESS_PROPERTY_ITERATIONS: ${{ github.event_name == 'pull_request' && '200' || (github.event_name == 'schedule' && '10000' || '2000') }}
 
     steps:
       - name: Checkout repository
