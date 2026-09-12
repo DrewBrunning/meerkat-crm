@@ -175,6 +175,88 @@ func TestPurgeSoftDeletedRows_PurgesSoftDeletedChildContent(t *testing.T) {
 	assert.Equal(t, int64(1), parentCount, "purging a child must not touch its live parent")
 }
 
+// Issue #978: the disconnect handlers soft-delete the integration configs and
+// the subscriptions, but the T26 purge list had omitted them — so an encrypted
+// API token/app-password row (Immich was the sole exception, and it was listed)
+// and a token-bearing subscription URL lived forever and travelled into every
+// backup. LinkFieldType was omitted the same way. This pins every one of them:
+// a row soft-deleted past retention is hard-deleted, a row inside the window
+// survives (the undo affordance), and the purge never touches a live row.
+func TestPurgeSoftDeletedRows_PurgesSoftDeletedConfigsAndSubscriptions(t *testing.T) {
+	db, userID := newPurgeDB(t)
+
+	type purgeRow struct {
+		table  string
+		model  any
+		create func() any // creates one row and returns its primary key
+	}
+
+	rows := []purgeRow{
+		{"immich_configs", &models.ImmichConfig{}, func() any {
+			c := models.ImmichConfig{UserID: userID, BaseURL: "https://immich.example"}
+			require.NoError(t, db.Create(&c).Error)
+			return c.ID
+		}},
+		{"paperless_configs", &models.PaperlessConfig{}, func() any {
+			c := models.PaperlessConfig{UserID: userID, BaseURL: "https://paperless.example"}
+			require.NoError(t, db.Create(&c).Error)
+			return c.ID
+		}},
+		{"seafile_configs", &models.SeafileConfig{}, func() any {
+			c := models.SeafileConfig{UserID: userID, BaseURL: "https://seafile.example"}
+			require.NoError(t, db.Create(&c).Error)
+			return c.ID
+		}},
+		{"webdav_configs", &models.WebDAVConfig{}, func() any {
+			c := models.WebDAVConfig{UserID: userID, BaseURL: "https://nc.example", Username: "u"}
+			require.NoError(t, db.Create(&c).Error)
+			return c.ID
+		}},
+		{"link_field_types", &models.LinkFieldType{}, func() any {
+			l := models.LinkFieldType{UserID: userID, Name: "Matrix", Protocol: "https://matrix.to/#/{value}", Category: models.LinkFieldTypeCategoryMessaging}
+			require.NoError(t, db.Create(&l).Error)
+			return l.ID
+		}},
+		{"calendar_subscriptions", &models.CalendarSubscription{}, func() any {
+			s := models.CalendarSubscription{UserID: userID, Name: "cal", URL: "https://example.com/private-token/cal.ics"}
+			require.NoError(t, db.Create(&s).Error)
+			return s.ID
+		}},
+		{"contact_subscriptions", &models.ContactSubscription{}, func() any {
+			s := models.ContactSubscription{UserID: userID, Name: "carddav", URL: "https://example.com/remote.php/dav/addressbooks/user/token/"}
+			require.NoError(t, db.Create(&s).Error)
+			return s.ID
+		}},
+	}
+
+	for _, row := range rows {
+		t.Run(row.table, func(t *testing.T) {
+			// Create one row at a time and soft-delete it before the next: the
+			// integration-config tables carry a partial unique index on
+			// user_id WHERE deleted_at IS NULL, so two live rows would collide.
+			recent := row.create()
+			softDeleteAt(t, db, row.model, recent, time.Now().AddDate(0, 0, -2))
+
+			old := row.create()
+			softDeleteAt(t, db, row.model, old, time.Now().AddDate(0, 0, -60))
+
+			// A live row must survive the purge untouched.
+			live := row.create()
+
+			PurgeSoftDeletedRows(db, purgeConfig())
+
+			var oldCount, liveCount, recentCount int64
+			require.NoError(t, db.Unscoped().Model(row.model).Where("id = ?", old).Count(&oldCount).Error)
+			require.NoError(t, db.Model(row.model).Where("id = ?", live).Count(&liveCount).Error)
+			require.NoError(t, db.Unscoped().Model(row.model).Where("id = ?", recent).Count(&recentCount).Error)
+
+			assert.Zero(t, oldCount, "%s soft-deleted past retention must be hard-deleted", row.table)
+			assert.Equal(t, int64(1), liveCount, "%s live row must never be purged", row.table)
+			assert.Equal(t, int64(1), recentCount, "%s soft-deleted inside the undo window must survive", row.table)
+		})
+	}
+}
+
 // DELETED_RETENTION_DAYS=0 is the documented "disable the purge and keep
 // soft-deleted rows forever" value (.env.example), and a negative value is a
 // misconfiguration the purge service treats the same way. Without the guard the

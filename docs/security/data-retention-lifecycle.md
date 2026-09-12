@@ -7,7 +7,7 @@ each asset, not how long it survives.
 
 | | |
 |---|---|
-| **Last updated** | 2026-09-06 (issues [#414](https://github.com/DrewBrunning/mycorrhizal-crm/issues/414), [#420](https://github.com/DrewBrunning/mycorrhizal-crm/issues/420), [#424](https://github.com/DrewBrunning/mycorrhizal-crm/issues/424), [#622](https://github.com/DrewBrunning/mycorrhizal-crm/issues/622), [#391](https://github.com/DrewBrunning/mycorrhizal-crm/issues/391), [#389](https://github.com/DrewBrunning/mycorrhizal-crm/issues/389), [#651](https://github.com/DrewBrunning/mycorrhizal-crm/issues/651), [#351](https://github.com/DrewBrunning/mycorrhizal-crm/issues/351), [#353](https://github.com/DrewBrunning/mycorrhizal-crm/issues/353), [#549](https://github.com/DrewBrunning/mycorrhizal-crm/issues/549), [#505](https://github.com/DrewBrunning/mycorrhizal-crm/issues/505), [#721](https://github.com/DrewBrunning/mycorrhizal-crm/issues/721), [#722](https://github.com/DrewBrunning/mycorrhizal-crm/issues/722), [#723](https://github.com/DrewBrunning/mycorrhizal-crm/issues/723)) |
+| **Last updated** | 2026-09-12 (issues [#414](https://github.com/DrewBrunning/mycorrhizal-crm/issues/414), [#420](https://github.com/DrewBrunning/mycorrhizal-crm/issues/420), [#424](https://github.com/DrewBrunning/mycorrhizal-crm/issues/424), [#622](https://github.com/DrewBrunning/mycorrhizal-crm/issues/622), [#391](https://github.com/DrewBrunning/mycorrhizal-crm/issues/391), [#389](https://github.com/DrewBrunning/mycorrhizal-crm/issues/389), [#651](https://github.com/DrewBrunning/mycorrhizal-crm/issues/651), [#351](https://github.com/DrewBrunning/mycorrhizal-crm/issues/351), [#353](https://github.com/DrewBrunning/mycorrhizal-crm/issues/353), [#549](https://github.com/DrewBrunning/mycorrhizal-crm/issues/549), [#505](https://github.com/DrewBrunning/mycorrhizal-crm/issues/505), [#721](https://github.com/DrewBrunning/mycorrhizal-crm/issues/721), [#722](https://github.com/DrewBrunning/mycorrhizal-crm/issues/722), [#723](https://github.com/DrewBrunning/mycorrhizal-crm/issues/723), [#978](https://github.com/DrewBrunning/mycorrhizal-crm/issues/978)) |
 | **Scope** | Backend (Go/Gin + SQLite), CardDAV/CalDAV (server role), Android client, browser/frontend, operator backups. |
 | **Companion docs** | `docs/security/pii-inventory.md` (the *minimization* lens — should each store exist, and is it more/kept-longer than needed), `docs/security/asvs-l2.md` V8 (Data Protection), `docs/deployment.md` (Backups section — the authoritative backup/restore runbook), `docs/security/masvs-l1.md` (Android storage controls). |
 
@@ -27,8 +27,9 @@ doc; a handful of genuine gaps are called out explicitly in [Known gaps](#known-
 ## 1. Primary application data (user-authored content)
 
 `Contact`, `Note`, `Activity`, `Reminder`, `LifeEvent`, `Preference`, `CadencePolicy`,
-`ConversationAgenda`, `Gift`, `ImmichConfig`/`PaperlessConfig`/`SeafileConfig`/`WebDAVConfig`,
-`Attachment` (metadata row only — see [§5](#5-attachments--profile-photos-files-on-disk)).
+`ConversationAgenda`, `Gift`, `LinkFieldType`, `CalendarSubscription`/`ContactSubscription`,
+`ImmichConfig`/`PaperlessConfig`/`SeafileConfig`/`WebDAVConfig`, `Attachment` (metadata row only —
+see [§5](#5-attachments--profile-photos-files-on-disk)).
 
 - **Where / who**: `mycorrhizal.db`, scoped by `user_id` in every query (CLAUDE.md trap #5). Reachable
   only via the authenticated owner's API session.
@@ -41,9 +42,12 @@ doc; a handful of genuine gaps are called out explicitly in [Known gaps](#known-
   cascades every dependent row via `deleteContactAssociations`
   (`backend/controllers/contact_controller.go:686+`) inside one transaction; `DeleteUser`
   (`backend/controllers/admin_user_controller.go`) does the account-wide equivalent. After the retention
-  window, `PurgeSoftDeletedRows` (`backend/services/purge_service.go:35-150`) hard-deletes the row and
+  window, `PurgeSoftDeletedRows` (`backend/services/purge_service.go:35-165`) hard-deletes the row and
   its remaining edge references, run daily by cron and on-demand via the admin `TriggerPurge` endpoint
-  (`admin_user_controller.go:37-42`). A `?since=` cursor older than the window gets `410 Gone`
+  (`admin_user_controller.go:37-42`). The list covers every soft-deletable user-authored entity —
+  including the integration configs and the token-bearing `LinkFieldType`/subscription rows that issue
+  [#978](https://github.com/DrewBrunning/mycorrhizal-crm/issues/978) found omitted. A `?since=` cursor
+  older than the window gets `410 Gone`
   (`controllers/helpers.go:360-370`) — deliberately the *same* `DeleteRetentionDays` config the purge job
   reads, so a client can never observe a tombstone gap; propagation to CardDAV/CalDAV and the Android
   mirror is covered in §7/§8, both of which key off this same soft-delete state.
@@ -86,7 +90,7 @@ It sits outside the soft-delete model above precisely because it is a copy, not 
 ## 2. Edge- and join-shaped rows
 
 `RelationshipEdge`, `CircleMember`, `ContactTag`, `HouseholdMember`, `ContactSyncLink`,
-`CalendarEventLink`, `FieldValue`, `activity_contacts`, `NotificationDelivery`, `ReachOutSuggestion`,
+`CalendarEventLink`, `FieldValue`, `activity_contacts`, `NotificationDelivery`,
 `ContactSyncConflict`.
 
 - **Where / who**: same DB, same `user_id` scoping.
@@ -112,6 +116,29 @@ It sits outside the soft-delete model above precisely because it is a copy, not 
 - **Backups**: yes, and a restored backup's audit trail is only as fresh as the snapshot.
 - **Verification**: `backend/services/audit_purge_service_test.go` (`TestPurgeExpiredAuditEvents*`, 3
   cases including the re-link and a swallowed-recompute-failure case).
+
+### Reach-out suggestions (`ReachOutSuggestion`) — derived from the audit trail
+
+`reach_out_suggestions` holds one row per detected org/title/address change, derived from an
+`AuditEvent`'s before/after diff (`services/reach_out_trigger_service.go`). It is system-generated and
+hard-deletes (no `deleted_at`), but its PII (`old_value`/`new_value`, plus the `audit_event_id`
+back-reference) has its own age: `pii-inventory.md` ties it to `AUDIT_RETENTION_DAYS` ("derived from the
+audit trail, ages with it").
+
+- **Where / who**: `reach_out_suggestions` table in `mycorrhizal.db`, `user_id`-scoped. Surfaced only on
+  the owner's dashboard; the companion `Reminder` rides the normal delivery pipeline.
+- **Retention**: `AUDIT_RETENTION_DAYS` (default 90) — the same window as the audit events it is derived
+  from. `AUDIT_RETENTION_DAYS<=0` disables the purge, like audit itself.
+- **Deletion / propagation**: `PurgeExpiredReachOutSuggestions`
+  (`backend/services/audit_purge_service.go`) hard-deletes rows whose `created_at` is older than the
+  window, both `pending` and `dismissed`; it runs inside the `audit_purge` job under that same job lock,
+  so a suggestion can never outlive the audit window it is documented against (issue
+  [#978](https://github.com/DrewBrunning/mycorrhizal-crm/issues/978)). Deleting the contact also removes
+  its suggestions synchronously (`deleteContactAssociations`). No external mirror.
+- **Backups**: yes until purged — the row is in the SQLite file, so a snapshot taken inside the window
+  carries it.
+- **Verification**: `backend/services/audit_purge_service_test.go`
+  (`TestPurgeExpiredReachOutSuggestions`, `TestPurgeExpiredAuditEventsScheduled_PurgesAuditAndReachOutSuggestions`).
 
 ### System events (`SystemEvent`, issue #424)
 
@@ -524,19 +551,30 @@ design is ADR-0010 / CON-04, issue #479).
 - **Backups**: never — the temp file lives outside any backed-up path and is deleted with the
   session.
 
-## 13. External integration credentials (WebDAV / Paperless / Immich / Seafile)
+## 13. External integration configs & credentials (WebDAV / Paperless / Immich / Seafile, CardDAV/CalDAV subscriptions, link field types)
 
 - **Where / who**: one config row per user per integration, app-password/API-key encrypted at rest
   (`services/credential_crypto.go`); the plaintext credential is never returned by the read endpoint.
+  The saved subscriptions (`contact_subscriptions`, `calendar_subscriptions`) carry a remote URL — which
+  commonly embeds a per-user sync token — plus an optional encrypted password; `link_field_types` is
+  user-authored display config with no credential.
 - **Retention**: soft-delete with the T26 partial-unique-index pattern (a user may remove and
-  re-add a connection without a soft-deleted ghost blocking it).
-- **Deletion / propagation**: hard-deleted on account removal (`admin_user_controller.go:705-720`).
-  **Deleting the connection here never deletes anything in the external service** — Immich/Paperless/
-  Seafile/WebDAV content lives entirely under the user's own account on their own external service; this
-  app only ever stores a reference/credential, never a durable mirror of that content. That boundary is
-  deliberate, not a gap: this app has no authority to delete data the user manages in a separate product.
-- **Backups**: only the encrypted credential row; the external content is that service's own backup
-  story.
+  re-add a connection without a soft-deleted ghost blocking it). After `DELETE_RETENTION_DAYS`,
+  `PurgeSoftDeletedRows` (`backend/services/purge_service.go`) hard-deletes the row — before issue
+  [#978](https://github.com/DrewBrunning/mycorrhizal-crm/issues/978) only `ImmichConfig` was in the T26
+  purge list, so the other encrypted credentials, the token-bearing subscription URLs, and
+  `LinkFieldType` lived forever and travelled into every backup.
+- **Deletion / propagation**: hard-deleted on account removal (`admin_user_controller.go`), and by the
+  T26 purge once the undo window closes. **Deleting the connection here never deletes anything in the
+  external service** — Immich/Paperless/Seafile/WebDAV content lives entirely under the user's own
+  account on their own external service; this app only ever stores a reference/credential, never a
+  durable mirror of that content. That boundary is deliberate, not a gap: this app has no authority to
+  delete data the user manages in a separate product.
+- **Backups**: only the encrypted credential row (until purged); the external content is that service's
+  own backup story.
+- **Verification**: `backend/services/purge_service_test.go`
+  (`TestPurgeSoftDeletedRows_PurgesSoftDeletedConfigsAndSubscriptions`, one sub-case per config/
+  subscription model).
 
 ## 14. Operational self-check results (`operational_check_results`) — not user data
 
@@ -788,6 +826,31 @@ design is ADR-0010 / CON-04, issue #479).
   `backend/controllers/delete_cascade_coverage_test.go` (`sessions` seeded + swept in the DeleteUser
   sweep, bucket `go-cascade-user`).
 
+## 24. Request / access logs (structured stdout) — operator-owned retention
+
+- **Where / who**: the app writes one structured JSON stream (pretty-printed when `LOG_PRETTY` is set)
+  to **stdout** (`backend/logger/logger.go`), which the shipped Docker image leaves to the container
+  runtime / Docker logging driver to capture (`docker compose logs -f mycorrhizal`). Nothing is written
+  to a file inside the app or to the database, so there is no in-app log file that a rotation job could
+  manage.
+- **What it contains**: `user_id` (an integer, not a name/email), `request_id`, HTTP method, path (the
+  query string is redacted to an allow-list — never search terms or ids), status, duration, client IP,
+  and User-Agent. The redaction policy and the four leaks fixed in the #510 review are in
+  `pii-inventory.md` §3.3. No contact PII and no credential is written.
+- **Retention — operator-owned and unbounded by the application.** The app has **no built-in log
+  rotation, log-file lifecycle, or log TTL**: stdout belongs to the operator's log driver, and bounding
+  it is the operator's call. A Docker deployment should set the driver's rotation —
+  `docker run --log-opt max-size=10m --log-opt max-file=5`, or the equivalent `log-opts` in
+  `daemon.json`/Compose (`logging.options.max-size` / `max-file`); a systemd deployment inherits
+  `journald`'s `SystemMaxUse` / `MaxRetentionSec`. Pick a window that matches the instance's
+  abuse-investigation need — `user_id` + IP is only useful while recent, so this is a data-retention
+  decision, not just a disk-space knob.
+- **Deletion / propagation**: bounded only by the operator's rotation policy. Logs are never synced to
+  CardDAV/CalDAV or the Android mirror, and are not the database, so the app's backups (§10) never
+  contain them.
+- **Backups**: never, by the app — the log stream lives outside `SQLITE_DB_PATH` and outside the
+  photo/attachment directories.
+
 ## Known gaps
 
 One item surfaced by walking every data type through the four questions above. It does not block this
@@ -803,9 +866,10 @@ per §1/§7/§8), but it is a genuine, named gap rather than a silently-accepted
 
 | Data type | Retention pinned by test? |
 |---|---|
-| Soft-deleted rows / purge window | `backend/services/purge_service_test.go` (8 cases) |
+| Soft-deleted rows / purge window | `backend/services/purge_service_test.go` (9 cases, incl. the #978 config/subscription models) |
 | ContactShare snapshot purge window | `backend/services/contact_share_purge_service_test.go` (9 cases) |
 | Audit retention + re-link | `backend/services/audit_purge_service_test.go` (3 cases) |
+| Reach-out suggestion retention (ages with audit) | `backend/services/audit_purge_service_test.go` (`TestPurgeExpiredReachOutSuggestions`, `..._Scheduled_PurgesAuditAndReachOutSuggestions`) |
 | System-event retention window | `backend/services/system_event_purge_service_test.go` |
 | Webhook delivery purge window + payload trim | `backend/services/webhook_delivery_purge_service_test.go` (9 cases), `webhook_delivery_test.go` trim pins |
 | Job-run retention window | `backend/services/job_run_purge_service_test.go` |
@@ -822,3 +886,4 @@ per §1/§7/§8), but it is a genuine, named gap rather than a silently-accepted
 | No PII/credential in browser storage | `frontend/e2e/` (#419 Playwright regression) |
 | Backup restore actually restores | `frontend/e2e/backupRestore.spec.ts`, restore-drill job (#275) |
 | Metrics counters are RAM-only, bounded labels, token-gated | `backend/metrics/` (`registry_test.go`, `metrics_test.go`), `backend/controllers/metrics_controller_test.go`, `backend/routes/metrics_route_test.go` |
+| Request/access log retention (operator-owned rotation) | No app code to test — stdout stream, no in-app file or TTL; documented in §24 and `pii-inventory.md` §3.3 |

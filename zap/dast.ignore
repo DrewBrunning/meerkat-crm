@@ -74,3 +74,29 @@
 # Scoped to /login, not `.*`: a 40018 hit on any other route is a real signal
 # and must not be pre-accepted.
 40018 high /api/v1/login$  # false positive: login query is GORM-parameterised (email = ? / username = ?); 40018's boolean heuristic trips on the auth path's rate-limit/enumeration/bcrypt-driven response variance, not SQL
+
+# Same 40018 boolean-based SQL-injection check, now on the `device_token`
+# parameter of POST /api/v1/auth/device/session (the device-grant exchange,
+# issue #722): "... AND 1=1 -- " vs "... OR 1=1 -- " responses "differed".
+# False positive, and a stronger case than /login's:
+#
+# controllers/device_grant_controller.go builds the lookup as
+# db.Where("token_hash = ? AND revoked_at IS NULL",
+# services.HashDeviceGrantToken(input.DeviceToken)) — GORM-parameterised, and
+# the bound value is a SHA-256 hash of the submitted token
+# (services/device_grant_service.go), not the raw string. Any payload,
+# injection or not, hashes to an unrelated hex digest that matches no
+# token_hash row; there is no dynamic-SQL sink and no way for the payload's
+# content to reach the query shape at all.
+#
+# Same response-variance mechanism as /login causes the misfire: this route
+# carries the same AuthRateLimitMiddleware (per-IP) ahead of the lookup, so
+# ZAP's rapid back-to-back probes from one IP flip some responses 401 -> 429
+# partway through; an unknown/invalid grant returns the same
+# ErrInvalidCredentials() 401 as a revoked one (enumeration-resistant). ZAP's
+# evidence field is empty here too and confidence is Medium, not High —
+# same signature as the accepted /login entry above.
+#
+# Scoped to this one route, not `.*`: a 40018 hit on any other route is a
+# real signal and must not be pre-accepted.
+40018 high /api/v1/auth/device/session$  # false positive: query is GORM-parameterised AND the bound value is a SHA-256 hash of the input (services.HashDeviceGrantToken), not the raw token — no payload content can reach the query; same rate-limit-driven response variance as the accepted /login entry

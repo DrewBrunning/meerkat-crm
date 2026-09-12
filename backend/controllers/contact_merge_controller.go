@@ -120,10 +120,36 @@ func PreviewContactMerge(c *gin.Context) {
 	})
 }
 
+// abortContactMergeError unwraps a possibly-*apperrors.AppError coming out of
+// CommitContactMerge's transaction and aborts with the specific status
+// (404/400) when present, falling back to a generic 500 database error
+// otherwise. Mirrors relationship_edge_controller.go's
+// abortRelationshipEdgeError: the transaction legitimately returns 404 (pair
+// not found / loser already merged) and 400 (unresolved conflicts) alongside
+// real database failures, and those must not be flattened into a 500.
+func abortContactMergeError(c *gin.Context, err error) {
+	if appErr, ok := err.(*apperrors.AppError); ok {
+		apperrors.AbortWithError(c, appErr)
+		return
+	}
+	apperrors.AbortWithError(c, apperrors.ErrDatabase("Failed to merge contacts").WithError(err))
+}
+
 // CommitContactMerge merges loser into keeper: applies the field resolution
 // (using the caller's picks for any conflict), re-points every association,
 // discards what can't be re-pointed (ContactSyncLink, the loser's photo),
 // soft-deletes the loser, and writes an audit note on the keeper.
+//
+// Everything -- the pair load, conflict recomputation, validation, and the
+// writes -- happens inside one transaction. Loading the pair *before* the
+// transaction (which this used to do) was a lost-update window: two
+// overlapping commits for the same pair could both observe the loser as live,
+// and the second would then re-apply against its stale snapshot, producing a
+// second merge note and re-appending associations (issue #922). The loser's
+// tombstone is the compare-and-swap token now: because SQLite's `_txlock=
+// immediate` (CLAUDE.md backend trap 9) makes the second transaction block at
+// BEGIN until the first commits, the loser re-load below sees the tombstone
+// and rejects with a clean 404 instead.
 //
 // Conflicts are recomputed fresh from the database here rather than trusting
 // anything the client echoes back from a prior preview call -- if either
@@ -142,49 +168,49 @@ func CommitContactMerge(c *gin.Context) {
 		return
 	}
 
-	keeper, loser, appErr := loadMergePair(db, userID, input)
-	if appErr != nil {
-		apperrors.AbortWithError(c, appErr)
-		return
-	}
-
-	resolution := services.ComputeContactMergeResolution(&keeper, &loser)
-	fvConflicts, err2 := services.ComputeFieldValueConflicts(db, userID, keeper.VCardUID, loser.VCardUID)
-	if err2 != nil {
-		apperrors.AbortWithError(c, apperrors.ErrDatabase("Failed to merge contacts").WithError(err2))
-		return
-	}
-	resolution.FieldValueConflicts = fvConflicts
-
-	if appErr := appendCadencePolicyConflict(db, userID, keeper.VCardUID, loser.VCardUID, resolution, "Failed to merge contacts"); appErr != nil {
-		apperrors.AbortWithError(c, appErr)
-		return
-	}
-
-	missing := missingResolutions(resolution.Conflicts, input.Resolutions)
-	missing = append(missing, missingResolutions(resolution.FieldValueConflicts, input.Resolutions)...)
-	if len(missing) > 0 {
-		apperrors.AbortWithError(c, apperrors.ErrValidation("Unresolved merge conflicts").WithDetails("fields", missing))
-		return
-	}
-
+	var keeper, loser models.Contact
 	var noteContent string
-	// T107: adopt the loser's photo when the keeper has none of its own,
-	// rather than discarding it. Photo/PhotoThumbnail are flat-owned
-	// (contact_card_merge.go's mergeMedia always takes "fresh"), so mutating
-	// them directly here -- the same pattern ApplyContactMergeResolution
-	// already uses for every other flat scalar -- is enough; BeforeSave's
-	// T75 merge rederives Card.Media from these on tx.Save(&keeper) below.
-	// Blanking them on the local `loser` value (not its DB row, which is
-	// about to be soft-deleted regardless) stops deleteContactPhotos below
-	// from deleting the file out from under the keeper that now shares it.
-	if keeper.Photo == "" && loser.Photo != "" {
-		keeper.Photo = loser.Photo
-		keeper.PhotoThumbnail = loser.PhotoThumbnail
-		loser.Photo = ""
-		loser.PhotoThumbnail = ""
-	}
+
 	txErr := db.Transaction(func(tx *gorm.DB) error {
+		var appErr *apperrors.AppError
+		keeper, loser, appErr = loadMergePair(tx, userID, input)
+		if appErr != nil {
+			return appErr
+		}
+
+		resolution := services.ComputeContactMergeResolution(&keeper, &loser)
+		fvConflicts, err2 := services.ComputeFieldValueConflicts(tx, userID, keeper.VCardUID, loser.VCardUID)
+		if err2 != nil {
+			return apperrors.ErrDatabase("Failed to merge contacts").WithError(err2)
+		}
+		resolution.FieldValueConflicts = fvConflicts
+
+		if appErr := appendCadencePolicyConflict(tx, userID, keeper.VCardUID, loser.VCardUID, resolution, "Failed to merge contacts"); appErr != nil {
+			return appErr
+		}
+
+		missing := missingResolutions(resolution.Conflicts, input.Resolutions)
+		missing = append(missing, missingResolutions(resolution.FieldValueConflicts, input.Resolutions)...)
+		if len(missing) > 0 {
+			return apperrors.ErrValidation("Unresolved merge conflicts").WithDetails("fields", missing)
+		}
+
+		// T107: adopt the loser's photo when the keeper has none of its own,
+		// rather than discarding it. Photo/PhotoThumbnail are flat-owned
+		// (contact_card_merge.go's mergeMedia always takes "fresh"), so mutating
+		// them directly here -- the same pattern ApplyContactMergeResolution
+		// already uses for every other flat scalar -- is enough; BeforeSave's
+		// T75 merge rederives Card.Media from these on tx.Save(&keeper) below.
+		// Blanking them on the local `loser` value (not its DB row, which is
+		// about to be soft-deleted regardless) stops deleteContactPhotos below
+		// from deleting the file out from under the keeper that now shares it.
+		if keeper.Photo == "" && loser.Photo != "" {
+			keeper.Photo = loser.Photo
+			keeper.PhotoThumbnail = loser.PhotoThumbnail
+			loser.Photo = ""
+			loser.PhotoThumbnail = ""
+		}
+
 		if err := services.ApplyContactMergeResolution(&keeper, resolution, input.Resolutions); err != nil {
 			return err // defense in depth; already validated above
 		}
@@ -225,7 +251,7 @@ func CommitContactMerge(c *gin.Context) {
 		return nil
 	})
 	if txErr != nil {
-		apperrors.AbortWithError(c, apperrors.ErrDatabase("Failed to merge contacts").WithError(txErr))
+		abortContactMergeError(c, txErr)
 		return
 	}
 
