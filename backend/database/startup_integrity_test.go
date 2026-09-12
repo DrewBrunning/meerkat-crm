@@ -1,20 +1,90 @@
 package database
 
 import (
+	"bytes"
 	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
-	"mycorrhizal/internal/sqlitecorrupt"
-
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
+// corruptPageSize is SQLite's default page size for the databases this app
+// builds.
+const corruptPageSize = 4096
+
+// corruptDataPage overwrites one whole leaf data page of the closed database at
+// path with 0xFF bytes in place, probing candidate pages outward from the middle
+// until it lands one whose corruption PRAGMA integrity_check reports as findings
+// rather than aborting the connection with SQLITE_CORRUPT. The database
+// package's own tests cannot import internal/dbtest (import cycle), so this
+// small helper is local to them instead of shared.
+func corruptDataPage(t *testing.T, path string) {
+	t.Helper()
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	pageCount := info.Size() / corruptPageSize
+	require.Greater(t, pageCount, int64(4), "seed a multi-page database before corrupting it")
+
+	mid := pageCount / 2
+	if probePageReportsFindings(t, path, mid) {
+		return
+	}
+	for delta := int64(1); delta < pageCount/2; delta++ {
+		for _, candidate := range []int64{mid + delta, mid - delta} {
+			if candidate < 2 || candidate >= pageCount {
+				continue
+			}
+			if probePageReportsFindings(t, path, candidate) {
+				return
+			}
+		}
+	}
+	t.Fatal("could not find a data page whose corruption integrity_check reports as findings")
+}
+
+// probePageReportsFindings corrupts page target (1-indexed) in place, checks
+// whether IntegrityCheck reports findings, and restores the original bytes on
+// any other outcome so the caller can try the next page.
+func probePageReportsFindings(t *testing.T, path string, target int64) bool {
+	t.Helper()
+	original := readCorruptPage(t, path, target)
+	writeCorruptPage(t, path, target, bytes.Repeat([]byte{0xFF}, corruptPageSize))
+
+	result, err := IntegrityCheck(path)
+	if err == nil && result != "" && !strings.EqualFold(result, "ok") {
+		return true
+	}
+	writeCorruptPage(t, path, target, original)
+	return false
+}
+
+func readCorruptPage(t *testing.T, path string, target int64) []byte {
+	t.Helper()
+	f, err := os.Open(path)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, f.Close()) }()
+
+	page := make([]byte, corruptPageSize)
+	_, err = f.ReadAt(page, (target-1)*corruptPageSize)
+	require.NoError(t, err)
+	return page
+}
+
+func writeCorruptPage(t *testing.T, path string, target int64, data []byte) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	require.NoError(t, err)
+	_, err = f.WriteAt(data, (target-1)*corruptPageSize)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
+}
+
 // seedMultiPageDatabase builds a migrated database with enough rows that it
-// spans several SQLite pages, then closes it so sqlitecorrupt can overwrite a
+// spans several SQLite pages, then closes it so corruptDataPage can overwrite a
 // real data page. The filler table is deliberately independent of every
 // application table so corrupting one of its pages cannot disturb the
 // schema_migrations row that must stay readable for this test.
@@ -63,7 +133,7 @@ func TestProbeStartupIntegrityPassesFreshAndHealthy(t *testing.T) {
 // migration or backup — not discovered up to 24h later by the scheduled job.
 func TestProbeStartupIntegrityDetectsCorruptDataPage(t *testing.T) {
 	path := seedMultiPageDatabase(t)
-	sqlitecorrupt.DataPage(t, path)
+	corruptDataPage(t, path)
 
 	// The corruption is the "page content does not parse" kind: the migration
 	// version is still readable, which is exactly the case the old startup path
@@ -105,7 +175,7 @@ func TestProbeStartupIntegrityOnUnopenableFile(t *testing.T) {
 // there too (the probe runs before the pre-migration backup).
 func TestMigrateUpRefusesCorruptDatabase(t *testing.T) {
 	path := seedMultiPageDatabase(t)
-	sqlitecorrupt.DataPage(t, path)
+	corruptDataPage(t, path)
 
 	err := MigrateUp(path)
 	var corrupt *ErrDatabaseCorrupt

@@ -421,7 +421,7 @@ func applicationTables(db *sql.DB) ([]string, error) {
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {
-			return nil, err
+			return nil, err // # pragma: no cover -- sqlite_master.name is always a text column; a scan failure needs a broken driver, not a realistic state
 		}
 		names = append(names, name)
 	}
@@ -527,7 +527,7 @@ func RunMigrations(db *sql.DB) error {
 	if err == migrate.ErrNilVersion {
 		tables, terr := applicationTables(db)
 		if terr != nil {
-			return fmt.Errorf("failed to inspect database tables: %w", terr)
+			return fmt.Errorf("failed to inspect database tables: %w", terr) // # pragma: no cover -- reached only if sqlite_master cannot be read on a connection whose version query just succeeded
 		}
 		if len(tables) > 0 {
 			return &ErrPopulatedVersionlessDatabase{Tables: tables}

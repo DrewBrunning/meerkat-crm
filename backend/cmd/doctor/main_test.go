@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -10,7 +11,6 @@ import (
 
 	"mycorrhizal/database"
 	"mycorrhizal/internal/dbtest"
-	"mycorrhizal/internal/sqlitecorrupt"
 	"mycorrhizal/models"
 
 	"github.com/stretchr/testify/assert"
@@ -175,8 +175,82 @@ func corruptDBWithOrphan(t *testing.T) string {
 	require.NoError(t, err)
 	require.NoError(t, sqlDB.Close())
 
-	sqlitecorrupt.DataPage(t, path)
+	corruptDataPageFile(t, path)
 	return path
+}
+
+// doctorCorruptPageSize is SQLite's default page size for these databases.
+const doctorCorruptPageSize = 4096
+
+// corruptDataPageFile overwrites one whole leaf data page of the closed
+// database at path with 0xFF bytes in place, probing candidate pages outward
+// from the middle until it lands one whose corruption PRAGMA integrity_check
+// reports as findings rather than aborting the connection (which would make the
+// file unopenable and the CLI exit 2 instead of the repair refusal under test).
+func corruptDataPageFile(t *testing.T, path string) {
+	t.Helper()
+	info, err := os.Stat(path)
+	require.NoError(t, err)
+	pageCount := info.Size() / doctorCorruptPageSize
+	require.Greater(t, pageCount, int64(4), "seed a multi-page database before corrupting it")
+
+	mid := pageCount / 2
+	if doctorProbePageReportsFindings(t, path, mid) {
+		return
+	}
+	for delta := int64(1); delta < pageCount/2; delta++ {
+		for _, candidate := range []int64{mid + delta, mid - delta} {
+			if candidate < 2 || candidate >= pageCount {
+				continue
+			}
+			if doctorProbePageReportsFindings(t, path, candidate) {
+				return
+			}
+		}
+	}
+	t.Fatal("could not find a data page whose corruption integrity_check reports as findings")
+}
+
+func doctorProbePageReportsFindings(t *testing.T, path string, target int64) bool {
+	t.Helper()
+	original := doctorReadPage(t, path, target)
+	doctorWritePage(t, path, target, bytes.Repeat([]byte{0xFF}, doctorCorruptPageSize))
+
+	result, err := database.IntegrityCheck(path)
+	if err == nil && result != "" && !strings.EqualFold(result, "ok") {
+		return true
+	}
+	doctorWritePage(t, path, target, original)
+	return false
+}
+
+// corruptFilePage deterministically overwrites page n (1-indexed) with 0xFF
+// bytes, for the structural-page shape whose corruption makes integrity_check
+// itself abort rather than report findings.
+func corruptFilePage(t *testing.T, path string, n int64) {
+	t.Helper()
+	doctorWritePage(t, path, n, bytes.Repeat([]byte{0xFF}, doctorCorruptPageSize))
+}
+
+func doctorReadPage(t *testing.T, path string, target int64) []byte {
+	t.Helper()
+	f, err := os.Open(path)
+	require.NoError(t, err)
+	defer func() { require.NoError(t, f.Close()) }()
+
+	page := make([]byte, doctorCorruptPageSize)
+	_, err = f.ReadAt(page, (target-1)*doctorCorruptPageSize)
+	require.NoError(t, err)
+	return page
+}
+
+func doctorWritePage(t *testing.T, path string, target int64, data []byte) {
+	t.Helper()
+	f, err := os.OpenFile(path, os.O_RDWR, 0)
+	require.NoError(t, err)
+	_, err = f.WriteAt(data, (target-1)*doctorCorruptPageSize)
+	require.NoError(t, err)
+	require.NoError(t, f.Close())
 }
 
 // TestDoctor_RepairRefusesCorruptDatabase is the issue #921 gap-2 pin: repair
@@ -219,7 +293,7 @@ func TestDoctor_RepairRefusesCorruptDatabase(t *testing.T) {
 // with the "could not run" message.
 func TestDoctor_RepairRefusesWhenStorageProbeCannotRun(t *testing.T) {
 	path := migratedDBFile(t, nil)
-	sqlitecorrupt.Page(t, path, 2)
+	corruptFilePage(t, path, 2)
 
 	code, _, errOut := run(t, "-db", path, "-repair", "-confirm")
 	assert.Equal(t, 3, code)
