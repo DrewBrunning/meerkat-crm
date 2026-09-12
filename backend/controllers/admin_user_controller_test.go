@@ -3,6 +3,7 @@ package controllers
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"mycorrhizal/config"
 	"mycorrhizal/internal/dbtest"
 	"mycorrhizal/middleware"
@@ -18,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/crypto/bcrypt"
+	"gorm.io/gorm"
 )
 
 // TestDeleteUser_CleansUpAllOwnedRows is the regression test
@@ -1375,6 +1377,35 @@ func TestTriggerPurge(t *testing.T) {
 	assert.Zero(t, deliveryCount, "a delivery past the retention window must be purged by the admin trigger")
 	db.Model(&models.WebhookDelivery{}).Where("id = ?", freshDelivery.ID).Count(&deliveryCount)
 	assert.Equal(t, int64(1), deliveryCount, "a delivery inside the window must survive the admin trigger")
+}
+
+// Issue #975: a failing purge pass must surface as a 500 and a failed manual
+// job_runs row, instead of the endpoint always claiming "Purge completed" and
+// recording success.
+func TestTriggerPurge_FailureSurfaces(t *testing.T) {
+	db, router := setupRouter()
+
+	cfg := config.Config{DeleteRetentionDays: 30, ContactShareRetentionDays: 30, WebhookDeliveryRetentionDays: 30}
+	router.POST("/trigger-purge", func(c *gin.Context) {
+		TriggerPurge(c, cfg)
+	})
+
+	require.NoError(t, db.Callback().Raw().Before("gorm:raw").
+		Register("trigger_purge_test_fail_raw", func(tx *gorm.DB) {
+			tx.AddError(errors.New("simulated purge failure"))
+		}))
+
+	req, _ := http.NewRequest("POST", "/trigger-purge", nil)
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code, w.Body.String())
+
+	var run models.JobRun
+	require.NoError(t, db.Where("job_name = ?", models.JobNamePurgeDeleted).First(&run).Error)
+	assert.Equal(t, models.JobRunResultFailure, run.Result,
+		"a failing admin purge must record a failed manual job run")
+	assert.Contains(t, run.Error, "simulated purge failure")
 }
 
 // M1/T26: PurgeSoftDeletedRows hard-deletes rows past the retention window.

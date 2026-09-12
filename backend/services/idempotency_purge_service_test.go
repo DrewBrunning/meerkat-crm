@@ -90,11 +90,12 @@ func TestPurgeExpiredIdempotencyKeysScheduled_JobLockGuards(t *testing.T) {
 
 // --- failure branches (issue #809) -----------------------------------------
 
-// TestPurgeExpiredIdempotencyKeys_DBErrorIsLoggedNotPanic pins the DELETE-error
-// branch of the plain purge: a failed statement is logged and returns, it must
-// not panic. (Same close-the-sql.DB-mid-test technique as
+// TestPurgeExpiredIdempotencyKeys_DBErrorIsReturnedNotPanic pins the
+// DELETE-error branch of the plain purge: a failed statement is logged and
+// returned (issue #975), it must not panic. (Same close-the-sql.DB-mid-test
+// technique as
 // db_integrity_service_test.go's TestCheckDBIntegrityErrorsOnClosedConnection.)
-func TestPurgeExpiredIdempotencyKeys_DBErrorIsLoggedNotPanic(t *testing.T) {
+func TestPurgeExpiredIdempotencyKeys_DBErrorIsReturnedNotPanic(t *testing.T) {
 	buf := captureLoggerOutput(t)
 	db, uid := newIdempotencyPurgeDB(t)
 	seedIdemKey(t, db, uid, "ancient", 48*time.Hour)
@@ -102,9 +103,11 @@ func TestPurgeExpiredIdempotencyKeys_DBErrorIsLoggedNotPanic(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, sqlDB.Close())
 
+	var purgeErr error
 	require.NotPanics(t, func() {
-		PurgeExpiredIdempotencyKeys(db, config.Config{IdempotencyKeyRetentionHours: 24})
+		purgeErr = PurgeExpiredIdempotencyKeys(db, config.Config{IdempotencyKeyRetentionHours: 24})
 	})
+	require.Error(t, purgeErr, "a failing purge must report the error so the run is recorded as failed")
 	require.Contains(t, buf.String(), "idempotency key purge: failed to delete expired keys")
 }
 
@@ -135,7 +138,7 @@ func TestPurgeExpiredIdempotencyKeysScheduled_LockCheckDBFailureIsSilentNoOp(t *
 		"the job must not run (and therefore not purge) when the lock check cannot reach the database")
 }
 
-// TestPurgeExpiredIdempotencyKeysScheduled_ReleaseLockErrorIsLogged pins the
+// TestPurgeExpiredIdempotencyKeysScheduled_ReleaseLockErrorIsReturned pins the
 // deferred releaseJobLock-error branch. There is no clean seam that fails only
 // the *release*: acquire and release both run inside db.Transaction, and
 // closing the whole DB makes the acquire fail first (the
@@ -143,8 +146,9 @@ func TestPurgeExpiredIdempotencyKeysScheduled_LockCheckDBFailureIsSilentNoOp(t *
 // operation is the final tx.Save(&job) — an UPDATE — so that is poisoned with a
 // GORM update callback registered after seeding. Acquire (query + insert) and
 // the purge DELETE (raw Exec) are unaffected, so the job runs and only the
-// deferred cleanup fails — the branch under test.
-func TestPurgeExpiredIdempotencyKeysScheduled_ReleaseLockErrorIsLogged(t *testing.T) {
+// deferred cleanup fails — the branch under test. A failed release must be
+// surfaced (issue #975) so the run isn't reported as a success.
+func TestPurgeExpiredIdempotencyKeysScheduled_ReleaseLockErrorIsReturned(t *testing.T) {
 	buf := captureLoggerOutput(t)
 	db, uid := newIdempotencyPurgeDB(t)
 	seedIdemKey(t, db, uid, "ancient", 48*time.Hour)
@@ -154,8 +158,10 @@ func TestPurgeExpiredIdempotencyKeysScheduled_ReleaseLockErrorIsLogged(t *testin
 			tx.AddError(errors.New("simulated release failure"))
 		}))
 
+	var purgeErr error
 	require.NotPanics(t, func() {
-		PurgeExpiredIdempotencyKeysScheduled(db, config.Config{IdempotencyKeyRetentionHours: 24})
+		purgeErr = PurgeExpiredIdempotencyKeysScheduled(db, config.Config{IdempotencyKeyRetentionHours: 24})
 	})
+	require.Error(t, purgeErr, "a failed lock release must be surfaced, not swallowed")
 	require.Contains(t, buf.String(), "idempotency key purge: failed to release job lock")
 }

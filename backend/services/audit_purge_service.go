@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"mycorrhizal/config"
 	"mycorrhizal/logger"
 	"mycorrhizal/models"
@@ -23,25 +24,31 @@ var auditPurgeMinInterval = JobCatchupWindow(24 * time.Hour)
 //
 // The delete breaks the tamper-evident hash chain at its head (issue #381), so
 // after any deletion the survivors are re-linked via models.RecomputeAuditChain.
-func PurgeExpiredAuditEvents(db *gorm.DB, cfg config.Config) {
+//
+// It returns the delete error, or a failure to re-link the chain after a
+// successful delete, so the scheduled caller records a failing run as `failed`
+// instead of advancing last_run_at as success (issue #975).
+func PurgeExpiredAuditEvents(db *gorm.DB, cfg config.Config) error {
 	if cfg.AuditRetentionDays <= 0 {
 		// Misconfigured to 0/negative: treat as disabled rather than
 		// deleting every audit row.
-		return
+		return nil
 	}
 	cutoff := time.Now().Add(-time.Duration(cfg.AuditRetentionDays) * 24 * time.Hour)
 
 	result := db.Exec("DELETE FROM audit_events WHERE created_at < ?", cutoff)
 	if result.Error != nil {
 		logger.Error().Err(result.Error).Msg("audit purge: failed to delete expired audit events")
-		return
+		return result.Error
 	}
 	if result.RowsAffected > 0 {
 		logger.Info().Int64("rows", result.RowsAffected).Time("cutoff", cutoff).Msg("Purged expired audit events")
 		if err := models.RecomputeAuditChain(db); err != nil {
 			logger.Error().Err(err).Msg("audit purge: failed to re-link the audit hash chain after purge")
+			return err
 		}
 	}
+	return nil
 }
 
 // PurgeExpiredReachOutSuggestions hard-deletes reach-out suggestions older
@@ -56,20 +63,25 @@ func PurgeExpiredAuditEvents(db *gorm.DB, cfg config.Config) {
 //
 // Non-positive AUDIT_RETENTION_DAYS disables the purge entirely, matching
 // PurgeExpiredAuditEvents — "disabled" must never mean "delete everything".
-func PurgeExpiredReachOutSuggestions(db *gorm.DB, cfg config.Config) {
+//
+// It returns the delete error (nil when disabled or successful) so the
+// scheduled caller records a failing run as `failed` instead of advancing
+// last_run_at as success (issue #975).
+func PurgeExpiredReachOutSuggestions(db *gorm.DB, cfg config.Config) error {
 	if cfg.AuditRetentionDays <= 0 {
-		return
+		return nil
 	}
 	cutoff := time.Now().Add(-time.Duration(cfg.AuditRetentionDays) * 24 * time.Hour)
 
 	result := db.Where("created_at < ?", cutoff).Delete(&models.ReachOutSuggestion{})
 	if result.Error != nil {
 		logger.Error().Err(result.Error).Msg("reach-out purge: failed to delete expired reach-out suggestions")
-		return
+		return result.Error
 	}
 	if result.RowsAffected > 0 {
 		logger.Info().Int64("rows", result.RowsAffected).Time("cutoff", cutoff).Msg("Purged expired reach-out suggestions")
 	}
+	return nil
 }
 
 // PurgeExpiredAuditEventsScheduled is the scheduled cron entry point; it
@@ -77,22 +89,27 @@ func PurgeExpiredReachOutSuggestions(db *gorm.DB, cfg config.Config) {
 // don't double-purge. It purges the audit trail and the reach-out suggestions
 // derived from it together, under one lock, so the two can never diverge
 // (issue #978): a suggestion cannot outlive the audit window its retention is
-// documented against.
-func PurgeExpiredAuditEventsScheduled(db *gorm.DB, cfg config.Config) {
-	acquired, err := acquireJobLock(db, models.JobNameAuditPurge, auditPurgeMinInterval)
-	if err != nil {
-		logger.Error().Err(err).Msg("audit purge: failed to check job lock")
-		return
+// documented against. The outcome is passed to releaseJobLock so a failure is
+// recorded as `failed` and leaves last_run_at stale for job_stopped
+// (issue #975).
+func PurgeExpiredAuditEventsScheduled(db *gorm.DB, cfg config.Config) (err error) {
+	acquired, lockErr := acquireJobLock(db, models.JobNameAuditPurge, auditPurgeMinInterval)
+	if lockErr != nil { // # pragma: no cover — acquireJobLock never returns an error (job_lock.go returns err == nil, nil)
+		logger.Error().Err(lockErr).Msg("audit purge: failed to check job lock") // # pragma: no cover — see the comment above
+		return lockErr                                                           // # pragma: no cover — see the comment above
 	}
 	if !acquired {
-		return
+		return nil
 	}
 	defer func() {
-		if err := releaseJobLock(db, models.JobNameAuditPurge, true); err != nil {
-			logger.Error().Err(err).Msg("audit purge: failed to release job lock")
+		if relErr := releaseJobLock(db, models.JobNameAuditPurge, err == nil); relErr != nil {
+			logger.Error().Err(relErr).Msg("audit purge: failed to release job lock")
+			err = errors.Join(err, relErr)
 		}
 	}()
 
-	PurgeExpiredAuditEvents(db, cfg)
-	PurgeExpiredReachOutSuggestions(db, cfg)
+	return errors.Join(
+		PurgeExpiredAuditEvents(db, cfg),
+		PurgeExpiredReachOutSuggestions(db, cfg),
+	)
 }
