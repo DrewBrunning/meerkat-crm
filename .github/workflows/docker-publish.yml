@@ -1217,6 +1217,16 @@ jobs:
         env:
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # issue #1015: this job has no actions/checkout step (it only needs
+          # a downloaded artifact + `gh release` calls, not repo files), so
+          # `gh` has no git remote to infer the target repo from and fails
+          # with "not a git repository" on its first call -- never caught
+          # before because this job (if: event_name == 'push', an actual tag
+          # push) had never run to completion until #543's RC-verification
+          # cleared every gate ahead of it for the first time. GH_REPO is
+          # gh's own env var for exactly this: pointing it at a repo without
+          # needing a git checkout at all.
+          GH_REPO: ${{ github.repository }}
         run: |
           set -eu
           gh release upload "$RELEASE_TAG" release-assets/*.intoto.jsonl --clobber
@@ -1229,6 +1239,8 @@ jobs:
         env:
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # See the previous step's comment -- same missing-checkout gap.
+          GH_REPO: ${{ github.repository }}
         run: |
           set -eu
           fail=0
