@@ -189,3 +189,22 @@ func TestStartup_EmptyFrontendURL_FailsNamingTheVariable(t *testing.T) {
 		t.Fatalf("startup failure did not name FRONTEND_URL\noutput:\n%s", out)
 	}
 }
+
+// Issue #971: a negative DELETED_RETENTION_DAYS puts the purge cutoff in the
+// future, so the job would hard-delete the entire soft-delete undo window on
+// boot. It must fail at startup naming the variable rather than arm that job.
+func TestStartup_NegativeDeletedRetentionDays_FailsNamingTheVariable(t *testing.T) {
+	if testing.Short() {
+		t.Skip("builds and runs the server binary; skipped under -short")
+	}
+	env := validEnv(t)
+	env["DELETED_RETENTION_DAYS"] = "-1"
+
+	out, failed := runWithEnv(t, env)
+	if !failed {
+		t.Fatalf("server did not exit non-zero with DELETED_RETENTION_DAYS=-1\noutput:\n%s", out)
+	}
+	if !strings.Contains(out, "DELETED_RETENTION_DAYS") {
+		t.Fatalf("startup failure did not name DELETED_RETENTION_DAYS\noutput:\n%s", out)
+	}
+}

@@ -22,7 +22,22 @@ var purgeMinInterval = JobCatchupWindow(24 * time.Hour)
 // Edge/join-shaped rows (activity_contacts, circle_members, contact_tags,
 // etc.) that reference contacts are cleaned up explicitly before the
 // contacts themselves are purged.
+//
+// A non-positive DeleteRetentionDays disables the purge (DELETED_RETENTION_DAYS=0
+// is the documented "keep soft-deleted rows forever" value, .env.example). The
+// guard is not merely a convenience: the cutoff is computed as now minus the
+// window, so with 0 it equals now and with a negative value it lands in the
+// future — either way `deleted_at < cutoff` matches the ENTIRE undo window and
+// this job would hard-delete every soft-deleted row on the next run, including
+// the boot-time Initial trigger in main.go. Every sibling purge (audit,
+// contact-share, idempotency, job-run, system-event, webhook-delivery) carries
+// the same guard for the same reason.
 func PurgeSoftDeletedRows(db *gorm.DB, cfg config.Config) {
+	if cfg.DeleteRetentionDays <= 0 {
+		// Misconfigured to 0/negative, or deliberately disabled: never delete
+		// the whole undo window.
+		return
+	}
 	cutoff := time.Now().AddDate(0, 0, -cfg.DeleteRetentionDays)
 
 	// activity_contacts has no soft-delete. Clean up rows referencing
