@@ -154,17 +154,32 @@ jobs:
           set -eu
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git checkout -B "$SERIES_BRANCH" "$RC_SHA"
 
-          migver=""
-          for f in backend/database/migrations/[0-9]*_*.up.sql; do
-            [ -f "$f" ] || continue
-            n="${f##*/}"; n="${n%%_*}"; n=$((10#$n))
-            if [ -z "$migver" ] || [ "$n" -gt "$migver" ]; then migver="$n"; fi
-          done
-          [ -n "$migver" ] || { echo "::error::no migration files found"; exit 1; }
+          # issue #1020: a prior promotion attempt for this exact RC can have
+          # already pushed this fixture commit to $SERIES_BRANCH and then
+          # failed at a LATER step (the v0.7.0 promotion hit exactly this --
+          # a real main/release-branch merge conflict after this step had
+          # already succeeded). A naive re-dispatch re-derives an identical
+          # commit from RC_SHA and gets rejected as a non-fast-forward push
+          # against the branch's now-advanced tip. Skip registration -- and
+          # adopt the branch's current tip as FINAL_SHA -- when it's already
+          # there, so a retry after a downstream failure doesn't need manual
+          # git surgery on the release branch first.
+          if git show "$SERIES_BRANCH:backend/internal/schemafixture/releases.go" 2>/dev/null | grep -qF "{Tag: \"${FINAL_TAG}\","; then
+            echo "Schema fixture for ${FINAL_TAG} is already registered on ${SERIES_BRANCH} (a prior promotion attempt got this far) -- skipping."
+            echo "FINAL_SHA=$(git rev-parse "$SERIES_BRANCH")" >> "$GITHUB_ENV"
+          else
+            git checkout -B "$SERIES_BRANCH" "$RC_SHA"
 
-          python3 - "$FINAL_TAG" "$migver" <<'PYEOF'
+            migver=""
+            for f in backend/database/migrations/[0-9]*_*.up.sql; do
+              [ -f "$f" ] || continue
+              n="${f##*/}"; n="${n%%_*}"; n=$((10#$n))
+              if [ -z "$migver" ] || [ "$n" -gt "$migver" ]; then migver="$n"; fi
+            done
+            [ -n "$migver" ] || { echo "::error::no migration files found"; exit 1; }
+
+            python3 - "$FINAL_TAG" "$migver" <<'PYEOF'
           import sys
           version, migver = sys.argv[1], sys.argv[2]
           path = "backend/internal/schemafixture/releases.go"
@@ -173,23 +188,24 @@ jobs:
           lines.insert(idx + 1, f'\t{{Tag: "{version}", Version: {migver}}},\n')
           open(path, "w").writelines(lines)
           PYEOF
-          gofmt -w backend/internal/schemafixture/releases.go
-          ( cd backend && go run ./cmd/genschema )
+            gofmt -w backend/internal/schemafixture/releases.go
+            ( cd backend && go run ./cmd/genschema )
 
-          expected="?? backend/database/testdata/schemas/${FINAL_TAG}.sql"
-          actual="$(git status --porcelain -- backend/database/testdata/schemas/)"
-          if [ "$actual" != "$expected" ]; then
-            echo "::error::genschema did not regenerate as expected (want exactly: ${expected})"; echo "$actual"; exit 1
+            expected="?? backend/database/testdata/schemas/${FINAL_TAG}.sql"
+            actual="$(git status --porcelain -- backend/database/testdata/schemas/)"
+            if [ "$actual" != "$expected" ]; then
+              echo "::error::genschema did not regenerate as expected (want exactly: ${expected})"; echo "$actual"; exit 1
+            fi
+            ( cd backend && go test ./internal/schemafixture/... ./cmd/genschema/... ./cmd/releaselist/... )
+
+            git add backend/internal/schemafixture/releases.go "backend/database/testdata/schemas/${FINAL_TAG}.sql"
+            git commit -m "release: register ${FINAL_TAG} schema fixture (promoted from ${RC_TAG}) (issue #529, #446)"
+            echo "FINAL_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
+
+            # shellcheck disable=SC2016
+            helper='!f() { echo "username=x-access-token"; echo "password=${GH_APP_TOKEN}"; }; f'
+            git -c credential.helper="$helper" push origin "HEAD:${SERIES_BRANCH}"
           fi
-          ( cd backend && go test ./internal/schemafixture/... ./cmd/genschema/... ./cmd/releaselist/... )
-
-          git add backend/internal/schemafixture/releases.go "backend/database/testdata/schemas/${FINAL_TAG}.sql"
-          git commit -m "release: register ${FINAL_TAG} schema fixture (promoted from ${RC_TAG}) (issue #529, #446)"
-          echo "FINAL_SHA=$(git rev-parse HEAD)" >> "$GITHUB_ENV"
-
-          # shellcheck disable=SC2016
-          helper='!f() { echo "username=x-access-token"; echo "password=${GH_APP_TOKEN}"; }; f'
-          git -c credential.helper="$helper" push origin "HEAD:${SERIES_BRANCH}"
 
       # Merge FIRST, tag SECOND: the final tag is the point of no return
       # (docker-publish.yml recovery keys off it), so it is only pushed once the
