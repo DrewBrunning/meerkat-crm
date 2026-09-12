@@ -122,8 +122,11 @@ jobs:
       # gate poll (step 3).
       checks: read
       statuses: read
-      # actions: write is used ONLY to `gh workflow run` the two release-tier
-      # suites that have no push:main trigger (step 8). It is scoped to this
+      # actions: write is used to `gh workflow run` the two release-tier
+      # suites that have no push:main trigger (step 8), and (issue #543) the
+      # mandatory per-PR gate workflows when the release ref isn't main
+      # (step 3) -- release/** never gets a push-triggered run of either
+      # kind, deliberately (see step 3's own comment). It is scoped to this
       # one workflow_dispatch-only workflow with no PR path -- the same
       # containment argument as the App token; recorded in
       # asvs-l2-verification-report.md sec 9 (privileged-CI-credential row).
@@ -239,6 +242,7 @@ jobs:
       - name: Gate - mandatory checks are green on the release commit
         env:
           RELEASE_COMMIT: ${{ env.RELEASE_COMMIT }}
+          REF: ${{ inputs.ref }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -eu
@@ -252,12 +256,67 @@ jobs:
           printf '  - %s\n' "${want[@]}"
           want_json="$(printf '%s\n' "${want[@]}" | jq -R . | jq -s .)"
 
-          # main is protected, so these already ran on this exact commit. A
-          # 30-minute deadline is generous slack for an aggregation job that
-          # has not posted yet. Enforcement matches the docker-publish
-          # release-gate job (docs/development/release-gates.md): an OBSERVED
-          # failure is a hard block; the deadline with something still not
-          # reporting is a loud warning and the release proceeds.
+          # Issue #543: a release commit that landed on release/vX.Y.0 by
+          # direct push or merge (not a PR *into* it) has NO path to ever
+          # trigger these mandatory per-PR gate workflows for real --
+          # confirmed on a real RC cut, every one of the 9 gates sat at
+          # "missing" (never started, not merely slow) for the entire
+          # deadline. Root cause: these workflows trigger on `push: branches:
+          # [main]` only, never `release/**` -- deliberately, since a `push:
+          # release/**` trigger would give cache-write access to anyone who
+          # can push the branch, which is exactly what zizmor's
+          # cache-poisoning audit exists to catch (the same reason the
+          # release-tier suites below are dispatched rather than
+          # push-triggered on release/**). For a final release (ref: main)
+          # these already ran for real via that push:main trigger, so
+          # dispatching them again would be redundant -- skip exactly when
+          # the release-tier step below already does.
+          declare -A wf_since=()
+          mapfile -t gate_wfs < <(jq -r '.gates[] | select(.release_gate == true) | .workflow' .github/release-gates.json | sort -u)
+          for wf in "${gate_wfs[@]}"; do
+            if [ "$REF" = "main" ] && grep -qE '^[[:space:]]*push:' ".github/workflows/${wf}" \
+               && grep -qE '^[[:space:]]*branches:.*\bmain\b' ".github/workflows/${wf}"; then
+              echo "  ${wf}: push:main-triggered -- already running for ${sha}"
+            else
+              ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+              echo "  ${wf}: dispatching on ${REF} (ignoring any check-run started before ${ts})"
+              gh workflow run "$wf" --ref "$REF"
+              wf_since["$wf"]="$ts"
+            fi
+          done
+
+          # issue #1013: re-dispatching the same workflow+ref more than once
+          # against this exact commit (a re-run while debugging, a retry)
+          # leaves multiple check-runs sharing one name on the commit, and an
+          # older one can be `cancelled` (superseded by the workflow's own
+          # concurrency group) while the fresh dispatch is still running.
+          # Observed for real in docker-publish.yml's mirror of this same
+          # gate: a stale attempt read back completed/cancelled and
+          # hard-failed the gate seconds after a fresh dispatch that did not
+          # finish (success) until ~65s later -- the poll never got a chance
+          # to wait for it. Record each dispatch's timestamp and, below,
+          # ignore any check-run for that gate that started before its own
+          # workflow's most recent dispatch this run. Empty for any gate
+          # whose workflow was push:main-triggered above (no dispatch
+          # happens there, so no cutoff -- push:main's single real
+          # check-run is trusted as before).
+          since_json='{}'
+          for wf in "${!wf_since[@]}"; do
+            since_json="$(jq -c --arg wf "$wf" --arg ts "${wf_since[$wf]}" '. + {($wf): $ts}' <<<"$since_json")"
+          done
+          since_json="$(jq -c --argjson wf_since "$since_json" '
+            [.gates[] | select(.release_gate == true) | select(.workflow as $w | $wf_since | has($w)) | {(.check_context): $wf_since[.workflow]}] | add // {}
+          ' .github/release-gates.json)"
+
+          # Dispatched runs need real time: Android (Gradle) alone has a
+          # 40-minute timeout-minutes budget. 75 minutes matches the
+          # release-tier suites' own deadline below -- generous headroom for
+          # checks that are now genuinely running, not (as before this fix)
+          # a wait for something structurally absent. Enforcement matches
+          # the docker-publish release-gate job (docs/development/
+          # release-gates.md): an OBSERVED failure is a hard block; the
+          # deadline with something still not reporting is a loud warning
+          # and the release proceeds.
           # $runs / $statuses can be several hundred KB on this repo (dozens of
           # workflows, matrix legs) -- passing that through --argjson on the
           # command line hits the exec argv-size limit (observed failing on a
@@ -266,12 +325,14 @@ jobs:
           # --slurpfile instead, which reads via open(2), not argv.
           runs_file="$(mktemp)"
           statuses_file="$(mktemp)"
-          deadline=$(( $(date +%s) + 30 * 60 ))
+          deadline=$(( $(date +%s) + 75 * 60 ))
           while :; do
             gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${sha}/check-runs" --jq '.check_runs' | jq -s 'add' > "$runs_file"
             gh api --paginate "repos/${GITHUB_REPOSITORY}/commits/${sha}/status" --jq '[.statuses[] | {name: .context, status: "completed", conclusion: (if .state=="success" then "success" elif .state=="pending" then "" else .state end)}]' | jq -s 'add' > "$statuses_file"
-            state="$(jq -c -n --argjson want "$want_json" --slurpfile runs "$runs_file" --slurpfile st "$statuses_file" '
-              (($runs[0] + $st[0]) | group_by(.name) | map(max_by(.started_at // "")) | map({(.name): {status, conclusion}}) | add // {}) as $latest
+            state="$(jq -c -n --argjson want "$want_json" --argjson since "$since_json" --slurpfile runs "$runs_file" --slurpfile st "$statuses_file" '
+              (($runs[0] + $st[0])
+                | map(select((.started_at // "") >= ($since[.name] // "")))
+                | group_by(.name) | map(max_by(.started_at // "")) | map({(.name): {status, conclusion}}) | add // {}) as $latest
               | $want | map({name: ., status: ($latest[.].status // "missing"), conclusion: ($latest[.].conclusion // "")})')"
 
             failed="$(printf '%s' "$state" | jq -r '.[] | select(.status == "completed" and .conclusion != "" and ([.conclusion] | inside(["success","neutral","skipped"]) | not)) | .name')"
@@ -563,12 +624,30 @@ jobs:
             sleep 90
           done
 
+      # GitHub App installation tokens are short-lived (~1h). The original
+      # mint (step "Mint GitHub App token", above) is used for "Push main"
+      # right after it, but by the time we get here the release-tier wait
+      # just above can easily have run 30-75 minutes -- confirmed failing
+      # for real: a v0.7.0-rc.1 cut whose release-tier wait took ~61 minutes
+      # hit "remote: Invalid username or token" / "fatal: Authentication
+      # failed" on the tag push, the token having expired mid-wait. Re-mint
+      # immediately before the two steps that still need to push/call the
+      # API, rather than reuse the now-possibly-stale original token.
+      - name: Re-mint GitHub App token (release-tier wait may have expired the first one)
+        id: app-token-2
+        if: ${{ !inputs.dry_run }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ vars.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+
       - name: Tag and push
         if: ${{ !inputs.dry_run }}
         env:
           VERSION: ${{ env.VERSION }}
           RELEASE_COMMIT: ${{ env.RELEASE_COMMIT }}
-          GH_APP_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_APP_TOKEN: ${{ steps.app-token-2.outputs.token }}
         run: |
           set -eu
           # The tag points at the release commit: the fixture commit for a
@@ -584,7 +663,7 @@ jobs:
         if: ${{ !inputs.dry_run }}
         env:
           VERSION: ${{ env.VERSION }}
-          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          GH_TOKEN: ${{ steps.app-token-2.outputs.token }}
         run: |
           set -eu
           # docker-publish's create-release job makes the Release from the tag

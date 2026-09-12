@@ -51,16 +51,35 @@ trap cleanup EXIT
 curl -fsS -X POST "${base}/session/${session_id}/url" -H 'Content-Type: application/json' \
   -d '{"url":"'"$url"'"}' >/dev/null
 
-title="$(curl -fsS "${base}/session/${session_id}/title" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+# WebDriver's POST .../url only waits for the platform page-load event
+# (DOMContentLoaded/load) -- it returns as soon as the static HTML shell and
+# its synchronous resources are in, well before React has mounted (i18n init,
+# theme setup, an auth check all run async first). Querying title/#root the
+# instant that call returns is a race, not a real "did the app load" check:
+# found here querying immediately reproducibly reports the static
+# <title>Mycorrhizal CRM</title> shell, while the exact same page 2s later
+# has already mounted to the real "Login · Mycorrhizal CRM" -- on a slower
+# JS engine (older Firefox) the race is lost every time, not occasionally.
+# Poll for the title to move off the static default instead of trusting one
+# immediate read.
+title=""
+root_len=-1
+deadline=$(($(date +%s) + 15))
+while [ "$(date +%s)" -lt "$deadline" ]; do
+  title="$(curl -fsS "${base}/session/${session_id}/title" | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+  root_len="$(curl -fsS -X POST "${base}/session/${session_id}/execute/sync" -H 'Content-Type: application/json' \
+    -d '{"script":"var r = document.getElementById(\"root\"); return r ? r.innerHTML.length : -1;","args":[]}' \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
+  if [ "$title" != "Mycorrhizal CRM" ] && [ -n "$title" ] && [ "$root_len" -gt 0 ]; then
+    break
+  fi
+  sleep 0.5
+done
 echo "Page title: $title"
-
-root_len="$(curl -fsS -X POST "${base}/session/${session_id}/execute/sync" -H 'Content-Type: application/json' \
-  -d '{"script":"var r = document.getElementById(\"root\"); return r ? r.innerHTML.length : -1;","args":[]}' \
-  | python3 -c 'import json,sys; print(json.load(sys.stdin)["value"])')"
 echo "#root innerHTML length: $root_len"
 
 if [ "$root_len" -le 0 ]; then
-  echo "::error::$kind $browser_version rendered nothing into #root (length $root_len) -- the app did not load on the documented browser floor"
+  echo "::error::$kind $browser_version rendered nothing into #root (length $root_len) within 15s -- the app did not load on the documented browser floor"
   exit 1
 fi
 
@@ -68,7 +87,7 @@ fi
 # alone -- proves React actually mounted and ran, not just that the HTML
 # shell was served.
 if [ "$title" = "Mycorrhizal CRM" ] || [ -z "$title" ]; then
-  echo "::error::$kind $browser_version never got past the static <title> ('$title') -- the app bundle likely failed to execute"
+  echo "::error::$kind $browser_version never got past the static <title> ('$title') within 15s -- the app bundle likely failed to execute"
   exit 1
 fi
 
