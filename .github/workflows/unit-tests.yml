@@ -386,7 +386,11 @@ jobs:
     #    `-coverprofile` pass) are deliberate and must not be collapsed:
     #    `gotestsum --rerun-fails` truncates the coverprofile on its rerun
     #    invocation (#639), so coverage has to come from a pass with no rerun.
-    timeout-minutes: ${{ github.event_name == 'schedule' && 240 || 35 }}
+    # issue #1014: raised from 35 alongside GO_TEST_TIMEOUT's 25m->30m bump --
+    # the race pass's own -timeout plus the separate no-race coverage pass
+    # (~4-5 more minutes, observed) left too little slack in 35 for a leg
+    # already running close to the old ceiling on real hosted-runner hardware.
+    timeout-minutes: ${{ github.event_name == 'schedule' && 240 || 45 }}
     needs: changes
     if: github.event_name == 'schedule' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.openapi == 'true' || needs.changes.outputs.workflows == 'true'
     strategy:
@@ -409,9 +413,20 @@ jobs:
       # deep search (8000) that surfaces the shape bugs the other suites
       # cannot — and the only constraint on it is finishing before the next
       # night's run. The companion GO_TEST_TIMEOUT scales the per-test ceiling
-      # so a deep nightly run is not killed by the PR-sized 25m timeout.
+      # so a deep nightly run is not killed by the PR-sized 30m timeout.
       RAPID_CHECKS: ${{ github.event_name == 'pull_request' && '200' || (github.event_name == 'push' && '1000' || '8000') }}
-      GO_TEST_TIMEOUT: ${{ github.event_name == 'schedule' && '200m' || '25m' }}
+      # issue #1014: services-2 (the H-Z alphabetic shard, which happens to
+      # catch every Search*/TestSearchMutationPath_* test -- 22
+      # full-index-rebuild calls in search_mutation_path_test.go alone) hit
+      # this ceiling twice in a row on real GitHub-hosted runners cutting
+      # v0.7.0-rc.1, at ~27-30 minutes of actual job wall time -- yet the
+      # exact same leg finishes in ~3 minutes locally, so this is a genuine
+      # hosted-runner-vs-dev-hardware speed gap under -race, not a hang: both
+      # services-1 and services-2 were already within ~10% of the old 25m
+      # ceiling (1646s / 1791s job time). 30m keeps real margin above that
+      # while staying inside this job's own 35-minute timeout-minutes budget
+      # (below) with room for setup/teardown.
+      GO_TEST_TIMEOUT: ${{ github.event_name == 'schedule' && '200m' || '30m' }}
       # The pre-rapid seeded property tests (services/address_normalization
       # _property_test.go) get the same tiered treatment: 200 iterations on
       # PR, 2000 on a merge, 10000 on the nightly deep run.
