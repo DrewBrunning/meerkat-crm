@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -497,4 +498,71 @@ func TestCheckDBIntegrityScheduledFoldsInSearchIndexConsistency(t *testing.T) {
 		require.NoError(t, db.Where("check_name = ?", OpCheckSearchIndexConsistency).First(&row).Error)
 		assert.Equal(t, models.OpCheckStatusError, row.Status)
 	})
+}
+
+// TestCheckDBIntegrityScheduled_SearchErrorFiresWebhook pins issue #921 gap 3:
+// the search-index consistency *error* branch (the check could not run at all,
+// e.g. a physically corrupt or missing FTS table) must alert like the storage
+// and data passes do, not just write an operational-check-result row. This was
+// the one pass whose failure could be silent.
+func TestCheckDBIntegrityScheduled_SearchErrorFiresWebhook(t *testing.T) {
+	db := dbtest.New(t)
+	u := models.User{Username: "fts-err-hook", Password: "password123!A", Email: "fts-err-hook@example.com"}
+	require.NoError(t, db.Create(&u).Error)
+
+	var hits int32
+	var mu sync.Mutex
+	var bodies [][]byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		mu.Lock()
+		bodies = append(bodies, body)
+		mu.Unlock()
+		atomic.AddInt32(&hits, 1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	require.NoError(t, db.Create(&models.Webhook{
+		UserID: u.ID, Name: "alerts", URL: server.URL,
+		Events: []string{EventSearchIndexInconsistent}, Secret: "s", IsActive: true,
+	}).Error)
+
+	// A dropped FTS table makes CheckSearchIndexConsistency return an error
+	// (not divergences), exercising the error branch specifically. It also
+	// makes the data pass fail, so assert on the payload's check name rather
+	// than on delivery count.
+	require.NoError(t, db.Exec(`DROP TABLE notes_fts`).Error)
+
+	cfg := config.Config{DBIntegrityCheckEnabled: true, DBIntegrityCheckIntervalHours: 24}
+	require.NotPanics(t, func() { CheckDBIntegrityScheduled(db, cfg) })
+
+	var row models.OperationalCheckResult
+	require.NoError(t, db.Where("check_name = ?", OpCheckSearchIndexConsistency).First(&row).Error)
+	assert.Equal(t, models.OpCheckStatusError, row.Status)
+
+	type deliveredEnvelope struct {
+		Event string `json:"event"`
+		Data  struct {
+			Check string `json:"check"`
+			Error string `json:"error"`
+		} `json:"data"`
+	}
+	searchDeliveryFound := func() bool {
+		mu.Lock()
+		defer mu.Unlock()
+		for _, body := range bodies {
+			var env deliveredEnvelope
+			if json.Unmarshal(body, &env) == nil &&
+				env.Event == EventSearchIndexInconsistent &&
+				env.Data.Check == OpCheckSearchIndexConsistency &&
+				env.Data.Error != "" {
+				return true
+			}
+		}
+		return false
+	}
+
+	require.Eventually(t, searchDeliveryFound, 3*time.Second, 10*time.Millisecond,
+		"a search-index check error must fire the failure webhook with the check name and error")
 }

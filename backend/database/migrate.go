@@ -100,10 +100,12 @@ func newGormLogger(w io.Writer) gormLogger.Interface {
 
 // InitDB initializes the database connection and runs migrations
 func InitDB(dbPath string) (*gorm.DB, error) {
-	// Take the mandatory pre-migration backup (issue #530), then run every
-	// pending migration. migrateFileWithPreBackup is fail-closed: if the
-	// backup cannot be written it returns ErrPreMigrationBackupFailed and
-	// nothing is migrated.
+	// Probe the file's structural integrity first (issue #921), then take the
+	// mandatory pre-migration backup (issue #530), then run every pending
+	// migration. migrateFileWithPreBackup is fail-closed at each step: a corrupt
+	// file returns ErrDatabaseCorrupt before anything is written, and a backup
+	// that cannot be written returns ErrPreMigrationBackupFailed and nothing is
+	// migrated.
 	if err := migrateFileWithPreBackup(dbPath); err != nil {
 		return nil, fmt.Errorf("failed to run migrations: %w", err)
 	}
@@ -368,6 +370,64 @@ func (e *ErrSubFloorMigration) Error() string {
 	)
 }
 
+// ErrPopulatedVersionlessDatabase is returned when the applied-migration version
+// is unknown (no schema_migrations row) but application tables already exist
+// (issue #926). A populated database whose version row was removed — disk
+// corruption, a hand-edit, a restore from a tool that dropped the bookkeeping
+// table — used to read as version 0 and be treated as a *fresh install*: the
+// mandatory pre-migration backup (issue #530) was skipped, the preflight passed
+// (0 ≤ latest, clean), and m.Up() replayed 000001 against existing tables,
+// failing partway and leaving the database dirty at a low version with no
+// rollback snapshot — defeating the #530 guarantee exactly when it matters.
+//
+// The fix is fail-closed: an empty schema_migrations row set beside real tables
+// is a tampered or corrupted database, not a clean install, and is refused with
+// its own typed error. cmd/migrate prints it and the server start path logs it
+// via logger.Fatal before any migration runs.
+type ErrPopulatedVersionlessDatabase struct {
+	// Tables is a bounded sample of the tables found, for the operator's "yes,
+	// that is really my database" recognition. Never the full list.
+	Tables []string
+}
+
+func (e *ErrPopulatedVersionlessDatabase) Error() string {
+	return fmt.Sprintf(
+		"database carries application tables (%s) but no applied-migration version: "+
+			"the schema_migrations record is missing while the database is not empty. Treating this as a "+
+			"fresh install would replay every migration against existing tables and silently skip the "+
+			"mandatory pre-migration backup. Refusing to start (fail-closed); the database is untouched. "+
+			"Restore it from a known-good backup, or if you are certain the schema is current, restore its "+
+			"schema_migrations row — see docs/operations/migration-recovery.md.",
+		strings.Join(e.Tables, ", "),
+	)
+}
+
+// applicationTables returns up to five non-internal table names other than
+// schema_migrations, ordered for determinism. An empty result means a genuinely
+// fresh database (or an empty schema_migrations-only file); a non-empty result
+// means the database has been migrated before (issue #926). Internal SQLite
+// tables (`sqlite_%`) and the migration bookkeeping table are excluded.
+func applicationTables(db *sql.DB) ([]string, error) {
+	rows, err := db.Query(
+		`SELECT name FROM sqlite_master
+		 WHERE type = 'table' AND name NOT LIKE 'sqlite_%' AND name <> ?
+		 ORDER BY name LIMIT 5`, defaultMigrationsTable)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err // # pragma: no cover -- sqlite_master.name is always a text column; a scan failure needs a broken driver, not a realistic state
+		}
+		names = append(names, name)
+	}
+	return names, rows.Err()
+}
+
 // subFloorMigrationEnvVar is the documented escape hatch for the one-time
 // sub-floor bridge (issue #529 action 5, docs/upgrade-compatibility.md). The
 // normal path is a two-step upgrade through a v0.6.0 release binary, which
@@ -457,6 +517,21 @@ func RunMigrations(db *sql.DB) error {
 	version, dirty, err := m.Version()
 	if err != nil && err != migrate.ErrNilVersion {
 		return fmt.Errorf("failed to get migration version: %w", err)
+	}
+
+	// A version-less database that still carries application tables is not a
+	// fresh install (issue #926): refuse before the preflight treats version 0
+	// as a clean install and before m.Up() replays the chain against existing
+	// tables. A genuinely fresh database has no such tables (only an optional
+	// empty schema_migrations bookkeeping table).
+	if err == migrate.ErrNilVersion {
+		tables, terr := applicationTables(db)
+		if terr != nil {
+			return fmt.Errorf("failed to inspect database tables: %w", terr) // # pragma: no cover -- reached only if sqlite_master cannot be read on a connection whose version query just succeeded
+		}
+		if len(tables) > 0 {
+			return &ErrPopulatedVersionlessDatabase{Tables: tables}
+		}
 	}
 
 	// Fail-closed preflight (issue #439): dirty -> refuse; ahead of binary ->
@@ -651,9 +726,12 @@ func MigrateUp(dbPath string) error {
 }
 
 // migrateFileWithPreBackup is the shared file-level upgrade path behind InitDB
-// (server startup) and MigrateUp (`make migrate-up`): take the mandatory
-// pre-migration backup (issue #530), then apply every pending migration.
+// (server startup) and MigrateUp (`make migrate-up`): probe the file's
+// structural integrity (issue #921), take the mandatory pre-migration backup
+// (issue #530), then apply every pending migration.
 //
+// The integrity probe is first so a corrupt file is neither snapshotted as the
+// rollback point nor migrated; a missing file is a fresh install and passes.
 // The backup is the load-bearing half of the rollback policy — downgrade is
 // unsupported, so a snapshot taken before the upgrade is the only way back to
 // the previous version. It is fail-closed: a backup that cannot be written
@@ -670,6 +748,14 @@ func MigrateUp(dbPath string) error {
 // RunMigrations then re-runs the same fail-closed preflight before applying
 // anything; the version read here is only to decide whether to snapshot.
 func migrateFileWithPreBackup(dbPath string) error {
+	// Fail-closed startup corruption probe (issue #921), before the backup and
+	// before any migration: a structurally unsound file is neither safe to
+	// snapshot as the rollback point nor safe to migrate. A missing file is a
+	// fresh install and passes.
+	if err := probeStartupIntegrity(dbPath); err != nil {
+		return err
+	}
+
 	version, dirty, ok, err := MigrationVersion(dbPath)
 	if err != nil {
 		return err

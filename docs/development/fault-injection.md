@@ -95,6 +95,8 @@ here is a gap to file, never something to silently absorb.
 | Real memory cap during a **migration** | `sudo systemd-run --scope -p MemoryMax=128M` around `cmd/migrate up` on an 8k-contact floor DB | OOM pressure during the row-touching migration (issue #498) | The migration either **completes** (peak RSS ~35 MB even at 100 k contacts — the engine reads through the DB) or is OOM-killed and left **dirty**, and the next start **refuses** (MIG-04); `integrity_check` is `ok` in both cases — never a corrupt or healthy-looking half-migration | external: chaos job `mem-limited-migration` |
 | Real CPU cap during seed / migrate / FTS rebuild | `sudo systemd-run --scope -p CPUQuota=20%` around the CLIs | A throttled CPU (issue #498) | Every operation stays **correct** — exact row counts, `integrity_check=ok`, `foreign_key_check` clean — just slower | external: chaos job `cpu-limited-correctness` |
 | Real `ENOSPC` during a **large migration** | `cmd/migrate` on a 10k-contact floor database mounted on a 1 MiB-slack tmpfs | Disk exhaustion while the migration's row-touching backfills grow the WAL (issue #495's hand-verify: "reduce the available disk below what the migration needs") | The migration exits non-zero; the database is left **dirty at some migration with `integrity_check` ok** — never truncated, never a healthy-looking half-migration; the next startup run **refuses** on the dirty flag (MIG-04) | external: chaos job `large-migration-disk-full`. Note `RLIMIT_FSIZE` is NOT a valid in-process proxy: Linux `ftruncate` ignores it and SQLite pre-extends files with it — a real filesystem filling up is the honest test |
+| `database.file.corrupt` | `database/startup_integrity.go` `probeStartupIntegrity` (startup/`make migrate-up`/`InitDB` path) | A real corrupt page that leaves `schema_migrations` readable (disk rot, torn write, a bad restore) — the shape the 24h scheduled job would notice only much later | The startup path **fails closed before the pre-migration backup and before any migration**: a typed `ErrDatabaseCorrupt` names the integrity finding and the restore path, and the file is untouched (never snapshotted as a rollback point, never migrated). A missing file is a fresh install and still migrates; a genuinely healthy file is unaffected. `cmd/doctor -repair` refuses on a corrupt input with exit code 3 rather than issuing its destructive `DELETE … NOT EXISTS` | in-process: `database/startup_integrity_test.go` `TestProbeStartupIntegrityDetectsCorruptDataPage`, `TestProbeStartupIntegrityOnUnopenableFile`, `TestMigrateUpRefusesCorruptDatabase`, `TestProbeStartupIntegrityPassesFreshAndHealthy`, `TestProbeStartupIntegrityDoesNotCreateDatabase`; `cmd/doctor/main_test.go` `TestDoctor_RepairRefusesCorruptDatabase`, `TestDoctor_RepairRefusesWhenStorageProbeCannotRun` |
+| `database.migration.version_row_missing` | `database/migrate.go` `RunMigrations` (the `applicationTables` guard, reached from `InitDB` and `MigrateUp`) | A populated database whose `schema_migrations` row was removed/tampered (disk corruption, a hand-edit, a non-enforcing restore) | The migration path **refuses** with a typed `ErrPopulatedVersionlessDatabase` naming the tables it found, instead of reading version 0 as a fresh install: the mandatory pre-migration backup is never silently skipped and `000001` is never replayed against existing tables. The schema is left untouched (not dirty, `integrity_check` ok); a genuinely empty database still migrates normally | in-process: `database/versionless_populated_test.go` `TestMigrateUpRefusesPopulatedVersionlessDatabase`, `TestInitDBRefusesPopulatedVersionlessDatabase`, `TestMigrateUpStillMigratesGenuinelyFreshDatabase`, `TestApplicationTablesClassifiesBookkeepingOnlyDatabase`. (Issue #926.) |
 
 ### Planned (filed) — same technique, consumers
 
@@ -180,3 +182,20 @@ no longer aborts the rebuild, so it completes instead of rolling back; deleting
 `services/import_preflight_test.go` `TestConfirm_RefusesWhenDiskTooFull`;
 deleting the `guardExportContactCount` call in `ExportData` fails
 `controllers/export_limit_test.go`. Restore each.
+
+Done for the issue #921 / #926 corruption rows. Deleting the
+`probeStartupIntegrity(dbPath)` call at the top of
+`database/migrate.go` `migrateFileWithPreBackup` fails
+`TestProbeStartupIntegrityDetectsCorruptDataPage` and
+`TestMigrateUpRefusesCorruptDatabase` — `InitDB`/`MigrateUp` then return nil on
+a corrupt page instead of the typed `ErrDatabaseCorrupt`. Removing the storage
+gate at the top of `cmd/doctor/main.go` `runRepair` fails
+`TestDoctor_RepairRefusesCorruptDatabase` and
+`TestDoctor_RepairRefusesWhenStorageProbeCannotRun` — `-repair -confirm` then
+runs its destructive deletes (exit 0) on a corrupt database. Removing the
+`applicationTables` guard in `database/migrate.go` `RunMigrations` fails
+`TestMigrateUpRefusesPopulatedVersionlessDatabase` / `...InitDB...` — the
+version-less populated database is treated as fresh and replays the chain.
+Deleting the `triggerWebhooksForAllUsers` call in the error branch of
+`services/db_integrity_service.go` `checkSearchIndexConsistencyScheduled` fails
+`TestCheckDBIntegrityScheduled_SearchErrorFiresWebhook`. Restore each.
