@@ -384,6 +384,65 @@ func TestExecuteSourceImport_DuplicateSourceRefSkipsSecond(t *testing.T) {
 	assert.Len(t, contacts, 1)
 }
 
+// TestExecuteSourceImport_DuplicateRelationshipNaturalKeySkipped: a source
+// that describes the same (source, target, type) fact under two rows (or a
+// fact a user already created) must not fail the import on the unique index
+// added by migration 000055 — the extra row is skipped and reported, and the
+// import still succeeds.
+func TestExecuteSourceImport_DuplicateRelationshipNaturalKeySkipped(t *testing.T) {
+	db := setupSourceImportTestDB(t)
+	user := createSourceImportUser(t, db)
+
+	plan := &ImportSourcePlan{System: "test"}
+	plan.Contacts = []MappedContact{
+		{Ref: ref("contact/1"), Record: minimalRecord("Ada", "Lovelace")},
+		{Ref: ref("contact/2"), Record: minimalRecord("Ben", "Babbage")},
+	}
+	dup := func(sourceRef string) MappedRelationship {
+		return MappedRelationship{Ref: ref(sourceRef), Source: ref("contact/2"), Target: ref("contact/1"), Type: "spouse_of"}
+	}
+	plan.Relationships = []MappedRelationship{dup("relationship/1"), dup("relationship/2")}
+
+	report, err := ExecuteSourceImport(db, user.ID, plan)
+	require.NoError(t, err)
+	assert.Equal(t, 1, report.RelationshipsCreated, "the duplicate row must not create a second edge")
+
+	var skipped bool
+	for _, iss := range report.Issues {
+		if iss.Record == "test relationship/2" && iss.Field == "relationship" && iss.Category == ImportIssueCategorySkipped {
+			skipped = true
+		}
+	}
+	assert.True(t, skipped, "the redundant relationship row must be reported as skipped")
+
+	var edges []models.RelationshipEdge
+	require.NoError(t, db.Where("user_id = ?", user.ID).Find(&edges).Error)
+	assert.Len(t, edges, 1)
+}
+
+// TestImportRelationships_DatabaseErrorReportsInvalidIssue covers the
+// defensive fallback: a relationship INSERT that fails for a reason other than
+// the #928 unique index is recorded as an invalid issue rather than aborting
+// the whole import. The table is dropped to force a non-unique DB error.
+func TestImportRelationships_DatabaseErrorReportsInvalidIssue(t *testing.T) {
+	db := setupSourceImportTestDB(t)
+	require.NoError(t, db.Migrator().DropTable(&models.RelationshipEdge{}))
+
+	plan := &ImportSourcePlan{System: "test", Relationships: []MappedRelationship{{
+		Ref: ref("relationship/1"), Source: ref("contact/1"), Target: ref("contact/2"), Type: "friend_of",
+	}}}
+	report := &ImportReport{}
+	err := importRelationships(db, 1, plan, map[string]bool{},
+		func(string, SourceRef) (string, bool) { return "uid-src", true },
+		func(string, SourceRef) bool { return false },
+		report,
+	)
+	require.NoError(t, err, "a per-relationship DB error is reported, not fatal")
+	require.Len(t, report.Issues, 1)
+	assert.Equal(t, ImportIssueCategoryInvalid, report.Issues[0].Category)
+	assert.Equal(t, "test relationship/1", report.Issues[0].Record)
+}
+
 // TestExecuteSourceImport_DuplicateVCardUIDReportedNotHalfCreated: a mapped
 // contact whose Card.UID collides with an existing contact's VCardUID fails
 // creation (partial unique index) and is reported with its record, leaving

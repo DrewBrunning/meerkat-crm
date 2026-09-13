@@ -722,6 +722,13 @@ func parseSourceTime(s string) (time.Time, error) {
 
 // -- graph entity importers --------------------------------------------------
 
+// isRelationshipEdgeNaturalKeyConflict reports whether err is the SQLite
+// unique-constraint violation of the relationship_edges natural key added by
+// migration 000055 (issue #928).
+func isRelationshipEdgeNaturalKeyConflict(err error) bool {
+	return strings.Contains(err.Error(), "UNIQUE constraint failed: relationship_edges")
+}
+
 func importRelationships(tx *gorm.DB, userID uint, plan *ImportSourcePlan, imported map[string]bool,
 	uidOf func(string, SourceRef) (string, bool), skipImported func(string, SourceRef) bool, report *ImportReport,
 ) error {
@@ -757,8 +764,23 @@ func importRelationships(tx *gorm.DB, userID uint, plan *ImportSourcePlan, impor
 			Status:      status,
 			Sensitivity: sensitivity,
 		}
-		if err := tx.Create(&edge).Error; err != nil { // # pragma: no cover — defensive error handling, unreachable in a healthy migrated schema
-			report.appendIssue(ImportIssue{
+		if err := tx.Create(&edge).Error; err != nil {
+			// A duplicate natural key (same source/target/type already stored,
+			// whether from an earlier import row or a user-created edge) is not
+			// an import failure — the fact is already present, so the extra
+			// source row is skipped. The unique index is migration 000055
+			// (issue #928); without the explicit branch this would surface as
+			// a spurious "invalid" import issue.
+			if isRelationshipEdgeNaturalKeyConflict(err) {
+				report.appendIssue(ImportIssue{
+					Record:   record,
+					Field:    "relationship",
+					Category: ImportIssueCategorySkipped,
+					Message:  "relationship already exists for these contacts",
+				})
+				continue
+			}
+			report.appendIssue(ImportIssue{ // # pragma: no cover — a healthy migrated schema accepts every other relationship row; this is defensive
 				Record:   record,
 				Field:    "relationship",
 				Category: ImportIssueCategoryInvalid,

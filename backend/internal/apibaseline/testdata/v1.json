@@ -6051,6 +6051,10 @@
         {
           "status": "404",
           "schema": "ref:Error"
+        },
+        {
+          "status": "409",
+          "schema": "ref:Error"
         }
       ]
     },

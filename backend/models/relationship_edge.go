@@ -62,20 +62,25 @@ type RelationshipEdge struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 
-	UserID uint `gorm:"not null;index" json:"-"`
+	// UserID/SourceID/TargetID/Type together form the edge's natural key:
+	// migration 000055 (issue #928) puts a unique index on the tuple so a
+	// double-clicked or replayed create cannot silently duplicate the fact.
+	// The tags mirror that index for any AutoMigrate-based test; the app's
+	// schema comes from the hand-written migration (CLAUDE.md backend trap 1).
+	UserID uint `gorm:"not null;index;uniqueIndex:idx_relationship_edges_natural_key,priority:1" json:"-"`
 
 	// SourceID/TargetID are Contact.VCardUID values, not Contact.ID — the
 	// graph invariant that every relationship endpoint is an entity
 	// referenced by its stable UUID, never a bare string.
-	SourceID string `gorm:"not null;index" json:"source_id" validate:"required,uuid4"`
-	TargetID string `gorm:"not null;index" json:"target_id" validate:"required,uuid4"`
+	SourceID string `gorm:"not null;index;uniqueIndex:idx_relationship_edges_natural_key,priority:2" json:"source_id" validate:"required,uuid4"`
+	TargetID string `gorm:"not null;index;uniqueIndex:idx_relationship_edges_natural_key,priority:3" json:"target_id" validate:"required,uuid4"`
 
 	// Type is the social role (e.g. "parent_of", "spouse_of") — see
 	// relationship_type_registry.go for the full registered set. The real-
 	// world nuance (biological/adoptive/step, poly descriptors, custody...)
 	// belongs in Metadata, never in a new Type token ("type = role,
 	// metadata = nature" rule).
-	Type string `gorm:"not null;index" json:"type" validate:"required,relation_type"`
+	Type string `gorm:"not null;index;uniqueIndex:idx_relationship_edges_natural_key,priority:4" json:"type" validate:"required,relation_type"`
 
 	// Directional is per-edge, not derived from the registry: most relation
 	// types have one conventional default (spouse_of is normally symmetric,

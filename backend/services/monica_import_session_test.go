@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -136,7 +137,30 @@ func mockMonica(t *testing.T, opt mockMonicaOptions) *httptest.Server {
 	return srv
 }
 
-func monicaTestLogger(buf *bytes.Buffer) *zerolog.Logger {
+// syncBuffer is a goroutine-safe log sink for the Monica import tests. The
+// manager logs from its background goroutines while the test reads the buffer
+// after the session reaches a terminal phase; a plain bytes.Buffer races there
+// because the phase write and the completion log are not ordered (the log is
+// emitted after the mutex-guarded phase transition). Both the logger's Write
+// and the test's String go through the same mutex.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
+func monicaTestLogger(buf *syncBuffer) *zerolog.Logger {
 	l := zerolog.New(buf)
 	return &l
 }
@@ -181,7 +205,7 @@ func TestMonicaImportSession_FullFlow_AddAndMerge(t *testing.T) {
 	grace := models.Contact{UserID: user.ID, Firstname: "Grace", Lastname: "Hopper"}
 	require.NoError(t, db.Create(&grace).Error)
 
-	var logBuf bytes.Buffer
+	var logBuf syncBuffer
 	log := monicaTestLogger(&logBuf)
 	mgr := NewMonicaImportManager()
 
@@ -250,7 +274,7 @@ func TestMonicaImportSession_ReRunIsIdempotent(t *testing.T) {
 
 	db := setupSourceImportTestDB(t)
 	user := createSourceImportUser(t, db)
-	log := monicaTestLogger(&bytes.Buffer{})
+	log := monicaTestLogger(&syncBuffer{})
 	mgr := NewMonicaImportManager()
 
 	run := func() *models.MonicaImportResult {
@@ -289,7 +313,7 @@ func TestMonicaImportSession_AvatarDownloadedAfterImport(t *testing.T) {
 
 	db := setupSourceImportTestDB(t)
 	user := createSourceImportUser(t, db)
-	log := monicaTestLogger(&bytes.Buffer{})
+	log := monicaTestLogger(&syncBuffer{})
 	mgr := NewMonicaImportManager()
 
 	resp, appErr := mgr.Connect(context.Background(), user.ID,
@@ -327,7 +351,7 @@ func TestMonicaImportSession_AvatarFailurePathCounted(t *testing.T) {
 
 	db := setupSourceImportTestDB(t)
 	user := createSourceImportUser(t, db)
-	var logBuf bytes.Buffer
+	var logBuf syncBuffer
 	log := monicaTestLogger(&logBuf)
 	mgr := NewMonicaImportManager()
 
@@ -364,7 +388,7 @@ func TestMonicaImportSession_ExtrasAndRelationshipsFetched(t *testing.T) {
 
 	db := setupSourceImportTestDB(t)
 	user := createSourceImportUser(t, db)
-	log := monicaTestLogger(&bytes.Buffer{})
+	log := monicaTestLogger(&syncBuffer{})
 	mgr := NewMonicaImportManager()
 
 	resp, appErr := mgr.Connect(context.Background(), user.ID,
@@ -416,7 +440,7 @@ func TestMonicaImportSession_FetchFailsAfterConnect(t *testing.T) {
 
 	db := setupSourceImportTestDB(t)
 	user := createSourceImportUser(t, db)
-	log := monicaTestLogger(&bytes.Buffer{})
+	log := monicaTestLogger(&syncBuffer{})
 	mgr := NewMonicaImportManager()
 
 	resp, appErr := mgr.Connect(context.Background(), user.ID,
@@ -556,7 +580,7 @@ func TestMonicaImportManager_CancelInFlightImport(t *testing.T) {
 func TestMonicaImportManager_RunImportCancelledContext(t *testing.T) {
 	db := setupSourceImportTestDB(t)
 	user := createSourceImportUser(t, db)
-	log := monicaTestLogger(&bytes.Buffer{})
+	log := monicaTestLogger(&syncBuffer{})
 	mgr := NewMonicaImportManager()
 
 	now := time.Now()

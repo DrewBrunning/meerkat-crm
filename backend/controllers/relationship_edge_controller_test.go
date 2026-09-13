@@ -3,6 +3,8 @@ package controllers
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	apperrors "mycorrhizal/errors"
 	"mycorrhizal/middleware"
 	"mycorrhizal/models"
 	"net/http"
@@ -750,4 +752,228 @@ func TestCreateRelationshipEdge_RealValidation_RelationType(t *testing.T) {
 			}
 		})
 	}
+}
+
+// --- natural-key duplicate handling (issue #928) ----------------------------
+
+// TestCreateRelationshipEdge_DuplicateNaturalKeyConflict is the double-click /
+// replay regression: the exact same (source, target, type) create a second
+// time must be a checked 409, not a second stored row.
+func TestCreateRelationshipEdge_DuplicateNaturalKeyConflict(t *testing.T) {
+	db, router := setupRouter()
+	router.POST("/relationship-edges", withValidated(func() any { return &models.RelationshipEdgeInput{} }), CreateRelationshipEdge)
+
+	var user models.User
+	db.First(&user)
+	alice := models.Contact{UserID: user.ID, Firstname: "Alice"}
+	bob := models.Contact{UserID: user.ID, Firstname: "Bob"}
+	require.NoError(t, db.Create(&alice).Error)
+	require.NoError(t, db.Create(&bob).Error)
+
+	payload := models.RelationshipEdgeInput{SourceID: alice.VCardUID, TargetID: bob.VCardUID, Type: "parent_of"}
+	body, _ := json.Marshal(payload)
+
+	post := func() *httptest.ResponseRecorder {
+		req, _ := http.NewRequest("POST", "/relationship-edges", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		return w
+	}
+
+	require.Equal(t, http.StatusCreated, post().Code)
+
+	second := post()
+	require.Equal(t, http.StatusConflict, second.Code, "a duplicate create must be rejected with 409")
+
+	var resp struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	require.NoError(t, json.Unmarshal(second.Body.Bytes(), &resp))
+	assert.Equal(t, "ALREADY_EXISTS", resp.Error.Code)
+
+	var count int64
+	require.NoError(t, db.Model(&models.RelationshipEdge{}).Where("user_id = ?", user.ID).Count(&count).Error)
+	assert.Equal(t, int64(1), count, "a duplicate create must not insert a second edge")
+}
+
+// TestCreateRelationshipEdge_DifferentTypeSameEndpointsAllowed proves the
+// natural key includes the type: the same two contacts may hold two different
+// relationship facts.
+func TestCreateRelationshipEdge_DifferentTypeSameEndpointsAllowed(t *testing.T) {
+	db, router := setupRouter()
+	router.POST("/relationship-edges", withValidated(func() any { return &models.RelationshipEdgeInput{} }), CreateRelationshipEdge)
+
+	var user models.User
+	db.First(&user)
+	alice := models.Contact{UserID: user.ID, Firstname: "Alice"}
+	bob := models.Contact{UserID: user.ID, Firstname: "Bob"}
+	require.NoError(t, db.Create(&alice).Error)
+	require.NoError(t, db.Create(&bob).Error)
+
+	for _, relType := range []string{"parent_of", "friend_of"} {
+		body, _ := json.Marshal(models.RelationshipEdgeInput{SourceID: alice.VCardUID, TargetID: bob.VCardUID, Type: relType})
+		req, _ := http.NewRequest("POST", "/relationship-edges", bytes.NewBuffer(body))
+		req.Header.Set("Content-Type", "application/json")
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+		require.Equal(t, http.StatusCreated, w.Code, "type %s must be allowed", relType)
+	}
+
+	var count int64
+	require.NoError(t, db.Model(&models.RelationshipEdge{}).Where("user_id = ?", user.ID).Count(&count).Error)
+	assert.Equal(t, int64(2), count)
+}
+
+// TestRelationshipEdgeNaturalKey_ScopedByUser proves the natural key is scoped
+// by user_id — two different users may each record the same relationship tuple.
+func TestRelationshipEdgeNaturalKey_ScopedByUser(t *testing.T) {
+	db, _ := setupRouter()
+
+	otherUser := models.User{Username: "other8", Password: "x", Email: "other8@example.com"}
+	require.NoError(t, db.Create(&otherUser).Error)
+
+	var first models.User
+	db.First(&first)
+
+	// Identical tuple (even identical endpoint IDs) under two users.
+	tuple := func(uid uint) *models.RelationshipEdge {
+		return &models.RelationshipEdge{
+			UserID: uid, SourceID: "shared-src", TargetID: "shared-tgt", Type: "friend_of",
+			Source: models.RelationshipSourceUserConfirmed, Confidence: 1.0, Status: models.RelationshipStatusConfirmed,
+		}
+	}
+	require.NoError(t, db.Create(tuple(first.ID)).Error)
+	require.NoError(t, db.Create(tuple(otherUser.ID)).Error, "the same tuple under a different user must not collide")
+}
+
+// TestUpdateRelationshipEdge_RepointOntoExistingConflict proves PUT cannot
+// re-point an edge onto another edge's natural key — the same uniqueness gate
+// as create, with the edge under edit excluded from its own lookup.
+func TestUpdateRelationshipEdge_RepointOntoExistingConflict(t *testing.T) {
+	db, router := setupRouter()
+	router.PUT("/relationship-edges/:id", withValidated(func() any { return &models.RelationshipEdgeInput{} }), UpdateRelationshipEdge)
+
+	var user models.User
+	db.First(&user)
+	alice := models.Contact{UserID: user.ID, Firstname: "Alice"}
+	bob := models.Contact{UserID: user.ID, Firstname: "Bob"}
+	carol := models.Contact{UserID: user.ID, Firstname: "Carol"}
+	require.NoError(t, db.Create(&alice).Error)
+	require.NoError(t, db.Create(&bob).Error)
+	require.NoError(t, db.Create(&carol).Error)
+
+	existing := models.RelationshipEdge{
+		UserID: user.ID, SourceID: alice.VCardUID, TargetID: bob.VCardUID, Type: "friend_of",
+		Source: models.RelationshipSourceUserConfirmed, Confidence: 1.0, Status: models.RelationshipStatusConfirmed,
+	}
+	moving := models.RelationshipEdge{
+		UserID: user.ID, SourceID: alice.VCardUID, TargetID: carol.VCardUID, Type: "parent_of",
+		Source: models.RelationshipSourceUserConfirmed, Confidence: 1.0, Status: models.RelationshipStatusConfirmed,
+	}
+	require.NoError(t, db.Create(&existing).Error)
+	require.NoError(t, db.Create(&moving).Error)
+
+	// Re-point `moving` at (alice, bob, friend_of) — exactly `existing`.
+	payload := models.RelationshipEdgeInput{SourceID: alice.VCardUID, TargetID: bob.VCardUID, Type: "friend_of"}
+	body, _ := json.Marshal(payload)
+	req, _ := http.NewRequest("PUT", "/relationship-edges/"+moving.ID, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	require.Equal(t, http.StatusConflict, w.Code, "re-pointing onto an existing natural key must be a 409")
+
+	var reloaded models.RelationshipEdge
+	require.NoError(t, db.First(&reloaded, "id = ?", moving.ID).Error)
+	assert.Equal(t, carol.VCardUID, reloaded.TargetID, "the rejected update must leave the edge unchanged")
+	assert.Equal(t, "parent_of", reloaded.Type)
+}
+
+// TestRelationshipEdgeWriteError maps the SQLite unique-constraint backstop
+// (the pre-check can lose a race) to the same 409, and passes every other
+// error through untouched.
+func TestRelationshipEdgeWriteError(t *testing.T) {
+	mapped := relationshipEdgeWriteError(errors.New("UNIQUE constraint failed: relationship_edges.user_id, relationship_edges.source_id"))
+	appErr, ok := mapped.(*apperrors.AppError)
+	require.True(t, ok, "a unique-constraint violation must map to an AppError")
+	assert.Equal(t, http.StatusConflict, appErr.HTTPStatus)
+
+	original := errors.New("some other database failure")
+	assert.Same(t, original, relationshipEdgeWriteError(original), "unrelated errors must pass through verbatim")
+}
+
+// TestRelationshipEdgeDuplicate_DatabaseError covers the duplicate pre-check's
+// error path: a broken connection is reported as a 500 database error, not a
+// 409. Closing the pool is the only way to make the otherwise-unreachable
+// SELECT fail against a healthy schema.
+func TestRelationshipEdgeDuplicate_DatabaseError(t *testing.T) {
+	db, _ := setupRouter()
+	sqlDB, err := db.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	aerr := relationshipEdgeDuplicate(db, &models.RelationshipEdge{
+		UserID: 1, SourceID: "a", TargetID: "b", Type: "friend_of",
+	})
+	require.NotNil(t, aerr)
+	assert.Equal(t, http.StatusInternalServerError, aerr.HTTPStatus)
+}
+
+// TestCreateRelationshipEdge_WriteErrorIs500 covers the write-error mapping's
+// non-duplicate path: when the INSERT itself fails for another reason the
+// error stays a 500 rather than being mislabelled a duplicate.
+func TestCreateRelationshipEdge_WriteErrorIs500(t *testing.T) {
+	db, router := setupRouter()
+	router.POST("/relationship-edges", withValidated(func() any { return &models.RelationshipEdgeInput{} }), CreateRelationshipEdge)
+
+	var user models.User
+	db.First(&user)
+	alice := models.Contact{UserID: user.ID, Firstname: "Alice"}
+	bob := models.Contact{UserID: user.ID, Firstname: "Bob"}
+	require.NoError(t, db.Create(&alice).Error)
+	require.NoError(t, db.Create(&bob).Error)
+
+	require.NoError(t, db.Exec(
+		"CREATE TRIGGER block_edge_insert BEFORE INSERT ON relationship_edges BEGIN SELECT RAISE(ABORT, 'blocked'); END;").Error)
+
+	body, _ := json.Marshal(models.RelationshipEdgeInput{SourceID: alice.VCardUID, TargetID: bob.VCardUID, Type: "parent_of"})
+	req, _ := http.NewRequest("POST", "/relationship-edges", bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
+}
+
+// TestUpdateRelationshipEdge_WriteErrorIs500 is the PUT counterpart of the
+// test above.
+func TestUpdateRelationshipEdge_WriteErrorIs500(t *testing.T) {
+	db, router := setupRouter()
+	router.PUT("/relationship-edges/:id", withValidated(func() any { return &models.RelationshipEdgeInput{} }), UpdateRelationshipEdge)
+
+	var user models.User
+	db.First(&user)
+	alice := models.Contact{UserID: user.ID, Firstname: "Alice"}
+	bob := models.Contact{UserID: user.ID, Firstname: "Bob"}
+	require.NoError(t, db.Create(&alice).Error)
+	require.NoError(t, db.Create(&bob).Error)
+	edge := models.RelationshipEdge{
+		UserID: user.ID, SourceID: alice.VCardUID, TargetID: bob.VCardUID, Type: "friend_of",
+		Source: models.RelationshipSourceUserConfirmed, Confidence: 1.0, Status: models.RelationshipStatusConfirmed,
+	}
+	require.NoError(t, db.Create(&edge).Error)
+
+	require.NoError(t, db.Exec(
+		"CREATE TRIGGER block_edge_update BEFORE UPDATE ON relationship_edges BEGIN SELECT RAISE(ABORT, 'blocked'); END;").Error)
+
+	body, _ := json.Marshal(models.RelationshipEdgeInput{SourceID: alice.VCardUID, TargetID: bob.VCardUID, Type: "roommate_of"})
+	req, _ := http.NewRequest("PUT", "/relationship-edges/"+edge.ID, bytes.NewBuffer(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusInternalServerError, w.Code)
 }
