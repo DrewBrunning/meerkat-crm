@@ -181,6 +181,40 @@ func recoverJobReport(db *gorm.DB, jobName, trigger string, fn func() (int, erro
 	return func() { runJobReport(db, jobName, trigger, fn) }
 }
 
+// The purge-task constructors below adapt each purge service's scheduled entry
+// point into the func() error that execJob runs. They are package-level (rather
+// than inline closures in main) so main_test can assert the wiring: the error
+// returned by the purge must reach execJob, otherwise a failing retention job
+// records job_runs.result=success, last_run_at advances, and job_stopped can
+// never fire (issue #975).
+func purgeDeletedTask(db *gorm.DB, cfg config.Config) func() error {
+	return func() error { return services.PurgeDeletedRows(db, cfg) }
+}
+
+func auditPurgeTask(db *gorm.DB, cfg config.Config) func() error {
+	return func() error { return services.PurgeExpiredAuditEventsScheduled(db, cfg) }
+}
+
+func systemEventPurgeTask(db *gorm.DB, cfg config.Config) func() error {
+	return func() error { return services.PurgeExpiredSystemEventsScheduled(db, cfg) }
+}
+
+func jobRunPurgeTask(db *gorm.DB, cfg config.Config) func() error {
+	return func() error { return services.PurgeExpiredJobRunsScheduled(db, cfg) }
+}
+
+func webhookDeliveryPurgeTask(db *gorm.DB, cfg config.Config) func() error {
+	return func() error { return services.PurgeExpiredWebhookDeliveriesScheduled(db, cfg) }
+}
+
+func idempotencyKeyPurgeTask(db *gorm.DB, cfg config.Config) func() error {
+	return func() error { return services.PurgeExpiredIdempotencyKeysScheduled(db, cfg) }
+}
+
+func sessionPurgeTask(db *gorm.DB) func() error {
+	return func() error { return services.PurgeExpiredSessionsScheduled(db) }
+}
+
 func main() {
 	// Initialize logger first
 	logLevel := os.Getenv("LOG_LEVEL")
@@ -332,66 +366,38 @@ func main() {
 	go safeGo(db, models.JobNameCalendarSync, models.JobTriggerInitial, calendarSyncTask)
 
 	// Purge soft-deleted rows past their retention window (T26).
-	purgeDeletedTask := func() error {
-		services.PurgeDeletedRows(db, *cfg)
-		return nil
-	}
-	s.Every(24).Hours().Do(recoverJob(db, models.JobNamePurgeDeleted, models.JobTriggerScheduled, purgeDeletedTask))
-	go safeGo(db, models.JobNamePurgeDeleted, models.JobTriggerInitial, purgeDeletedTask)
+	s.Every(24).Hours().Do(recoverJob(db, models.JobNamePurgeDeleted, models.JobTriggerScheduled, purgeDeletedTask(db, *cfg)))
+	go safeGo(db, models.JobNamePurgeDeleted, models.JobTriggerInitial, purgeDeletedTask(db, *cfg))
 
 	// Purge expired audit events past their retention window (T18).
-	auditPurgeTask := func() error {
-		services.PurgeExpiredAuditEventsScheduled(db, *cfg)
-		return nil
-	}
-	s.Every(24).Hours().Do(recoverJob(db, models.JobNameAuditPurge, models.JobTriggerScheduled, auditPurgeTask))
-	go safeGo(db, models.JobNameAuditPurge, models.JobTriggerInitial, auditPurgeTask)
+	s.Every(24).Hours().Do(recoverJob(db, models.JobNameAuditPurge, models.JobTriggerScheduled, auditPurgeTask(db, *cfg)))
+	go safeGo(db, models.JobNameAuditPurge, models.JobTriggerInitial, auditPurgeTask(db, *cfg))
 
 	// Purge expired system_events past their retention window (issue #424).
-	systemEventPurgeTask := func() error {
-		services.PurgeExpiredSystemEventsScheduled(db, *cfg)
-		return nil
-	}
-	s.Every(24).Hours().Do(recoverJob(db, models.JobNameSystemEventPurge, models.JobTriggerScheduled, systemEventPurgeTask))
-	go safeGo(db, models.JobNameSystemEventPurge, models.JobTriggerInitial, systemEventPurgeTask)
+	s.Every(24).Hours().Do(recoverJob(db, models.JobNameSystemEventPurge, models.JobTriggerScheduled, systemEventPurgeTask(db, *cfg)))
+	go safeGo(db, models.JobNameSystemEventPurge, models.JobTriggerInitial, systemEventPurgeTask(db, *cfg))
 
 	// Purge expired job_runs past their retention window (issue #391).
-	jobRunPurgeTask := func() error {
-		services.PurgeExpiredJobRunsScheduled(db, *cfg)
-		return nil
-	}
-	s.Every(24).Hours().Do(recoverJob(db, models.JobNameJobRunPurge, models.JobTriggerScheduled, jobRunPurgeTask))
-	go safeGo(db, models.JobNameJobRunPurge, models.JobTriggerInitial, jobRunPurgeTask)
+	s.Every(24).Hours().Do(recoverJob(db, models.JobNameJobRunPurge, models.JobTriggerScheduled, jobRunPurgeTask(db, *cfg)))
+	go safeGo(db, models.JobNameJobRunPurge, models.JobTriggerInitial, jobRunPurgeTask(db, *cfg))
 
 	// Purge expired webhook deliveries past their retention window (issue
 	// #622). Job-lock guarded so a multi-instance deploy does not double-purge.
-	webhookDeliveryPurgeTask := func() error {
-		services.PurgeExpiredWebhookDeliveriesScheduled(db, *cfg)
-		return nil
-	}
-	s.Every(24).Hours().Do(recoverJob(db, models.JobNameWebhookDeliveryPurge, models.JobTriggerScheduled, webhookDeliveryPurgeTask))
-	go safeGo(db, models.JobNameWebhookDeliveryPurge, models.JobTriggerInitial, webhookDeliveryPurgeTask)
+	s.Every(24).Hours().Do(recoverJob(db, models.JobNameWebhookDeliveryPurge, models.JobTriggerScheduled, webhookDeliveryPurgeTask(db, *cfg)))
+	go safeGo(db, models.JobNameWebhookDeliveryPurge, models.JobTriggerInitial, webhookDeliveryPurgeTask(db, *cfg))
 
 	// Purge expired idempotency keys past their (short) TTL window (issue
 	// #459, CON-04). Runs more often than the daily purges because the window
 	// itself is hours, not days. Job-lock guarded against multi-instance
 	// double-purge.
-	idempotencyKeyPurgeTask := func() error {
-		services.PurgeExpiredIdempotencyKeysScheduled(db, *cfg)
-		return nil
-	}
-	s.Every(6).Hours().Do(recoverJob(db, models.JobNameIdempotencyKeyPurge, models.JobTriggerScheduled, idempotencyKeyPurgeTask))
-	go safeGo(db, models.JobNameIdempotencyKeyPurge, models.JobTriggerInitial, idempotencyKeyPurgeTask)
+	s.Every(6).Hours().Do(recoverJob(db, models.JobNameIdempotencyKeyPurge, models.JobTriggerScheduled, idempotencyKeyPurgeTask(db, *cfg)))
+	go safeGo(db, models.JobNameIdempotencyKeyPurge, models.JobTriggerInitial, idempotencyKeyPurgeTask(db, *cfg))
 
 	// Purge expired / long-revoked session rows (issue #866). Not disablable —
 	// an expired session row has no recovery value. Job-lock guarded against
 	// multi-instance double-purge.
-	sessionPurgeTask := func() error {
-		services.PurgeExpiredSessionsScheduled(db)
-		return nil
-	}
-	s.Every(6).Hours().Do(recoverJob(db, models.JobNameSessionPurge, models.JobTriggerScheduled, sessionPurgeTask))
-	go safeGo(db, models.JobNameSessionPurge, models.JobTriggerInitial, sessionPurgeTask)
+	s.Every(6).Hours().Do(recoverJob(db, models.JobNameSessionPurge, models.JobTriggerScheduled, sessionPurgeTask(db)))
+	go safeGo(db, models.JobNameSessionPurge, models.JobTriggerInitial, sessionPurgeTask(db))
 
 	// Emit overdue-cadence webhooks daily (T19). Job-lock guarded so a
 	// multi-instance deploy does not double-fire. Reports the number emitted.

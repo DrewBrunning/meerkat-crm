@@ -3,6 +3,7 @@ package services
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"errors"
 	"time"
 
 	"mycorrhizal/config"
@@ -97,7 +98,11 @@ func RevokeAllSessions(db *gorm.DB, userID uint) (int64, error) {
 // expiry or have been revoked longer than the grace window. A no-op-safe
 // DELETE; unlike the retention-days purges there is no operator knob to
 // disable it — an expired session row is dead weight with no recovery value.
-func PurgeExpiredSessions(db *gorm.DB) {
+//
+// It returns the delete error (nil on success) so the scheduled caller records
+// a failing purge as `failed` instead of advancing last_run_at as success
+// (issue #975).
+func PurgeExpiredSessions(db *gorm.DB) error {
 	now := time.Now()
 	result := db.Exec(
 		"DELETE FROM sessions WHERE expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < ?)",
@@ -105,32 +110,36 @@ func PurgeExpiredSessions(db *gorm.DB) {
 	)
 	if result.Error != nil {
 		logger.Error().Err(result.Error).Msg("session purge: failed to delete expired sessions")
-		return
+		return result.Error
 	}
 	if result.RowsAffected > 0 {
 		logger.Info().Int64("rows", result.RowsAffected).Msg("Purged expired sessions")
 	}
+	return nil
 }
 
 // PurgeExpiredSessionsScheduled is the scheduled cron entry point; it acquires
 // a job lock so concurrent runs (multi-instance, rapid restarts) don't
-// double-purge.
-func PurgeExpiredSessionsScheduled(db *gorm.DB) {
-	acquired, err := acquireJobLock(db, models.JobNameSessionPurge, sessionPurgeMinInterval)
-	if err != nil { // # pragma: no cover — acquireJobLock never returns an error (job_lock.go returns err == nil, nil)
-		logger.Error().Err(err).Msg("session purge: failed to check job lock") // # pragma: no cover — see the comment above
-		return                                                                 // # pragma: no cover — see the comment above
+// double-purge. The purge's outcome is passed to releaseJobLock so a failure
+// is recorded as `failed` and leaves last_run_at stale for job_stopped
+// (issue #975).
+func PurgeExpiredSessionsScheduled(db *gorm.DB) (err error) {
+	acquired, lockErr := acquireJobLock(db, models.JobNameSessionPurge, sessionPurgeMinInterval)
+	if lockErr != nil { // # pragma: no cover — acquireJobLock never returns an error (job_lock.go returns err == nil, nil)
+		logger.Error().Err(lockErr).Msg("session purge: failed to check job lock") // # pragma: no cover — see the comment above
+		return lockErr                                                             // # pragma: no cover — see the comment above
 	}
 	if !acquired {
-		return
+		return nil
 	}
 	defer func() {
-		if err := releaseJobLock(db, models.JobNameSessionPurge, true); err != nil {
-			logger.Error().Err(err).Msg("session purge: failed to release job lock") // # pragma: no cover — releaseJobLock only errors on a failing store
+		if relErr := releaseJobLock(db, models.JobNameSessionPurge, err == nil); relErr != nil {
+			logger.Error().Err(relErr).Msg("session purge: failed to release job lock") // # pragma: no cover — releaseJobLock only errors on a failing store
+			err = errors.Join(err, relErr)                                              // # pragma: no cover — see the comment above
 		}
 	}()
 
-	PurgeExpiredSessions(db)
+	return PurgeExpiredSessions(db)
 }
 
 // truncate caps a captured string field at n bytes so a hostile User-Agent /

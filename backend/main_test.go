@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"mycorrhizal/config"
 	"mycorrhizal/internal/dbtest"
 	"mycorrhizal/metrics"
 	"mycorrhizal/models"
@@ -140,4 +141,76 @@ func TestRunJob_RecordsJobMetrics(t *testing.T) {
 	require.Contains(t, out, `job_runs_total{job="metrics-unit-ok",result="success"} 1`+"\n")
 	require.Contains(t, out, `job_runs_total{job="metrics-unit-boom",result="failure"} 1`+"\n")
 	require.Contains(t, out, `job_duration_seconds_count{job="metrics-unit-ok"} 1`+"\n")
+}
+
+// failRawExec makes every subsequent raw Exec on db fail, simulating a storage
+// error under a purge's DELETE. The job lock's own query/create/update do not
+// go through the Raw callback, so only the purge's work fails.
+func failRawExec(t *testing.T, db *gorm.DB) {
+	t.Helper()
+	require.NoError(t, db.Callback().Raw().Before("gorm:raw").
+		Register("main_test_fail_raw", func(tx *gorm.DB) {
+			tx.AddError(errors.New("simulated purge failure"))
+		}))
+}
+
+// TestPurgeTaskWrappers_PropagateFailureToJobRuns pins the main.go wiring
+// (issue #975): each purge task constructor must return the service's error so
+// execJob records job_runs.result=failure. The wrapper is the only code between
+// a failing retention job and a green /admin/job-runs/health; before this fix
+// every wrapper discarded the outcome and returned nil.
+func TestPurgeTaskWrappers_PropagateFailureToJobRuns(t *testing.T) {
+	cases := []struct {
+		jobName string
+		task    func(*gorm.DB) func() error
+	}{
+		{models.JobNamePurgeDeleted, func(db *gorm.DB) func() error {
+			return purgeDeletedTask(db, config.Config{DeleteRetentionDays: 30, ContactShareRetentionDays: 30})
+		}},
+		{models.JobNameAuditPurge, func(db *gorm.DB) func() error {
+			return auditPurgeTask(db, config.Config{AuditRetentionDays: 30})
+		}},
+		{models.JobNameSystemEventPurge, func(db *gorm.DB) func() error {
+			return systemEventPurgeTask(db, config.Config{SystemEventRetentionDays: 30})
+		}},
+		{models.JobNameJobRunPurge, func(db *gorm.DB) func() error {
+			return jobRunPurgeTask(db, config.Config{JobRunRetentionDays: 30})
+		}},
+		{models.JobNameWebhookDeliveryPurge, func(db *gorm.DB) func() error {
+			return webhookDeliveryPurgeTask(db, config.Config{WebhookDeliveryRetentionDays: 30})
+		}},
+		{models.JobNameIdempotencyKeyPurge, func(db *gorm.DB) func() error {
+			return idempotencyKeyPurgeTask(db, config.Config{IdempotencyKeyRetentionHours: 24})
+		}},
+		{models.JobNameSessionPurge, func(db *gorm.DB) func() error {
+			return sessionPurgeTask(db)
+		}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.jobName, func(t *testing.T) {
+			db := newMainTestDB(t)
+			// A stale lock so the run actually acquires (rather than being
+			// suppressed as deduped) and its release outcome is observable.
+			require.NoError(t, db.Create(&models.JobExecution{
+				JobName:     tc.jobName,
+				LastRunAt:   time.Now().Add(-100 * time.Hour),
+				LastOutcome: models.JobOutcomeRan,
+			}).Error)
+			failRawExec(t, db)
+
+			runJob(db, tc.jobName, models.JobTriggerScheduled, tc.task(db))
+
+			var run models.JobRun
+			require.NoError(t, db.Where("job_name = ?", tc.jobName).First(&run).Error)
+			require.Equal(t, models.JobRunResultFailure, run.Result,
+				"a failing purge must record job_runs.result=failure, not success")
+			require.Contains(t, run.Error, "simulated purge failure")
+
+			var exec models.JobExecution
+			require.NoError(t, db.Where("job_name = ?", tc.jobName).First(&exec).Error)
+			require.Equal(t, models.JobOutcomeFailed, exec.LastOutcome,
+				"a failing purge must finalize the job lock as failed")
+		})
+	}
 }

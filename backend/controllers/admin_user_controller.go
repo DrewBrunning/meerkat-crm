@@ -63,13 +63,22 @@ func TriggerReminders(c *gin.Context, cfg config.Config) {
 }
 
 // TriggerPurge manually triggers the delete-purge job (admin only, T26).
+// The individual purge passes are best-effort and each reports its own error;
+// they are joined and recorded as a failed manual job run, and surface as a
+// 500, rather than the endpoint always claiming success (issue #975).
 func TriggerPurge(c *gin.Context, cfg config.Config) {
 	db := c.MustGet("db").(*gorm.DB)
 	start := time.Now()
-	services.PurgeSoftDeletedRows(db, cfg)
-	services.PurgeExpiredContactShares(db, cfg)
-	services.PurgeExpiredWebhookDeliveries(db, cfg)
-	recordManualJobRun(c.Request.Context(), db, models.JobNamePurgeDeleted, start, nil, nil)
+	err := errors.Join(
+		services.PurgeSoftDeletedRows(db, cfg),
+		services.PurgeExpiredContactShares(db, cfg),
+		services.PurgeExpiredWebhookDeliveries(db, cfg),
+	)
+	recordManualJobRun(c.Request.Context(), db, models.JobNamePurgeDeleted, start, nil, err)
+	if err != nil {
+		apperrors.AbortWithError(c, apperrors.ErrInternal("Purge failed").WithError(err))
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{"message": "Purge completed"})
 }
 

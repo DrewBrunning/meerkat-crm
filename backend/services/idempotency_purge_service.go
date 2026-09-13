@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"time"
 
 	"mycorrhizal/config"
@@ -28,45 +29,53 @@ var idempotencyKeyPurgeMinInterval = JobCatchupWindow(6 * time.Hour)
 // The window anchors on created_at (when the key was first claimed). A
 // non-positive retention value disables the purge rather than deleting every
 // row, matching webhook_delivery_purge_service.go / audit_purge_service.go.
-func PurgeExpiredIdempotencyKeys(db *gorm.DB, cfg config.Config) {
+//
+// It returns the delete error (nil when disabled or successful) so the
+// scheduled caller records a failing purge as `failed` instead of advancing
+// last_run_at as success (issue #975).
+func PurgeExpiredIdempotencyKeys(db *gorm.DB, cfg config.Config) error {
 	if cfg.IdempotencyKeyRetentionHours <= 0 {
-		return
+		return nil
 	}
 	cutoff := time.Now().Add(-time.Duration(cfg.IdempotencyKeyRetentionHours) * time.Hour)
 
 	result := db.Exec("DELETE FROM idempotency_keys WHERE created_at < ?", cutoff)
 	if result.Error != nil {
 		logger.Error().Err(result.Error).Msg("idempotency key purge: failed to delete expired keys")
-		return
+		return result.Error
 	}
 	if result.RowsAffected > 0 {
 		logger.Info().Int64("rows", result.RowsAffected).Time("cutoff", cutoff).Msg("Purged expired idempotency keys")
 	}
+	return nil
 }
 
 // PurgeExpiredIdempotencyKeysScheduled is the scheduled cron entry point; it
 // acquires a job lock so concurrent runs (multi-instance, rapid restarts)
-// don't double-purge.
-func PurgeExpiredIdempotencyKeysScheduled(db *gorm.DB, cfg config.Config) {
-	acquired, err := acquireJobLock(db, models.JobNameIdempotencyKeyPurge, idempotencyKeyPurgeMinInterval)
+// don't double-purge. The purge's outcome is passed to releaseJobLock so a
+// failure is recorded as `failed` and leaves last_run_at stale for
+// job_stopped (issue #975).
+func PurgeExpiredIdempotencyKeysScheduled(db *gorm.DB, cfg config.Config) (err error) {
+	acquired, lockErr := acquireJobLock(db, models.JobNameIdempotencyKeyPurge, idempotencyKeyPurgeMinInterval)
 	// The error branch below is structurally unreachable today: acquireJobLock
 	// normalizes every transaction failure (a lost connection, a locked DB)
 	// into (acquired=false, err=nil) — job_lock.go returns `err == nil, nil` —
 	// so a failing lock check lands in the `!acquired` path, not here. Kept as
 	// the defensive guard the (bool, error) contract implies for a future
 	// acquireJobLock that propagates errors.
-	if err != nil { // # pragma: no cover — unreachable: acquireJobLock never returns an error (job_lock.go returns err == nil, nil)
-		logger.Error().Err(err).Msg("idempotency key purge: failed to check job lock") // # pragma: no cover — see the comment above
-		return                                                                         // # pragma: no cover — see the comment above
+	if lockErr != nil { // # pragma: no cover — unreachable: acquireJobLock never returns an error (job_lock.go returns err == nil, nil)
+		logger.Error().Err(lockErr).Msg("idempotency key purge: failed to check job lock") // # pragma: no cover — see the comment above
+		return lockErr                                                                     // # pragma: no cover — see the comment above
 	}
 	if !acquired {
-		return
+		return nil
 	}
 	defer func() {
-		if err := releaseJobLock(db, models.JobNameIdempotencyKeyPurge, true); err != nil {
-			logger.Error().Err(err).Msg("idempotency key purge: failed to release job lock")
+		if relErr := releaseJobLock(db, models.JobNameIdempotencyKeyPurge, err == nil); relErr != nil {
+			logger.Error().Err(relErr).Msg("idempotency key purge: failed to release job lock")
+			err = errors.Join(err, relErr)
 		}
 	}()
 
-	PurgeExpiredIdempotencyKeys(db, cfg)
+	return PurgeExpiredIdempotencyKeys(db, cfg)
 }

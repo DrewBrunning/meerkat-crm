@@ -1,6 +1,7 @@
 package services
 
 import (
+	"errors"
 	"mycorrhizal/config"
 	"mycorrhizal/logger"
 	"mycorrhizal/models"
@@ -36,41 +37,49 @@ const webhookDeliveryPurgeMinInterval = 23 * time.Hour
 // WEBHOOK_DELIVERY_RETENTION_DAYS <= 0 disables the purge rather than deleting
 // every delivery, matching audit_purge_service.go's stance on a misconfigured
 // window.
-func PurgeExpiredWebhookDeliveries(db *gorm.DB, cfg config.Config) {
+//
+// It returns the delete error (nil when disabled or successful) so the
+// scheduled caller records a failing purge as `failed` instead of advancing
+// last_run_at as success (issue #975).
+func PurgeExpiredWebhookDeliveries(db *gorm.DB, cfg config.Config) error {
 	if cfg.WebhookDeliveryRetentionDays <= 0 {
 		// Misconfigured to 0/negative: treat as disabled rather than
 		// deleting every delivery.
-		return
+		return nil
 	}
 	cutoff := time.Now().Add(-time.Duration(cfg.WebhookDeliveryRetentionDays) * 24 * time.Hour)
 
 	result := db.Exec("DELETE FROM webhook_deliveries WHERE created_at < ?", cutoff)
 	if result.Error != nil {
 		logger.Error().Err(result.Error).Msg("webhook delivery purge: failed to delete expired deliveries")
-		return
+		return result.Error
 	}
 	if result.RowsAffected > 0 {
 		logger.Info().Int64("rows", result.RowsAffected).Time("cutoff", cutoff).Msg("Purged expired webhook deliveries")
 	}
+	return nil
 }
 
 // PurgeExpiredWebhookDeliveriesScheduled is the scheduled cron entry point; it
 // acquires a job lock so concurrent runs (multi-instance, rapid restarts)
-// don't double-purge.
-func PurgeExpiredWebhookDeliveriesScheduled(db *gorm.DB, cfg config.Config) {
-	acquired, err := acquireJobLock(db, models.JobNameWebhookDeliveryPurge, webhookDeliveryPurgeMinInterval)
-	if err != nil {
-		logger.Error().Err(err).Msg("webhook delivery purge: failed to check job lock")
-		return
+// don't double-purge. The purge's outcome is passed to releaseJobLock so a
+// failure is recorded as `failed` and leaves last_run_at stale for
+// job_stopped (issue #975).
+func PurgeExpiredWebhookDeliveriesScheduled(db *gorm.DB, cfg config.Config) (err error) {
+	acquired, lockErr := acquireJobLock(db, models.JobNameWebhookDeliveryPurge, webhookDeliveryPurgeMinInterval)
+	if lockErr != nil { // # pragma: no cover — acquireJobLock never returns an error (job_lock.go returns err == nil, nil)
+		logger.Error().Err(lockErr).Msg("webhook delivery purge: failed to check job lock") // # pragma: no cover — see the comment above
+		return lockErr                                                                      // # pragma: no cover — see the comment above
 	}
 	if !acquired {
-		return
+		return nil
 	}
 	defer func() {
-		if err := releaseJobLock(db, models.JobNameWebhookDeliveryPurge, true); err != nil {
-			logger.Error().Err(err).Msg("webhook delivery purge: failed to release job lock")
+		if relErr := releaseJobLock(db, models.JobNameWebhookDeliveryPurge, err == nil); relErr != nil {
+			logger.Error().Err(relErr).Msg("webhook delivery purge: failed to release job lock")
+			err = errors.Join(err, relErr)
 		}
 	}()
 
-	PurgeExpiredWebhookDeliveries(db, cfg)
+	return PurgeExpiredWebhookDeliveries(db, cfg)
 }

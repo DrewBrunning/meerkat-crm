@@ -37,11 +37,15 @@ import (
 // hard-delete of user content. CONTACT_SHARE_RETENTION_DAYS <= 0 disables the
 // purge rather than deleting every share, matching audit_purge_service.go's
 // stance.
-func PurgeExpiredContactShares(db *gorm.DB, cfg config.Config) {
+//
+// It returns the delete error (nil when disabled or successful) so the
+// scheduling caller can record a failed run rather than advancing last_run_at
+// as success (issue #975).
+func PurgeExpiredContactShares(db *gorm.DB, cfg config.Config) error {
 	if cfg.ContactShareRetentionDays <= 0 {
 		// Misconfigured to 0/negative: treat as disabled rather than
 		// deleting every share.
-		return
+		return nil
 	}
 	cutoff := time.Now().AddDate(0, 0, -cfg.ContactShareRetentionDays)
 
@@ -54,7 +58,7 @@ func PurgeExpiredContactShares(db *gorm.DB, cfg config.Config) {
 	)
 	if result.Error != nil {
 		logger.Error().Err(result.Error).Msg("contact share purge: failed to delete expired shares")
-		return
+		return result.Error
 	}
 	if result.RowsAffected > 0 {
 		logger.Info().
@@ -62,4 +66,5 @@ func PurgeExpiredContactShares(db *gorm.DB, cfg config.Config) {
 			Time("cutoff", cutoff).
 			Msg("Purged expired contact shares")
 	}
+	return nil
 }

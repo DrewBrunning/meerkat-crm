@@ -188,11 +188,12 @@ func TestPurgeExpiredAuditEventsScheduled_PurgesAuditAndReachOutSuggestions(t *t
 	assert.Nil(t, job.LockedAt, "the job lock must be released after the run")
 }
 
-// TestPurgeExpiredAuditEvents_RecomputeFailureIsSwallowed pins that a failure
-// to re-link the hash chain after a purge is logged and swallowed, never a
-// panic: the retention delete already happened, so losing the re-link must not
-// take the whole purge down.
-func TestPurgeExpiredAuditEvents_RecomputeFailureIsSwallowed(t *testing.T) {
+// TestPurgeExpiredAuditEvents_RecomputeFailureIsReturned pins that a failure
+// to re-link the hash chain after a purge is surfaced as an error (issue #975):
+// the retention delete already happened, but the run must not be recorded as a
+// success, or job_stopped can never detect a purge that keeps failing. The
+// aged-out row is still purged.
+func TestPurgeExpiredAuditEvents_RecomputeFailureIsReturned(t *testing.T) {
 	db := dbtest.New(t)
 	models.RegisterAuditDB(db)
 	t.Cleanup(func() {
@@ -214,11 +215,12 @@ func TestPurgeExpiredAuditEvents_RecomputeFailureIsSwallowed(t *testing.T) {
 	// A second BEFORE UPDATE trigger makes the re-link fail: RecomputeAuditChain
 	// only drops its own audit_events_no_update trigger, so this one survives
 	// and rejects the hash/prev_hash UPDATE. The purge must still delete the
-	// aged-out row and continue without panicking.
+	// aged-out row and report the re-link failure rather than swallow it.
 	require.NoError(t, db.Exec("CREATE TRIGGER audit_events_block_update "+
 		"BEFORE UPDATE ON audit_events BEGIN SELECT RAISE(ABORT, 'blocked'); END").Error)
 
-	PurgeExpiredAuditEvents(db, config.Config{AuditRetentionDays: 30})
+	err := PurgeExpiredAuditEvents(db, config.Config{AuditRetentionDays: 30})
+	require.Error(t, err, "a failed hash-chain re-link must be returned, not swallowed")
 
 	var remaining []models.AuditEvent
 	require.NoError(t, db.Find(&remaining).Error)

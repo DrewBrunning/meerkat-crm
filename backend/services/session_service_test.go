@@ -195,7 +195,7 @@ func TestPurgeExpiredSessionsScheduled_JobLockGuards(t *testing.T) {
 	assert.EqualValues(t, 1, countSessions(t, db), "the job lock suppresses the immediate second run")
 }
 
-func TestPurgeExpiredSessions_DBErrorIsLoggedNotPanic(t *testing.T) {
+func TestPurgeExpiredSessions_DBErrorIsReturnedNotPanic(t *testing.T) {
 	buf := captureLoggerOutput(t)
 	db, uid := newSessionDB(t)
 	_, err := CreateSession(db, uid, sessionCfg(), "", "")
@@ -204,7 +204,9 @@ func TestPurgeExpiredSessions_DBErrorIsLoggedNotPanic(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, sqlDB.Close())
 
-	require.NotPanics(t, func() { PurgeExpiredSessions(db) })
+	var purgeErr error
+	require.NotPanics(t, func() { purgeErr = PurgeExpiredSessions(db) })
+	require.Error(t, purgeErr, "a failing purge must report the error so the run is recorded as failed")
 	assert.Contains(t, buf.String(), "session purge: failed to delete expired sessions")
 }
 

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 
 	"mycorrhizal/config"
 	"mycorrhizal/logger"
@@ -22,11 +23,15 @@ var systemEventPurgeMinInterval = JobCatchupWindow(24 * time.Hour)
 // diagnostics, short-lived by design; long enough to investigate an incident,
 // short enough to bound growth on a single-file SQLite database). This is the
 // only delete path for the table.
-func PurgeExpiredSystemEvents(ctx context.Context, db *gorm.DB, cfg config.Config) {
+//
+// It returns the delete error (nil when disabled or successful) so the
+// scheduled caller records a failing purge as `failed` instead of advancing
+// last_run_at as success (issue #975).
+func PurgeExpiredSystemEvents(ctx context.Context, db *gorm.DB, cfg config.Config) error {
 	if cfg.SystemEventRetentionDays <= 0 {
 		// Misconfigured to 0/negative: treat as disabled rather than deleting
 		// every row.
-		return
+		return nil
 	}
 	cutoff := time.Now().Add(-time.Duration(cfg.SystemEventRetentionDays) * 24 * time.Hour)
 
@@ -36,7 +41,7 @@ func PurgeExpiredSystemEvents(ctx context.Context, db *gorm.DB, cfg config.Confi
 			Str(logger.FieldEvent, "system_event_purge_failed").
 			Str(logger.FieldComponent, logger.ComponentScheduler).
 			Msg("system event purge: failed to delete expired rows")
-		return
+		return result.Error
 	}
 	if result.RowsAffected > 0 {
 		logger.Ctx(ctx).Info().
@@ -46,32 +51,36 @@ func PurgeExpiredSystemEvents(ctx context.Context, db *gorm.DB, cfg config.Confi
 			Str(logger.FieldComponent, logger.ComponentScheduler).
 			Msg("Purged expired system events")
 	}
+	return nil
 }
 
 // PurgeExpiredSystemEventsScheduled is the scheduled cron entry point; it
 // acquires a job lock so concurrent runs (multi-instance, rapid restarts)
-// don't double-purge.
-func PurgeExpiredSystemEventsScheduled(db *gorm.DB, cfg config.Config) {
+// don't double-purge. The purge's outcome is passed to releaseJobLock so a
+// failure is recorded as `failed` and leaves last_run_at stale for
+// job_stopped (issue #975).
+func PurgeExpiredSystemEventsScheduled(db *gorm.DB, cfg config.Config) (err error) {
 	ctx := logger.JobContext(models.JobNameSystemEventPurge)
 
-	acquired, err := acquireJobLock(db, models.JobNameSystemEventPurge, systemEventPurgeMinInterval)
-	if err != nil {
-		logger.Ctx(ctx).Error().Err(err).
+	acquired, lockErr := acquireJobLock(db, models.JobNameSystemEventPurge, systemEventPurgeMinInterval)
+	if lockErr != nil { // # pragma: no cover — acquireJobLock never returns an error (job_lock.go returns err == nil, nil)
+		logger.Ctx(ctx).Error().Err(lockErr).
 			Str(logger.FieldEvent, "job_failed").
 			Str(logger.FieldOperation, models.JobNameSystemEventPurge).
-			Msg("system event purge: failed to check job lock")
-		return
+			Msg("system event purge: failed to check job lock") // # pragma: no cover — see the comment above
+		return lockErr // # pragma: no cover — see the comment above
 	}
 	if !acquired {
-		return
+		return nil
 	}
 	defer func() {
-		if err := releaseJobLock(db, models.JobNameSystemEventPurge, true); err != nil {
-			logger.Ctx(ctx).Error().Err(err).
+		if relErr := releaseJobLock(db, models.JobNameSystemEventPurge, err == nil); relErr != nil {
+			logger.Ctx(ctx).Error().Err(relErr).
 				Str(logger.FieldOperation, models.JobNameSystemEventPurge).
 				Msg("system event purge: failed to release job lock")
+			err = errors.Join(err, relErr)
 		}
 	}()
 
-	PurgeExpiredSystemEvents(ctx, db, cfg)
+	return PurgeExpiredSystemEvents(ctx, db, cfg)
 }

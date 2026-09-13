@@ -1,6 +1,8 @@
 package services
 
 import (
+	"errors"
+	"fmt"
 	"mycorrhizal/config"
 	"mycorrhizal/logger"
 	"mycorrhizal/models"
@@ -32,13 +34,21 @@ var purgeMinInterval = JobCatchupWindow(24 * time.Hour)
 // the boot-time Initial trigger in main.go. Every sibling purge (audit,
 // contact-share, idempotency, job-run, system-event, webhook-delivery) carries
 // the same guard for the same reason.
-func PurgeSoftDeletedRows(db *gorm.DB, cfg config.Config) {
+//
+// It returns a non-nil error if any individual delete fails, joining every
+// failure rather than stopping at the first (the cleanup is best-effort and
+// must still attempt every table). The scheduled entry point passes that to
+// releaseJobLock so a persistently failing purge is recorded as `failed` and
+// job_stopped can fire, instead of every run advancing last_run_at as success.
+func PurgeSoftDeletedRows(db *gorm.DB, cfg config.Config) error {
 	if cfg.DeleteRetentionDays <= 0 {
 		// Misconfigured to 0/negative, or deliberately disabled: never delete
 		// the whole undo window.
-		return
+		return nil
 	}
 	cutoff := time.Now().AddDate(0, 0, -cfg.DeleteRetentionDays)
+
+	var errs []error
 
 	// activity_contacts has no soft-delete. Clean up rows referencing
 	// now-purged contacts as defense-in-depth.
@@ -47,6 +57,7 @@ func PurgeSoftDeletedRows(db *gorm.DB, cfg config.Config) {
 		cutoff,
 	).Error; err != nil {
 		logger.Error().Err(err).Msg("purge: failed to delete orphaned activity_contacts")
+		errs = append(errs, fmt.Errorf("purge orphaned activity_contacts: %w", err))
 	}
 
 	// Soft-deleted children past retention. This is the durable half of
@@ -81,6 +92,7 @@ func PurgeSoftDeletedRows(db *gorm.DB, cfg config.Config) {
 	} {
 		if err := db.Unscoped().Where("deleted_at IS NOT NULL AND deleted_at < ?", cutoff).Delete(model).Error; err != nil {
 			logger.Error().Err(err).Msg("purge: failed to delete soft-deleted rows")
+			errs = append(errs, fmt.Errorf("purge soft-deleted %T: %w", model, err))
 		}
 	}
 
@@ -147,6 +159,7 @@ func PurgeSoftDeletedRows(db *gorm.DB, cfg config.Config) {
 	for _, c := range cleanups {
 		if err := db.Exec(c.query, c.args...).Error; err != nil {
 			logger.Error().Err(err).Str("table", c.desc).Msg("purge: failed to clean up edge rows")
+			errs = append(errs, fmt.Errorf("purge cleanup %s: %w", c.desc, err))
 		}
 	}
 
@@ -156,12 +169,15 @@ func PurgeSoftDeletedRows(db *gorm.DB, cfg config.Config) {
 	).Delete(&models.Contact{})
 	if result.Error != nil {
 		logger.Error().Err(result.Error).Msg("purge: failed to delete soft-deleted contacts")
+		errs = append(errs, fmt.Errorf("purge soft-deleted contacts: %w", result.Error))
 	} else if result.RowsAffected > 0 {
 		logger.Info().
 			Int64("rows", result.RowsAffected).
 			Time("cutoff", cutoff).
 			Msg("Purged soft-deleted rows")
 	}
+
+	return errors.Join(errs...)
 }
 
 // PurgeDeletedRows is the scheduled cron entry point. It acquires a job lock
@@ -169,21 +185,28 @@ func PurgeSoftDeletedRows(db *gorm.DB, cfg config.Config) {
 // both soft-deleted rows past retention (PurgeSoftDeletedRows, T26) and
 // expired ContactShare snapshots (PurgeExpiredContactShares, issue #574) —
 // both under the same lock so the two hard-delete passes share one cadence.
-func PurgeDeletedRows(db *gorm.DB, cfg config.Config) {
-	acquired, err := acquireJobLock(db, models.JobNamePurgeDeleted, purgeMinInterval)
-	if err != nil {
-		logger.Error().Err(err).Msg("purge: failed to check job lock")
-		return
+//
+// It reports the outcome through releaseJobLock (issue #975): a successful
+// pass advances last_run_at, a failed one is recorded as `failed` and leaves
+// last_run_at untouched so job_stopped can detect a purge that keeps failing.
+func PurgeDeletedRows(db *gorm.DB, cfg config.Config) (err error) {
+	acquired, lockErr := acquireJobLock(db, models.JobNamePurgeDeleted, purgeMinInterval)
+	if lockErr != nil { // # pragma: no cover — acquireJobLock never returns an error (job_lock.go returns err == nil, nil)
+		logger.Error().Err(lockErr).Msg("purge: failed to check job lock") // # pragma: no cover — see the comment above
+		return lockErr                                                     // # pragma: no cover — see the comment above
 	}
 	if !acquired {
-		return
+		return nil
 	}
 	defer func() {
-		if err := releaseJobLock(db, models.JobNamePurgeDeleted, true); err != nil {
-			logger.Error().Err(err).Msg("purge: failed to release job lock")
+		if relErr := releaseJobLock(db, models.JobNamePurgeDeleted, err == nil); relErr != nil {
+			logger.Error().Err(relErr).Msg("purge: failed to release job lock")
+			err = errors.Join(err, relErr)
 		}
 	}()
 
-	PurgeSoftDeletedRows(db, cfg)
-	PurgeExpiredContactShares(db, cfg)
+	return errors.Join(
+		PurgeSoftDeletedRows(db, cfg),
+		PurgeExpiredContactShares(db, cfg),
+	)
 }
